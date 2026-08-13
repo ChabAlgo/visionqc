@@ -1,0 +1,6 @@
+# VisionQC GitHub Pages repository
+*.zip
+*.log
+.DS_Store
+Thumbs.db
+Desktop.ini

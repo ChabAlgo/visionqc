@@ -1,0 +1,4 @@
+VisionQC Web
+Version: 4.4.10
+Release channel: stable
+GitHub Pages deploy bundle

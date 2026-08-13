@@ -1,5 +1,0 @@
-{
-  "name": "VisionQC - AI-Powered Image Classifier",
-  "description": "A professional-grade quality control tool for classifying images into OK and NG categories with optional Gemini AI assistance for automated defect detection.",
-  "requestFramePermissions": []
-}
