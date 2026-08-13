@@ -1,0 +1,10 @@
+VisionQC v4.4.4 Offline Clean 검증
+
+- 실행 서버는 dist 폴더만 제공합니다.
+- dist/index.html의 외부 importmap을 제거했습니다.
+- Tailwind CSS는 dist/assets/tailwind-offline.css 로컬 파일을 사용합니다.
+- Inter 글꼴 300/400/500/600/700은 dist/assets/fonts 내부 로컬 WOFF2 파일을 사용합니다.
+- JSZip은 dist/assets/jszip.min.js 로컬 파일을 사용합니다.
+- React 및 UI 코드는 dist/assets/index-*.js에 번들되어 있습니다.
+- 리포트, 그래프, 메뉴, 이미지 표시에는 인터넷 연결이 필요하지 않습니다.
+- Google/Gemini AI 분석 기능은 온라인 API 기능이므로 인터넷이 없는 환경에서는 사용할 수 없습니다. 그 외 로컬 분류/CSV/리포트 기능과는 분리되어 있습니다.
