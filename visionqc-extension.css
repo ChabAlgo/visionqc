@@ -406,3 +406,21 @@ body[data-vq-page="classification"] #vq43-shell{display:none!important;pointer-e
 #root>div>header.vq43-host-header>.vq43-brand>*{display:none!important}
 #root>div>header.vq43-host-header>.vq43-brand::before{content:"VisionQC @TOPTEC";display:block;color:#fff;font:800 22px/1.05 Inter,Arial,sans-serif;white-space:nowrap}
 #root>div>header.vq43-host-header>.vq43-brand::after{content:"INSPECTION TERMINAL V4.4.7";display:block;margin-top:6px;color:#64748b;font:800 10px/1.1 Inter,Arial,sans-serif;letter-spacing:.12em;white-space:nowrap}
+
+
+/* v4.4.11 - classification page hard restore */
+body[data-vq-page="classification"] #root>div>main{
+  display:flex!important;
+  visibility:visible!important;
+  pointer-events:auto!important;
+}
+body[data-vq-page="classification"] #vq43-shell{
+  display:none!important;
+  visibility:hidden!important;
+  pointer-events:none!important;
+}
+body:not([data-vq-page="classification"]) #root>div>main{
+  display:none!important;
+  visibility:hidden!important;
+  pointer-events:none!important;
+}

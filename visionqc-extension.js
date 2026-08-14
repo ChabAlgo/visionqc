@@ -1,7 +1,7 @@
 (() => {
   'use strict';
 
-  const VERSION = '4.4.10';
+  const VERSION = '4.4.11';
   const POSITIONS = ['CA(TOP)', 'AN(TOP)', 'CA(BOT)', 'AN(BOT)'];
   const PAGE_KEY = 'visionqc-v43-active-page';
   const DB_NAME = 'visionqc-analysis-input-db-v1';
@@ -239,22 +239,42 @@
     document.body.dataset.vqPage = page;
     safeStorageSet(PAGE_KEY, page);
     toggleMenu(false);
+
     const shell = $('#vq43-shell');
     const hostMain = $('#root > div > main');
     const extensionVisible = page !== 'classification';
-    shell?.classList.toggle('visible', extensionVisible);
-    if (shell) {
-      shell.style.pointerEvents = extensionVisible ? 'auto' : 'none';
-      shell.style.zIndex = extensionVisible ? '1000000' : '';
+
+    if (page === 'classification') {
+      // 분류 화면은 React 원본 main을 명시적으로 복원합니다.
+      // 이전 분석 화면에서 남은 display/visibility/pointer-events 상태에 의존하지 않습니다.
+      if (shell) {
+        shell.classList.remove('visible');
+        shell.style.setProperty('display', 'none', 'important');
+        shell.style.setProperty('pointer-events', 'none', 'important');
+      }
+      if (hostMain) {
+        hostMain.style.setProperty('display', 'flex', 'important');
+        hostMain.style.setProperty('visibility', 'visible', 'important');
+        hostMain.style.setProperty('pointer-events', 'auto', 'important');
+        hostMain.setAttribute('aria-hidden', 'false');
+      }
+    } else {
+      if (hostMain) {
+        hostMain.style.setProperty('display', 'none', 'important');
+        hostMain.style.setProperty('visibility', 'hidden', 'important');
+        hostMain.style.setProperty('pointer-events', 'none', 'important');
+        hostMain.setAttribute('aria-hidden', 'true');
+      }
+      if (shell) {
+        shell.classList.add('visible');
+        shell.style.setProperty('display', 'block', 'important');
+        shell.style.setProperty('pointer-events', 'auto', 'important');
+        shell.style.zIndex = '1000000';
+      }
+      renderCurrentPage();
     }
-    // 기존 분류 화면 main이 투명하게 겹쳐 분석 화면 클릭을 가로채는 문제를 차단합니다.
-    if (hostMain) {
-      hostMain.style.pointerEvents = extensionVisible ? 'none' : '';
-      hostMain.style.visibility = extensionVisible ? 'hidden' : '';
-      hostMain.setAttribute('aria-hidden', String(extensionVisible));
-    }
+
     $$('.vq43-nav-item').forEach((item) => item.classList.toggle('active', item.dataset.vqPage === page));
-    if (extensionVisible) renderCurrentPage();
   }
 
   function patchReactHeader() {
