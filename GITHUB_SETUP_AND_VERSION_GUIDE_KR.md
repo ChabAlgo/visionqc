@@ -18,7 +18,7 @@
 1. GitHub에서 새 Repository를 생성합니다. 예: `visionqc`.
 2. GitHub Desktop에서 해당 Repository를 Clone합니다.
 3. 이 배포본의 내용 전체를 Clone된 Repository 폴더 최상위에 복사합니다.
-4. GitHub Desktop에서 Summary에 `Initial VisionQC v4.4.11`을 입력합니다.
+4. GitHub Desktop에서 Summary에 `Initial VisionQC v4.4.12`을 입력합니다.
 5. `Commit to main`을 누릅니다.
 6. `Push origin`을 누릅니다.
 7. GitHub 웹 → Repository → `Settings → Pages`로 이동합니다.
@@ -41,7 +41,7 @@
 
 예:
 
-`v4.4.11`
+`v4.4.12`
 
 안정 버전으로 확정한 Commit에만 Tag를 붙이는 것을 권장합니다.
 
@@ -51,15 +51,15 @@ Tag를 사용자에게 보기 좋게 정리한 배포 페이지입니다. 변경
 
 예:
 
-- Tag: `v4.4.11`
-- Release title: `VisionQC v4.4.11`
-- Asset: `VisionQC_Offline_v4.4.11.zip`
+- Tag: `v4.4.12`
+- Release title: `VisionQC v4.4.12`
+- Asset: `VisionQC_Offline_v4.4.12.zip`
 
 ## 4. 추천 버전 번호 규칙
 
 현재 규칙을 그대로 이어갑니다.
 
-`v4.4.11 → v4.4.11 → v4.4.12 ...`
+`v4.4.12 → v4.4.12 → v4.4.12 ...`
 
 프로그램 화면, `VERSION.txt`, Tag, Release의 버전 번호를 동일하게 맞추는 것이 중요합니다.
 
@@ -82,8 +82,8 @@ Tag를 사용자에게 보기 좋게 정리한 배포 페이지입니다. 변경
 
 예:
 
-- `v4.4.11`: 정상
-- `v4.4.11`: 새 기능
+- `v4.4.12`: 정상
+- `v4.4.12`: 새 기능
 - `v4.4.12`: 심각한 버그
 
 `v4.4.12`가 이미 `main`에 Push된 상태라면 과거 ZIP을 찾아 덮어쓰는 방식보다 Git 기록으로 취소합니다.
@@ -116,8 +116,8 @@ Offline 버전은 GitHub Repository 본문에 계속 누적하지 말고 Release
 
 예:
 
-- Release v4.4.11 → `VisionQC_Offline_v4.4.11.zip`
-- Release v4.4.11 → `VisionQC_Offline_v4.4.11.zip`
+- Release v4.4.12 → `VisionQC_Offline_v4.4.12.zip`
+- Release v4.4.12 → `VisionQC_Offline_v4.4.12.zip`
 - Release v4.4.12 → `VisionQC_Offline_v4.4.12.zip`
 
 그러면 온라인 웹은 항상 `main`의 최신 안정 상태를 사용하고, 과거 Offline 패키지는 Release에서 버전별로 다시 받을 수 있습니다.
@@ -152,7 +152,7 @@ GitHub 사용에 익숙해진 뒤 필요하면 `develop` 브랜치를 추가해 
 
 배포 단위:
 
-`Release VisionQC v4.4.11`
+`Release VisionQC v4.4.12`
 
 원복:
 

@@ -1,4 +1,3 @@
 VisionQC Web
-Version: 4.4.11
-Release channel: stable
-GitHub Pages deploy bundle
+v4.4.12
+GitHub Pages Classification Fixed

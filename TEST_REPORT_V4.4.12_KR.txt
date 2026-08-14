@@ -1,0 +1,16 @@
+VisionQC Web v4.4.12 검증 결과
+
+1. 메인 React 번들 JavaScript 문법 검사: PASS
+2. visionqc-extension.js 문법 검사: PASS
+3. React root/header/main 렌더링: PASS (mock browser test)
+4. 초기 분류 화면 main display=flex: PASS
+5. 분류 -> 메인 전환 시 React main 숨김 / Extension shell 표시: PASS
+6. 메인 -> 분류 복귀 시 Extension shell 숨김 / React main 복원: PASS
+7. System Standby 분류 초기 화면 존재: PASS
+8. Input Cell ID 모달 표시: PASS
+9. Select Folder용 webkitdirectory input 존재 및 디렉터리 파일 입력 후 폴더명/파일수 갱신: PASS
+10. GitHub Pages 상대경로: index.html 기준 ./assets, ./visionqc-extension.* 사용 확인
+
+참고:
+- 브라우저 네이티브 폴더 선택창 자체는 이 테스트 환경의 브라우저 권한 제약으로 실제 OS 창 표시까지 자동검증하지 않았습니다.
+- 대신 directory input에 실제 테스트 폴더를 주입하여 React onChange와 2 files selected 상태까지 확인했습니다.
