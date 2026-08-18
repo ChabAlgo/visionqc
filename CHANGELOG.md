@@ -1,5 +1,12 @@
 # VisionQC Changelog
 
+## v4.4.16
+
+- Simulation의 Workspace / Image Folder / Output Folder `선택` 버튼 클릭 불가 수정
+- 원인: `data-sim-field`가 붙은 경로 선택 버튼의 `onclick`이 입력값 동기화 바인딩에서 다시 덮어써져 `simulation-browse` 액션이 사라지던 문제
+- 값 동기화 이벤트를 `input/select/textarea`에만 연결하도록 수정
+- Local Agent v0.1.1 API는 변경하지 않음; Agent 재빌드 불필요
+
 ## v4.4.15
 
 - Input Cell ID의 Select Folder를 명시적 버튼 + Chrome Directory Picker 방식으로 수정

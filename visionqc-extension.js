@@ -1,7 +1,7 @@
 (() => {
   'use strict';
 
-  const VERSION = '4.4.15';
+  const VERSION = '4.4.16';
   const POSITIONS = ['CA(TOP)', 'AN(TOP)', 'CA(BOT)', 'AN(BOT)'];
   const PAGE_KEY = 'visionqc-v43-active-page';
   const DB_NAME = 'visionqc-analysis-input-db-v1';
@@ -506,7 +506,10 @@
       input.onclick = (event) => event.stopPropagation();
     });
 
-    $$('[data-sim-field]', shell).forEach((input) => {
+    // data-sim-field는 입력 요소뿐 아니라 경로 '선택' 버튼에도 붙어 있습니다.
+    // 버튼까지 여기서 onclick을 덮어쓰면 simulation-browse 액션이 사라지므로
+    // 실제 편집 가능한 입력 요소에만 값 동기화 핸들러를 연결합니다.
+    $$('input[data-sim-field], select[data-sim-field], textarea[data-sim-field]', shell).forEach((input) => {
       const sync = () => syncSimulationField(input);
       input.oninput = sync;
       input.onchange = sync;
