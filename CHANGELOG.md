@@ -1,5 +1,15 @@
 # VisionQC Changelog
 
+## v4.4.15
+
+- Input Cell ID의 Select Folder를 명시적 버튼 + Chrome Directory Picker 방식으로 수정
+- 폴더 선택 시 전체 FileList를 즉시 만들지 않고 DirectoryHandle만 보관
+- Load Matched Images 실행 시 파일명을 순회하고, 입력 Cell ID 전체 문자열이 파일명에 포함된 이미지에 대해서만 File 객체 로드
+- J/P/B 시작 또는 16자리 추출 규칙을 Input Cell ID 매칭에 사용하지 않음
+- Simulation 텍스트 크기는 유지하면서 텍스트박스 높이/패딩 축소
+- Simulation 체크박스 16x16으로 축소
+- Stream / Blue Tool 입력박스의 배경/테두리 색상을 Workspace/Image Folder 입력박스와 통일
+
 ## v4.4.14
 
 - 좌측 메뉴에 `시뮬레이션` 페이지 추가

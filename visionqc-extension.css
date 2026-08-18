@@ -426,7 +426,7 @@ body:not([data-vq-page="classification"]) #root>div>main{
 }
 
 /* v4.4.14 - VPDL Local Simulation UI prototype */
-#root>div>header.vq43-host-header>.vq43-brand::after{content:"INSPECTION TERMINAL V4.4.14"}
+#root>div>header.vq43-host-header>.vq43-brand::after{content:"INSPECTION TERMINAL V4.4.15"}
 .vq43-sim-page{padding-bottom:42px!important}
 .vq43-sim-agent-card{margin-top:18px;border:1px solid #2b3b55;background:linear-gradient(145deg,#0c1629,#091221);border-radius:18px;padding:16px 18px}
 .vq43-sim-agent-card.ready{border-color:rgba(16,185,129,.48)}.vq43-sim-agent-card.checking{border-color:rgba(59,130,246,.48)}.vq43-sim-agent-card.offline{border-color:rgba(71,85,105,.65)}
@@ -463,3 +463,45 @@ body:not([data-vq-page="classification"]) #root>div>main{
 .vq43-sim-stream-stack{display:grid;gap:8px;min-width:0}.vq43-sim-stream-stack label{min-width:0}.vq43-sim-stream-stack label>div{display:grid;grid-template-columns:1fr 1fr;gap:6px}
 @media(max-width:1500px){.vq43-sim-position-row.integrated{grid-template-columns:130px 1fr 1fr}.vq43-sim-position-row.integrated>.vq43-sim-path:nth-of-type(3),.vq43-sim-position-row.integrated>.vq43-sim-stream-stack{grid-column:2/-1}.vq43-sim-position-row{grid-template-columns:130px 1fr 1fr}.vq43-sim-position-row>.vq43-sim-stream,.vq43-sim-position-row>.vq43-sim-stream-stack{grid-column:2/-1}}
 @media(max-width:850px){.vq43-sim-position-row,.vq43-sim-position-row.integrated{grid-template-columns:1fr!important}.vq43-sim-position-row>*{grid-column:auto!important}}
+
+
+/* v4.4.15 - compact Simulation controls + consistent Stream fields */
+.vq43-sim-path input,
+.vq43-sim-stream input,
+.vq43-sim-stream-stack input,
+.vq43-sim-form-grid input:not([type="checkbox"]){
+  width:100%!important;
+  min-width:0!important;
+  min-height:34px!important;
+  height:34px!important;
+  border:1px solid #2a3a55!important;
+  background:#040b16!important;
+  color:#dbeafe!important;
+  border-radius:8px!important;
+  padding:6px 9px!important;
+  font-size:13px!important;
+  outline:none!important;
+  box-sizing:border-box!important;
+}
+.vq43-sim-path input:focus,
+.vq43-sim-stream input:focus,
+.vq43-sim-stream-stack input:focus,
+.vq43-sim-form-grid input:not([type="checkbox"]):focus{border-color:#3b82f6!important}
+.vq43-sim-check{padding:8px 10px!important;min-height:36px!important;gap:8px!important;font-size:13px!important}
+.vq43-sim-check span{font-size:13px!important}
+.vq43-sim-check input[type="checkbox"],
+.vq43-sim-use input[type="checkbox"]{
+  width:16px!important;
+  height:16px!important;
+  min-width:16px!important;
+  min-height:16px!important;
+  max-width:16px!important;
+  max-height:16px!important;
+  padding:0!important;
+  margin:0!important;
+  flex:0 0 16px!important;
+  box-sizing:border-box!important;
+}
+.vq43-sim-position-row{padding:8px 10px!important;gap:8px!important}
+.vq43-sim-stream-stack{gap:6px!important}
+.vq43-sim-stream-stack label>div{gap:5px!important}

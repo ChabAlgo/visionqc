@@ -1,7 +1,7 @@
 index.html
 visionqc-extension.js
 visionqc-extension.css
-assets/index-v4.4.14.js
+assets/index-v4.4.15.js
 assets/tailwind-offline.css
 assets/jszip.min.js
 .nojekyll
