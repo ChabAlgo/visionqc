@@ -1,7 +1,7 @@
 (() => {
   'use strict';
 
-  const VERSION = '4.4.17';
+  const VERSION = '4.4.18';
   const POSITIONS = ['CA(TOP)', 'AN(TOP)', 'CA(BOT)', 'AN(BOT)'];
   const PAGE_KEY = 'visionqc-v43-active-page';
   const DB_NAME = 'visionqc-analysis-input-db-v1';
@@ -1504,10 +1504,14 @@
     const controller = new AbortController();
     const timer = setTimeout(() => controller.abort(), options.timeout || 6000);
     try {
+      // GitHub Pages(HTTPS) -> Local Agent(loopback) 요청에서 application/json을
+      // 명시하면 브라우저가 CORS preflight(OPTIONS)를 추가합니다.
+      // Agent API는 JSON 문자열 자체를 파싱하므로 CORS-safelisted text/plain으로 보내
+      // 단순 POST로 유지합니다. GET 상태 확인과 동일한 경로로 안정적으로 통신합니다.
       const response = await fetch(`${LOCAL_AGENT_URL}${path}`, {
         method: options.method || 'GET',
         cache: 'no-store',
-        headers: options.body ? { 'Content-Type': 'application/json' } : undefined,
+        headers: options.body ? { 'Content-Type': 'text/plain;charset=UTF-8' } : undefined,
         body: options.body ? JSON.stringify(options.body) : undefined,
         signal: controller.signal
       });

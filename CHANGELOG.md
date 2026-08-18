@@ -1,3 +1,7 @@
+## v4.4.18
+- Fix GitHub Pages -> Local Agent POST fetch by using CORS-safelisted text/plain JSON transport.
+- Refresh extension CSS/JS cache query to v4.4.18.
+
 # v4.4.17
 
 - Fixed missing React bundle reference that blanked the Classification page and host header.
