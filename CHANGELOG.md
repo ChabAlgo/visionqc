@@ -1,6 +1,6 @@
 # VisionQC Changelog
 
-## v4.4.13
+## v4.4.14
 
 - 좌측 메뉴에 `시뮬레이션` 페이지 추가
 - Integrated Simulation / Green Simulation / Blue Crop UI 추가

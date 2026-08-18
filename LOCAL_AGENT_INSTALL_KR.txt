@@ -1,0 +1,13 @@
+VisionQC Local Agent 설치 / 사용
+
+1. VisionQC_LocalAgent_v0.1.0_Source.zip 압축 해제
+2. VPDL 4.0이 설치된 PC에서 BUILD_RELEASE_x64.cmd 실행
+3. 빌드 성공 후 REGISTER_PROTOCOL.cmd 1회 실행
+4. GitHub Pages VisionQC > 시뮬레이션 > Agent 실행 클릭
+5. Chrome이 외부 프로그램 열기 확인을 표시하면 허용
+6. 연결 확인 -> Runtime / License 실제 확인
+7. Workspace / Image Folder / Output Folder 선택
+8. Simulation Start
+
+부팅 자동실행은 사용하지 않습니다.
+Simulation 종료 후 5분 동안 새 작업이 없으면 Agent는 자동 종료됩니다.

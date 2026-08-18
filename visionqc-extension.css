@@ -425,8 +425,8 @@ body:not([data-vq-page="classification"]) #root>div>main{
   pointer-events:none!important;
 }
 
-/* v4.4.13 - VPDL Local Simulation UI prototype */
-#root>div>header.vq43-host-header>.vq43-brand::after{content:"INSPECTION TERMINAL V4.4.13"}
+/* v4.4.14 - VPDL Local Simulation UI prototype */
+#root>div>header.vq43-host-header>.vq43-brand::after{content:"INSPECTION TERMINAL V4.4.14"}
 .vq43-sim-page{padding-bottom:42px!important}
 .vq43-sim-agent-card{margin-top:18px;border:1px solid #2b3b55;background:linear-gradient(145deg,#0c1629,#091221);border-radius:18px;padding:16px 18px}
 .vq43-sim-agent-card.ready{border-color:rgba(16,185,129,.48)}.vq43-sim-agent-card.checking{border-color:rgba(59,130,246,.48)}.vq43-sim-agent-card.offline{border-color:rgba(71,85,105,.65)}
@@ -441,3 +441,25 @@ body:not([data-vq-page="classification"]) #root>div>main{
 .vq43-sim-runbar{display:flex;align-items:center;justify-content:space-between;gap:16px;margin-top:16px;border:1px solid #2a3a55;background:#0c172a;border-radius:16px;padding:14px 16px}.vq43-sim-runbar strong{display:block;color:#f8fafc;font-size:13px}.vq43-sim-runbar span{display:block;color:#7183a1;font-size:10px;margin-top:4px}.vq43-sim-runbar>div:last-child{display:flex;gap:8px}.vq43-sim-runbar button:disabled{opacity:.35;cursor:not-allowed}
 @media(max-width:1200px){.vq43-sim-position-head{display:none}.vq43-sim-position-row{grid-template-columns:130px 1fr 1fr}.vq43-sim-stream{grid-column:2/-1}.vq43-sim-two-col{grid-template-columns:1fr}.vq43-sim-agent-grid{grid-template-columns:repeat(2,1fr)}}
 @media(max-width:760px){.vq43-sim-agent-grid{grid-template-columns:1fr}.vq43-sim-position-row{grid-template-columns:1fr}.vq43-sim-stream{grid-column:auto}.vq43-sim-form-grid{grid-template-columns:1fr}.vq43-sim-form-grid .wide{grid-column:auto}.vq43-sim-kpis{grid-template-columns:1fr}.vq43-sim-runbar{align-items:flex-start;flex-direction:column}}
+
+/* v4.4.14 Simulation readability + Local Agent connected UI */
+.vq43-sim-page .vq43-eyebrow{font-size:12px!important}
+.vq43-sim-page .vq43-title{font-size:30px!important}
+.vq43-sim-page .vq43-subtitle{font-size:15px!important;line-height:1.55!important}
+.vq43-sim-agent-title strong{font-size:19px!important}.vq43-sim-agent-title>b{font-size:14px!important}
+.vq43-sim-agent-grid span{font-size:11px!important}.vq43-sim-agent-grid strong{font-size:15px!important}.vq43-sim-agent-card>p{font-size:13px!important;line-height:1.5!important}
+.vq43-sim-tabs button{font-size:14px!important;padding:13px 18px!important}
+.vq43-sim-panel-head strong{font-size:18px!important}.vq43-sim-panel-head span{font-size:12px!important;line-height:1.45!important}.vq43-sim-local-badge{font-size:11px!important}
+.vq43-sim-use{font-size:14px!important}.vq43-sim-path>span,.vq43-sim-stream>span,.vq43-sim-stream-stack label>span,.vq43-sim-form-grid label>span{font-size:11px!important;margin-bottom:6px!important}
+.vq43-sim-path input,.vq43-sim-stream input,.vq43-sim-stream-stack input,.vq43-sim-form-grid input{font-size:14px!important;padding:10px 11px!important;min-height:40px!important}
+.vq43-sim-path button,.vq43-sim-inline button{font-size:13px!important;padding:9px 12px!important}
+.vq43-sim-check{font-size:14px!important;padding:12px!important}.vq43-sim-check span{font-size:14px!important}
+.vq43-sim-progress-head strong{font-size:16px!important}.vq43-sim-progress-head b{font-size:20px!important}
+.vq43-sim-kpis span{font-size:10px!important}.vq43-sim-kpis b{font-size:16px!important}.vq43-sim-log{font-size:13px!important;line-height:1.55!important;min-height:48px}
+.vq43-sim-runbar strong{font-size:16px!important}.vq43-sim-runbar span{font-size:12px!important}.vq43-sim-runbar .vq43-btn{font-size:14px!important;padding:11px 16px!important}
+.vq43-sim-runtime-check{margin-top:12px}
+.vq43-sim-position-row{grid-template-columns:135px minmax(280px,1fr) minmax(280px,1fr) 180px!important;align-items:end!important}
+.vq43-sim-position-row.integrated{grid-template-columns:135px minmax(240px,1fr) minmax(240px,1fr) minmax(240px,1fr) 220px!important}
+.vq43-sim-stream-stack{display:grid;gap:8px;min-width:0}.vq43-sim-stream-stack label{min-width:0}.vq43-sim-stream-stack label>div{display:grid;grid-template-columns:1fr 1fr;gap:6px}
+@media(max-width:1500px){.vq43-sim-position-row.integrated{grid-template-columns:130px 1fr 1fr}.vq43-sim-position-row.integrated>.vq43-sim-path:nth-of-type(3),.vq43-sim-position-row.integrated>.vq43-sim-stream-stack{grid-column:2/-1}.vq43-sim-position-row{grid-template-columns:130px 1fr 1fr}.vq43-sim-position-row>.vq43-sim-stream,.vq43-sim-position-row>.vq43-sim-stream-stack{grid-column:2/-1}}
+@media(max-width:850px){.vq43-sim-position-row,.vq43-sim-position-row.integrated{grid-template-columns:1fr!important}.vq43-sim-position-row>*{grid-column:auto!important}}

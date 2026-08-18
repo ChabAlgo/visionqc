@@ -1,0 +1,15 @@
+VisionQC Web v4.4.14 검사 결과
+
+PASS
+- visionqc-extension.js: Node.js syntax check
+- index.html local resource path existence
+- GitHub Pages 상대경로 유지
+- Simulation placeholder action 제거
+- Local Agent status / picker / runtime-check / start / stop API 호출 코드 연결
+- SSE EventSource 진행상태 연결 코드 포함
+- Simulation 입력값이 재렌더링 후 유지되도록 state 저장
+- Simulation 텍스트 확대 CSS 적용
+
+제한
+- 이 Linux 실행 환경의 Chromium은 관리자 정책으로 127.0.0.1 웹 페이지 접근이 차단되어 실제 GUI 클릭 E2E 테스트는 수행하지 못함.
+- VPDL Runtime/Cognex DLL/Windows MSBuild가 이 환경에 없으므로 Local Agent EXE 실제 컴파일 및 VPDL GPU 실행 테스트는 사용자 VPDL PC에서 필요함.
