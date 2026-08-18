@@ -1,7 +1,7 @@
 (() => {
   'use strict';
 
-  const VERSION = '4.4.18';
+  const VERSION = '4.4.19';
   const POSITIONS = ['CA(TOP)', 'AN(TOP)', 'CA(BOT)', 'AN(BOT)'];
   const PAGE_KEY = 'visionqc-v43-active-page';
   const DB_NAME = 'visionqc-analysis-input-db-v1';
@@ -1595,7 +1595,10 @@
       const data = await agentFetch(kind === 'file' ? '/api/pick/file' : '/api/pick/folder', {
         method:'POST', body:{ initialPath:current }, timeout:120000
       });
-      if (!data.ok || !data.path) return;
+      if (!data.ok || !data.path) {
+        if (data.error) showToast(`선택 실패: ${data.error}`, true);
+        return;
+      }
       if (key) form.positions[key][field] = data.path; else form[field] = data.path;
       const selector = `input[data-sim-field="${CSS.escape(field)}"]${key ? `[data-sim-key="${CSS.escape(key)}"]` : ':not([data-sim-key])'}`;
       const input = $(selector);
@@ -1671,9 +1674,9 @@
       const p = form.positions[key];
       const use = `<label class="vq43-sim-use"><input type="checkbox" data-sim-field="enabled" data-sim-key="${key}" ${p.enabled ? 'checked' : ''}><span>${label}</span></label>`;
       const image = simPathField(key, 'imageRoot', 'Image Folder', '로컬 이미지 폴더', 'folder');
-      if (mode === 'integrated') return `<div class="vq43-sim-position-row integrated">${use}${simPathField(key,'greenWorkspacePath','Green Workspace','Green Runtime Workspace')}${simPathField(key,'blueWorkspacePath','Blue Workspace','Blue Runtime Workspace')}${image}<div class="vq43-sim-stream-stack"><label><span>Green Stream</span><input data-sim-field="greenStreamName" data-sim-key="${key}" value="${escapeHtml(p.greenStreamName)}"></label><label><span>Blue Stream / Tool</span><div><input data-sim-field="blueStreamName" data-sim-key="${key}" value="${escapeHtml(p.blueStreamName)}"><input data-sim-field="blueToolName" data-sim-key="${key}" value="${escapeHtml(p.blueToolName)}"></div></label></div></div>`;
+      if (mode === 'integrated') return `<div class="vq43-sim-position-row integrated">${use}${simPathField(key,'greenWorkspacePath','Green Workspace','Green Runtime Workspace','file')}${simPathField(key,'blueWorkspacePath','Blue Workspace','Blue Runtime Workspace','file')}${image}<div class="vq43-sim-stream-stack"><label><span>Green Stream</span><input data-sim-field="greenStreamName" data-sim-key="${key}" value="${escapeHtml(p.greenStreamName)}"></label><label><span>Blue Stream / Tool</span><div><input data-sim-field="blueStreamName" data-sim-key="${key}" value="${escapeHtml(p.blueStreamName)}"><input data-sim-field="blueToolName" data-sim-key="${key}" value="${escapeHtml(p.blueToolName)}"></div></label></div></div>`;
       const extra = mode === 'blue' ? `<div class="vq43-sim-stream-stack"><label><span>Stream</span><input data-sim-field="streamName" data-sim-key="${key}" value="${escapeHtml(p.streamName)}"></label><label><span>Blue Tool</span><input data-sim-field="blueToolName" data-sim-key="${key}" value="${escapeHtml(p.blueToolName)}"></label></div>` : `<label class="vq43-sim-stream"><span>Stream</span><input data-sim-field="streamName" data-sim-key="${key}" value="${escapeHtml(p.streamName)}"></label>`;
-      return `<div class="vq43-sim-position-row">${use}${simPathField(key,'workspacePath','Workspace','Runtime Workspace')}${image}${extra}</div>`;
+      return `<div class="vq43-sim-position-row">${use}${simPathField(key,'workspacePath','Workspace','Runtime Workspace','file')}${image}${extra}</div>`;
     }).join('');
   }
 
