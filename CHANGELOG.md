@@ -1,3 +1,10 @@
+# v4.4.17
+
+- Fixed missing React bundle reference that blanked the Classification page and host header.
+- React bundle filename is now consistently `assets/index-v4.4.17.js`.
+- Added visible feedback while Local Agent native path picker is opening.
+- Recommended Local Agent v0.1.2 for foreground/topmost native dialogs.
+
 # VisionQC Changelog
 
 ## v4.4.16

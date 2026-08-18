@@ -1,1 +1,2 @@
-4.4.16
+VisionQC Web v4.4.17
+Local Agent compatible: v0.1.2

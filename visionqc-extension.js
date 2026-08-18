@@ -1,7 +1,7 @@
 (() => {
   'use strict';
 
-  const VERSION = '4.4.16';
+  const VERSION = '4.4.17';
   const POSITIONS = ['CA(TOP)', 'AN(TOP)', 'CA(BOT)', 'AN(BOT)'];
   const PAGE_KEY = 'visionqc-v43-active-page';
   const DB_NAME = 'visionqc-analysis-input-db-v1';
@@ -1583,15 +1583,27 @@
     const field = control.dataset.simField;
     const kind = control.dataset.simKind || 'folder';
     const current = key ? (form.positions[key]?.[field] || '') : (form[field] || '');
+    const originalText = control.textContent;
+    control.disabled = true;
+    control.textContent = '여는 중...';
+    showToast(kind === 'file' ? 'Windows 파일 선택창을 여는 중입니다.' : 'Windows 폴더 선택창을 여는 중입니다.');
     try {
       const data = await agentFetch(kind === 'file' ? '/api/pick/file' : '/api/pick/folder', {
         method:'POST', body:{ initialPath:current }, timeout:120000
       });
       if (!data.ok || !data.path) return;
       if (key) form.positions[key][field] = data.path; else form[field] = data.path;
-      const input = $(`[data-sim-field="${CSS.escape(field)}"]${key ? `[data-sim-key="${CSS.escape(key)}"]` : ':not([data-sim-key])'}`);
+      const selector = `input[data-sim-field="${CSS.escape(field)}"]${key ? `[data-sim-key="${CSS.escape(key)}"]` : ':not([data-sim-key])'}`;
+      const input = $(selector);
       if (input) input.value = data.path;
-    } catch (error) { showToast(`선택 실패: ${error.message}`, true); }
+    } catch (error) {
+      showToast(`선택 실패: ${error.message}`, true);
+    } finally {
+      if (control && control.isConnected) {
+        control.disabled = false;
+        control.textContent = originalText || '선택';
+      }
+    }
   }
 
   function buildSimulationRequest() {
