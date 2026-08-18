@@ -1,7 +1,7 @@
 (() => {
   'use strict';
 
-  const VERSION = '4.4.12';
+  const VERSION = '4.4.13';
   const POSITIONS = ['CA(TOP)', 'AN(TOP)', 'CA(BOT)', 'AN(BOT)'];
   const PAGE_KEY = 'visionqc-v43-active-page';
   const DB_NAME = 'visionqc-analysis-input-db-v1';
@@ -11,6 +11,7 @@
   const RESULT_PREFIX = 'result:';
   const THRESHOLD_KEY = 'visionqc-v439-tool-thresholds';
   const IMG_RE = /\.(png|jpe?g|bmp|gif|webp|tif?f)$/i;
+  const LOCAL_AGENT_URL = 'http://127.0.0.1:17891';
   const safeStorageGet = (key) => { try { return localStorage.getItem(key); } catch (_) { return null; } };
   const safeStorageSet = (key, value) => { try { localStorage.setItem(key, value); } catch (_) { /* unavailable origin */ } };
   const safeJsonParse = (value, fallback = {}) => { try { return value ? JSON.parse(value) : fallback; } catch (_) { return fallback; } };
@@ -31,6 +32,9 @@
     analysisScoreCompare: 'GTE',
     analysisPoints: [],
     analysisPointMap: new Map(),
+    simulationMode: 'integrated',
+    simulationAgent: { status: 'idle', version: '-', vpdl: '-', license: '-', gpu: '-', message: 'Local Agent 연결 전' },
+    simulationChecking: false,
     thresholds: safeJsonParse(safeStorageGet(THRESHOLD_KEY), {}),
     loading: '',
     modalMissKey: null,
@@ -129,9 +133,10 @@
             ${navItem('main', '▣', '메인', 'Cell · Position · Tool NG율')}
             ${navItem('analysis', '⌁', '분석', 'Tool별 Score 세부 분석')}
             ${navItem('classification', '▤', '분류', '기존 이미지 분류 기능')}
+            ${navItem('simulation', '▶', '시뮬레이션', 'VPDL Local Runtime · GPU')}
             ${navItem('settings', '⚙', '설정', '결과 파일 · 실제 NG 경로')}
           </nav>
-          <div class="vq43-drawer-foot">VPDL Runtime 및 Live Camera 기능은 포함하지 않습니다.</div>
+          <div class="vq43-drawer-foot">VPDL Simulation은 사용자 PC의 Local Agent · Runtime · GPU에서 실행하도록 구성합니다.</div>
         </aside>
         <section id="vq43-shell"><div id="vq43-page" class="vq43-page"></div></section>
         <div id="vq43-chart-modal"></div>
@@ -234,7 +239,7 @@
   }
 
   function setPage(page) {
-    if (!['main', 'analysis', 'classification', 'settings'].includes(page)) page = 'classification';
+    if (!['main', 'analysis', 'classification', 'simulation', 'settings'].includes(page)) page = 'classification';
     state.page = page;
     document.body.dataset.vqPage = page;
     safeStorageSet(PAGE_KEY, page);
@@ -358,6 +363,15 @@
     if (!action) return;
     if (action === 'close-menu') toggleMenu(false);
     else if (action === 'open-settings') setPage('settings');
+    else if (action === 'simulation-mode') {
+      state.simulationMode = control.dataset.vqMode || 'integrated';
+      renderSimulation();
+      bindPageControls();
+    }
+    else if (action === 'simulation-agent-check') checkSimulationAgent();
+    else if (action === 'simulation-agent-info') showToast('실제 VPDL 실행은 Local Agent 구현 후 연결됩니다. 이번 버전은 Web GUI 및 연결 규격 초안입니다.');
+    else if (action === 'simulation-browse-placeholder') showToast('Workspace/폴더 선택은 Local Agent가 Windows 선택창을 열도록 다음 단계에서 연결합니다.');
+    else if (action === 'simulation-start-placeholder') showToast('Local Agent가 연결되어야 VPDL Runtime 시뮬레이션을 시작할 수 있습니다.', true);
     else if (action === 'choose-result') chooseResultFile(control.closest('[data-vq-position]')?.dataset.vqPosition);
     else if (action === 'remove-result') removeResultInput(control.closest('[data-vq-position]')?.dataset.vqPosition);
     else if (action === 'choose-ng-folder') chooseNgFolder();
@@ -1024,6 +1038,7 @@
     }
     if (state.page === 'main') renderDashboard();
     else if (state.page === 'analysis') renderAnalysis();
+    else if (state.page === 'simulation') renderSimulation();
     else if (state.page === 'settings') renderSettings();
     bindPageControls();
   }
@@ -1432,6 +1447,138 @@
       return `<circle${attrs} cx="${x(i)}" cy="${y(point.score)}" r="${radius}" fill="${point.result==='NG'?'#ef4444':'#10b981'}" stroke="${point.score===min?'#fbbf24':imageStroke}" stroke-width="${point.score===min?3:(point.hasActualImage?2:1)}"><title>${escapeHtml(point.cellId)} · ${escapeHtml(point.position)} · ${point.result} · Score ${point.score.toFixed(4)}${point.hasActualImage?' · 이미지 있음':''}</title></circle>`;
     }).join('');
     return `<svg viewBox="0 0 ${width} ${height}" data-vq-scatter-svg="1">${grid}${lines}${poly}${dots}<text x="${left}" y="${height-(options.large?18:12)}" font-size="${options.large?17:13}" fill="#7c8da8">낮은 Score</text><text x="${width-right}" y="${height-(options.large?18:12)}" text-anchor="end" font-size="${options.large?17:13}" fill="#7c8da8">높은 Score</text></svg>`;
+  }
+
+
+  async function checkSimulationAgent() {
+    if (state.simulationChecking) return;
+    state.simulationChecking = true;
+    state.simulationAgent = { ...state.simulationAgent, status: 'checking', message: '127.0.0.1 Local Agent 확인 중...' };
+    if (state.page === 'simulation') { renderSimulation(); bindPageControls(); }
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), 1800);
+    try {
+      const response = await fetch(`${LOCAL_AGENT_URL}/api/status`, { method: 'GET', cache: 'no-store', signal: controller.signal });
+      if (!response.ok) throw new Error(`HTTP ${response.status}`);
+      const data = await response.json();
+      state.simulationAgent = {
+        status: 'connected',
+        version: data.agentVersion || data.version || '-',
+        vpdl: data.vpdlVersion || data.vpdl || '-',
+        license: data.license || data.licenseStatus || '확인됨',
+        gpu: data.gpu || data.gpuName || '-',
+        message: 'Local Agent 연결됨'
+      };
+    } catch (_) {
+      state.simulationAgent = { status: 'offline', version: '-', vpdl: '-', license: '-', gpu: '-', message: 'Local Agent가 실행 중이지 않습니다.' };
+    } finally {
+      clearTimeout(timer);
+      state.simulationChecking = false;
+      if (state.page === 'simulation') { renderSimulation(); bindPageControls(); }
+    }
+  }
+
+  function simulationModeLabel(mode) {
+    if (mode === 'green') return 'Green Simulation';
+    if (mode === 'blue') return 'Blue Crop';
+    return 'Integrated Simulation';
+  }
+
+  function simulationPositionRows() {
+    const rows = [
+      ['CA(TOP)', 'CA_TOP'], ['AN(TOP)', 'AN_TOP'], ['CA(BOT)', 'CA_BOT'], ['AN(BOT)', 'AN_BOT']
+    ];
+    return rows.map(([label, key]) => `
+      <div class="vq43-sim-position-row">
+        <label class="vq43-sim-use"><input type="checkbox" checked><span>${label}</span></label>
+        <div class="vq43-sim-path"><span>Workspace</span><div><input value="" placeholder="Runtime Workspace (.vrws / .vws)"><button type="button" data-vq-action="simulation-browse-placeholder">선택</button></div></div>
+        <div class="vq43-sim-path"><span>Image Folder</span><div><input value="" placeholder="로컬 이미지 폴더"><button type="button" data-vq-action="simulation-browse-placeholder">선택</button></div></div>
+        <label class="vq43-sim-stream"><span>Stream</span><input value="기본값"></label>
+      </div>`).join('');
+  }
+
+  function renderSimulation() {
+    const page = $('#vq43-page');
+    if (!page) return;
+    const agent = state.simulationAgent || {};
+    const connected = agent.status === 'connected';
+    const checking = state.simulationChecking || agent.status === 'checking';
+    const statusClass = connected ? 'ready' : checking ? 'checking' : 'offline';
+    const statusText = connected ? 'Connected' : checking ? 'Checking...' : 'Stopped';
+    const mode = state.simulationMode || 'integrated';
+    const modeText = simulationModeLabel(mode);
+    const modeDescription = mode === 'integrated'
+      ? 'Blue Crop → Green 검사까지 연속 실행하는 통합 시뮬레이션 화면입니다.'
+      : mode === 'green'
+        ? 'Green Tool 단독 시뮬레이션 입력과 Runtime 설정 화면입니다.'
+        : 'Blue Tool Locate 결과를 기준으로 Crop을 생성하는 시뮬레이션 화면입니다.';
+
+    page.innerHTML = `
+      <div class="vq43-content vq43-sim-page">
+        <div class="vq43-topline">
+          <div>
+            <div class="vq43-eyebrow">VPDL Local Simulation</div>
+            <h1 class="vq43-title">VPDL 시뮬레이션</h1>
+            <p class="vq43-subtitle">GUI만 VisionQC Web에서 제공하고 Runtime · Cognex License · GPU · 이미지 처리는 사용자 로컬 PC에서 실행하는 구조입니다.</p>
+          </div>
+          <div class="vq43-top-actions">
+            <button class="vq43-btn" data-vq-action="simulation-agent-info">구조 안내</button>
+            <button class="vq43-btn vq43-btn-blue" data-vq-action="simulation-agent-check">${checking ? '◌ 확인 중...' : 'Local Agent 연결 확인'}</button>
+          </div>
+        </div>
+
+        <section class="vq43-sim-agent-card ${statusClass}">
+          <div class="vq43-sim-agent-title"><div><span class="vq43-sim-dot"></span><strong>Local Engine</strong></div><b>${statusText}</b></div>
+          <div class="vq43-sim-agent-grid">
+            <div><span>Agent</span><strong>${escapeHtml(agent.version || '-')}</strong></div>
+            <div><span>VPDL Runtime</span><strong>${escapeHtml(agent.vpdl || '-')}</strong></div>
+            <div><span>License</span><strong>${escapeHtml(agent.license || '-')}</strong></div>
+            <div><span>GPU</span><strong>${escapeHtml(agent.gpu || '-')}</strong></div>
+          </div>
+          <p>${escapeHtml(agent.message || 'Local Agent 연결 전')}</p>
+        </section>
+
+        <div class="vq43-sim-tabs">
+          <button class="${mode === 'integrated' ? 'active' : ''}" data-vq-action="simulation-mode" data-vq-mode="integrated">Integrated Simulation</button>
+          <button class="${mode === 'green' ? 'active' : ''}" data-vq-action="simulation-mode" data-vq-mode="green">Green Simulation</button>
+          <button class="${mode === 'blue' ? 'active' : ''}" data-vq-action="simulation-mode" data-vq-mode="blue">Blue Crop</button>
+        </div>
+
+        <section class="vq43-sim-panel">
+          <div class="vq43-sim-panel-head"><div><strong>${modeText}</strong><span>${modeDescription}</span></div><span class="vq43-sim-local-badge">LOCAL PC</span></div>
+          <div class="vq43-sim-position-head"><span>사용 / Position</span><span>Workspace</span><span>Image 입력 폴더</span><span>Stream</span></div>
+          <div class="vq43-sim-position-list">${simulationPositionRows()}</div>
+        </section>
+
+        <div class="vq43-sim-two-col">
+          <section class="vq43-sim-panel">
+            <div class="vq43-sim-panel-head"><div><strong>Output / Runtime</strong><span>기존 DL_Simulation 설정을 Web GUI 형태로 구성</span></div></div>
+            <div class="vq43-sim-form-grid">
+              <label class="wide"><span>Output Folder</span><div class="vq43-sim-inline"><input placeholder="결과 저장 폴더"><button type="button" data-vq-action="simulation-browse-placeholder">선택</button></div></label>
+              <label><span>GPU Devices</span><input value="0"></label>
+              <label><span>JPEG Quality</span><input type="number" value="95" min="1" max="100"></label>
+              <label><span>Progress Update</span><input type="number" value="100" min="1"></label>
+              <label class="vq43-sim-check"><input type="checkbox" checked><span>GPU 사용</span></label>
+              <label class="vq43-sim-check"><input type="checkbox"><span>하위 폴더 구조 유지</span></label>
+              ${mode === 'integrated' ? '<label class="vq43-sim-check"><input type="checkbox"><span>Blue Crop 이미지 저장</span></label>' : ''}
+              ${mode !== 'blue' ? '<label class="vq43-sim-check"><input type="checkbox"><span>HeatMap Image Save</span></label>' : ''}
+            </div>
+          </section>
+
+          <section class="vq43-sim-panel">
+            <div class="vq43-sim-panel-head"><div><strong>Simulation Status</strong><span>Local Agent에서 전달되는 진행률과 결과를 표시할 영역</span></div></div>
+            <div class="vq43-sim-progress-head"><strong>0 / 0</strong><b>0.00%</b></div>
+            <div class="vq43-sim-progress"><i style="width:0%"></i></div>
+            <div class="vq43-sim-kpis"><div><span>OK</span><b>0</b></div><div><span>NG</span><b>0</b></div><div><span>Current</span><b>-</b></div></div>
+            <div class="vq43-sim-log"><span>[READY]</span> ${connected ? 'Local Agent 연결 완료. Simulation 설정을 준비할 수 있습니다.' : 'Local Agent 연결 전입니다.'}</div>
+          </section>
+        </div>
+
+        <section class="vq43-sim-runbar">
+          <div><strong>실제 실행 단계</strong><span>다음 단계에서 첨부된 DL_Simulation_v1.13 엔진을 Local Agent로 연결합니다.</span></div>
+          <div><button class="vq43-btn vq43-btn-red" disabled>Stop</button><button class="vq43-btn vq43-btn-blue" data-vq-action="simulation-start-placeholder" ${connected ? '' : 'disabled'}>Simulation Start</button></div>
+        </section>
+      </div>`;
   }
 
   function renderSettings() {
