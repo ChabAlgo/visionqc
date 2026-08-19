@@ -1,0 +1,31 @@
+VisionQC v4.4.23 + Local Agent v0.2.3 업데이트/테스트 순서
+===========================================================
+
+A. Agent
+1) 기존 Agent 종료
+2) v0.2.3 Source 압축 해제
+3) BUILD_RELEASE_x64.cmd
+4) 반드시 경고/오류 로그 확인 (목표: 오류 0)
+5) REGISTER_PROTOCOL.cmd
+6) CHECK_PROTOCOL.cmd -> AgentVersion 0.2.3 경로 확인
+7) RUN_AGENT.cmd
+8) http://127.0.0.1:17891/api/status -> agentVersion 0.2.3 확인
+
+B. GitHub Pages
+1) v4.4.23 ZIP 내용물을 repository root에 덮어쓰기
+2) old assets/index-v4.4.22.js가 남아 있으면 삭제 가능 (index.html은 v4.4.23만 참조)
+3) GitHub Desktop Commit -> Push
+4) Pages 배포 완료 후 Ctrl+Shift+R
+
+C. 핵심 검증
+1) 메뉴: 72px icon rail / 상단 메뉴 버튼 클릭 -> 확장
+2) 분류: 상단바 보임 / TOPTEC 이미지 로고 보임
+3) 다른 메뉴: React 상단바 숨김
+4) Simulation Options 아래쪽으로 scroll -> Judgement 추가/삭제 -> 같은 scroll 위치 유지
+5) 옵션 TextBox/표가 오른쪽 패널 밖으로 넘지 않는지 확인
+6) Progress Update=1: Status 1,2,3... / Live 분석도 매 이미지
+7) Progress Update=5: Status 5,10,15... / Live 분석도 동일 경계
+8) Workspace 선택: Workspace Runtime Structure에 Stream/Tool/Tag/Class/Feature 표시
+9) ToolName 입력: 존재 Green Tool=초록 / 없는 이름=빨강
+10) Simulation 실행 중 모든 옵션/Workspace/Position control disabled 확인
+11) Progress Log Auto Scroll ON/OFF, ETA/img/s 확인

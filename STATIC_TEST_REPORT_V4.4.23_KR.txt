@@ -1,0 +1,23 @@
+VisionQC v4.4.23 제작환경 정적 검증
+===================================
+PASS
+- visionqc-extension.js: node --check
+- assets/index-v4.4.23.js: node --check
+- index.html 로컬 script/css asset 존재 확인
+- data-vq-action 48개: runAction handler 누락 0
+- Tool Settings data-sim-tool-position-index: 0
+- ToolName dropdown: 0 / text input: 사용
+- `@TOPTEC` bundle literal: 0, supplied TOPTEC PNG 존재
+- Workspace Runtime Structure / Progress Log / Auto Scroll markup 확인
+- clean consistency stylesheet가 legacy extension stylesheet 뒤에 로드됨
+
+Agent v0.2.3 정적 검증
+- AgentServer.cs brace/parenthesis balance 확인
+- exact Batch buffer / duplicate progress guard 확인
+- Workspace inspect EnginePath + DeferredFileStream fallback 확인
+- KnownTags / KnownClasses / KnownFeatures 검사 코드 확인
+- ETA/img/s/batch state 확인
+
+제작환경 제한
+- Windows .NET Framework + Cognex VPDL Runtime이 없어 Agent EXE 실제 컴파일/Runtime E2E 테스트는 하지 못함.
+- Chromium local/file navigation은 조직 정책으로 차단되어 full UI click E2E는 하지 못함.

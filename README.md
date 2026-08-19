@@ -1,19 +1,21 @@
-# VisionQC GitHub Pages v4.4.22
+# VisionQC GitHub Pages v4.4.23
 
-GitHub Pages 정적 배포용 VisionQC Web입니다.
+GitHub Pages 정적 배포용 VisionQC Web입니다. 실제 VPDL Runtime/GPU 작업은 사용자 PC의 VisionQC Local Agent v0.2.3에서 실행합니다.
 
-## v4.4.22 핵심
-- Simulation 옵션 변경 즉시 반영 + 파라미터 편집 시 스크롤 위치 유지
-- 기존 Position checkbox 유지 + 공통 Custom Position 추가/이름변경/삭제
-- Custom Position을 Main / Analysis / Settings / Simulation / Tool Settings / Result Input / 실제 NG 경로에 동기화
-- Position별 실제 NG 폴더 개별 선택/교체/삭제
-- Agent 제거 버튼 및 Agent 버전 mismatch 안내
-- 메뉴 버튼과 Page title 겹침 보정
-- Progress Update 단위 Live Analysis 유지
+## v4.4.23 핵심
+- HSAGP 참고형 좌측 icon rail + 메뉴 버튼 확장 drawer
+- 분류 화면 TOPTEC 이미지 로고 적용, React 상단바는 분류에서만 표시
+- Simulation Options 누적 CSS/재렌더 충돌 정리 및 별도 consistency stylesheet 적용
+- Judgement/Tool 구조 변경 시 Options/페이지 scroll 위치와 focus 보존
+- Progress Update exact batch: 1이면 매 이미지, 5면 5/10/15... + 마지막 잔여 반영
+- Live Simulation 결과를 Main/Analysis 기존 분석 모델에 직접 반영
+- 상세 Progress Log + Auto Scroll + Elapsed/ETA/img/s/Batch 표시
+- Workspace Runtime Structure: Stream, Tool Type, Tag/Class/Feature 표시
+- Tool Settings의 Position별 체크 제거, ToolName text input + Runtime 존재 유무 색상 표시
+- Custom Position은 Settings/Main/Analysis/Simulation/Result/실제 NG 경로에 공통 적용
+- Simulation 실행 중 옵션/Workspace/Position 변경 잠금
 
-## Local Agent
-Simulation의 Custom Position 실행에는 `VisionQC Local Agent v0.2.2`을 사용하세요.
+## 배포
+Repository root에 이 ZIP의 내용물을 그대로 놓고 GitHub Pages를 `main / (root)`로 배포합니다.
 
-기존 Agent가 0.1.2 등으로 계속 실행되면 새 Agent 폴더에서 `BUILD_RELEASE_x64.cmd` 후 `REGISTER_PROTOCOL.cmd`를 다시 실행하세요. 새 REGISTER 스크립트는 127.0.0.1:17891의 기존 Agent를 먼저 종료하고, 현재 폴더의 EXE 경로로 `visionqc-agent://` 등록을 덮어쓴 뒤 Registry 값을 화면에 표시합니다.
-
-검증/업데이트 순서는 `UPDATE_AND_TEST_V4.4.22_KR.txt`를 참고하세요.
+권장 Local Agent: **v0.2.3**

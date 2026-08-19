@@ -1,4 +1,4 @@
-Workspace 구조 자동 인식 구현 근거
+﻿Workspace 구조 자동 인식 구현 근거
 
 첨부 BeadGridInspector 소스 확인:
 - CognexRuntimeAdapter.Load(): Runtime Workspace 로드
@@ -13,8 +13,8 @@ Workspace 구조 자동 인식 구현 근거
 - ViDi2.IRedTool.KnownClasses
 - ViDi2.IBlueTool.KnownFeatures
 
-VisionQC Agent v0.2.2는 위 Runtime 정보를 /api/workspace/inspect 로 반환합니다.
-Web v4.4.22는 Workspace 선택 직후 이 API를 호출하여:
+VisionQC Agent v0.2.3는 위 Runtime 정보를 /api/workspace/inspect 로 반환합니다.
+Web v4.4.23는 Workspace 선택 직후 이 API를 호출하여:
 - Stream dropdown
 - Blue Tool dropdown
 - Green Tool Settings의 Tool dropdown

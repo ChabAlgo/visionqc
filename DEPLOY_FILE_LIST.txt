@@ -1,4 +1,4 @@
-VisionQC v4.4.22 GitHub Pages repository root
+﻿VisionQC v4.4.23 GitHub Pages repository root
 
 index.html
 .nojekyll
@@ -6,7 +6,7 @@ VERSION.txt
 visionqc-extension.js
 visionqc-extension.css
 assets/
-  index-v4.4.22.js
+  index-v4.4.23.js
   jszip.min.js
   tailwind-offline.css
   fonts/ (if present)
