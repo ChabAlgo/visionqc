@@ -1,15 +1,14 @@
-GitHub Pages repository root
-├─ index.html
-├─ visionqc-extension.js
-├─ visionqc-extension.css
-├─ .nojekyll
-├─ VERSION.txt
-├─ README.md
-├─ CHANGELOG.md
-├─ SIMULATION_MIGRATION_AUDIT_KR.md
-├─ LOCAL_AGENT_API_KR.md
-└─ assets/
-   ├─ index-v4.4.20.js
-   ├─ jszip.min.js
-   ├─ tailwind-offline.css
-   └─ fonts/
+VisionQC v4.4.21 GitHub Pages repository root
+
+index.html
+.nojekyll
+VERSION.txt
+visionqc-extension.js
+visionqc-extension.css
+assets/
+  index-v4.4.21.js
+  jszip.min.js
+  tailwind-offline.css
+  fonts/ (if present)
+
+Documentation files may remain in repository root.

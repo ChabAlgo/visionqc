@@ -1,2 +1,2 @@
-VisionQC Web v4.4.20
-Required Local Agent: v0.2.0+
+VisionQC DirectExport v4.4.21
+Local Agent recommended: v0.2.1

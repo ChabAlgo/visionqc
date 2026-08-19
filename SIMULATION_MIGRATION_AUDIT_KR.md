@@ -1,9 +1,11 @@
-# DL_Simulation v1.13 → VisionQC v4.4.20 이식 점검
+# DL_Simulation v1.13 → VisionQC v4.4.21 이식 점검
 
 기준 소스: `DL_Simulation_v1.13_cell_position_summary_source`
 
 ## 1. Green Simulation
-- Position별 사용 여부: 이식. VisionQC에서는 각 모드에서 Position을 추가/삭제하는 방식.
+- Position별 사용 여부: 이식. 기존 checkbox를 유지하며 Blue 모드 실행 여부를 제어합니다.
+- Custom Position 목록은 Green/Integrated/Settings/Analysis와 공통입니다. 기존 checkbox를 유지하며 Green/Blue/Integrated 모드별 실행 여부를 독립적으로 체크합니다.
+- Custom Position: Web 공통 Position 목록에 자유롭게 추가/이름변경/삭제하며 Main/Analysis/Settings/Simulation/Tool 설정과 동기화합니다.
 - Position Workspace / Image Input / Stream: 이식.
 - Cell ID CSV Filter: 이식.
 - Keyword Mode: 이식.
@@ -19,7 +21,7 @@
 - Alpha Cut: 이식.
 - 진행 표시 주기: `Progress Update`로 이식.
 - Tool Settings: 이식.
-  - CA(TOP), CA(BOT), AN(TOP), AN(BOT) 적용 위치
+  - 현재 공통 Custom Position 전체를 동적 column으로 표시하고 Tool별 적용 위치를 체크
   - ToolName
   - Threshold
   - Judgement
@@ -48,7 +50,7 @@
 - Fallback Preview: Agent API + Web Preview Modal로 이식.
 
 ## 3. Integrated Simulation
-- Integrated 전용 Position 선택: 이식. Green/Blue와 독립적으로 추가/삭제 가능.
+- Integrated Position 선택: 공통 Custom Position 목록을 사용하고, checkbox로 Integrated 모드 실행 여부만 독립 제어합니다.
 - Integrated Cell ID CSV: 이식.
 - Keyword Mode / Common Input Root / Position Keyword: 이식.
 - Blue Crop 이미지 저장: 이식.
@@ -79,7 +81,7 @@ CSV 파일을 중간에 읽지 않습니다.
 - Tool별 result
 - Tool별 score
 
-Agent v0.2.0이 각 이미지의 상세 결과 객체를 내부 버퍼에 저장하고 `Progress Update = N`이면 N개가 쌓였을 때 SSE `analysis` 이벤트 한 번으로 Web에 Batch 전송합니다.
+Agent v0.2.1이 각 이미지의 상세 결과 객체를 내부 버퍼에 저장하고 `Progress Update = N`이면 N개가 쌓였을 때 SSE `analysis` 이벤트 한 번으로 Web에 Batch 전송합니다.
 
 예: `Progress Update = 100`
 - VPDL 검사는 1장씩 계속 처리
@@ -102,4 +104,4 @@ Agent v0.2.0이 각 이미지의 상세 결과 객체를 내부 버퍼에 저장
 - 원본 WinForms GUI 자체는 사용하지 않음.
 - 파일/폴더 Picker는 Local Agent Native Shell Picker 사용.
 - Log / Progress는 VisionQC Simulation Status로 통합.
-- Position checkbox 대신 각 모드별 Position 추가/삭제 UI 사용.
+- Position checkbox는 유지. Position 자체의 추가/삭제/이름변경은 공통 Position 구성으로 제공하고 checkbox는 모드별 실행 여부만 담당.

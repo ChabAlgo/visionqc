@@ -1,8 +1,13 @@
 (() => {
   'use strict';
 
-  const VERSION = '4.4.20';
-  const POSITIONS = ['CA(TOP)', 'AN(TOP)', 'CA(BOT)', 'AN(BOT)'];
+  const VERSION = '4.4.21';
+  const DEFAULT_POSITION_DEFS = [
+    { key:'CA_TOP', name:'CA(TOP)' },
+    { key:'AN_TOP', name:'AN(TOP)' },
+    { key:'CA_BOT', name:'CA(BOT)' },
+    { key:'AN_BOT', name:'AN(BOT)' }
+  ];
   const PAGE_KEY = 'visionqc-v43-active-page';
   const DB_NAME = 'visionqc-analysis-input-db-v1';
   const DB_VERSION = 1;
@@ -10,23 +15,46 @@
   const NG_ROOT_KEY = 'ng-root';
   const RESULT_PREFIX = 'result:';
   const THRESHOLD_KEY = 'visionqc-v439-tool-thresholds';
-  const SIM_CONFIG_KEY = 'visionqc-v4420-simulation-config';
-  const SIM_DEFAULT_KEY = 'visionqc-v4420-simulation-defaults';
+  const SIM_CONFIG_KEY = 'visionqc-v4421-simulation-config';
+  const SIM_DEFAULT_KEY = 'visionqc-v4421-simulation-defaults';
+  const SIM_LEGACY_CONFIG_KEY = 'visionqc-v4420-simulation-config';
+  const SIM_LEGACY_DEFAULT_KEY = 'visionqc-v4420-simulation-defaults';
+  const POSITION_CONFIG_KEY = 'visionqc-v4421-position-config';
+  const NG_POSITION_PREFIX = 'ng-position:';
   const IMG_RE = /\.(png|jpe?g|bmp|gif|webp|tif?f)$/i;
   const LOCAL_AGENT_URL = 'http://127.0.0.1:17891';
+  const EXPECTED_AGENT_VERSION = '0.2.1';
   const safeStorageGet = (key) => { try { return localStorage.getItem(key); } catch (_) { return null; } };
   const safeStorageSet = (key, value) => { try { localStorage.setItem(key, value); } catch (_) { /* unavailable origin */ } };
   const safeJsonParse = (value, fallback = {}) => { try { return value ? JSON.parse(value) : fallback; } catch (_) { return fallback; } };
+  const sanitizePositionDefs = (value) => {
+    const source = Array.isArray(value) ? value : [];
+    const seenKeys = new Set(), seenNames = new Set(), out = [];
+    source.forEach((item, index) => {
+      const name = String(item?.name ?? item?.label ?? '').trim();
+      if (!name) return;
+      const nameKey = name.toUpperCase();
+      if (seenNames.has(nameKey)) return;
+      let key = String(item?.key || '').trim().replace(/[^A-Za-z0-9_-]/g, '_');
+      if (!key || seenKeys.has(key.toUpperCase())) key = `POS_${Date.now().toString(36).toUpperCase()}_${index}`;
+      seenKeys.add(key.toUpperCase()); seenNames.add(nameKey);
+      out.push({ key, name });
+    });
+    return out.length ? out : DEFAULT_POSITION_DEFS.map(x => ({...x}));
+  };
+  const initialPositions = sanitizePositionDefs(safeJsonParse(safeStorageGet(POSITION_CONFIG_KEY), DEFAULT_POSITION_DEFS));
   const state = {
     page: safeStorageGet(PAGE_KEY) || 'classification',
+    positions: initialPositions,
     menuOpen: false,
     resultInputs: {},
     ngRootName: '',
     ngImages: [],
+    ngFolderNames: {},
     ngWarnings: [],
     restoreWarnings: [],
     model: null,
-    selectedMissPosition: 'CA(TOP)',
+    selectedMissPosition: initialPositions[0]?.name || 'CA(TOP)',
     analysisTool: '',
     analysisScope: 'TOOL_NG',
     analysisPosition: 'ALL',
@@ -39,7 +67,7 @@
     simulationChecking: false,
     simulationEvents: null,
     simulationProgress: { running:false, processed:0, total:0, ok:0, ng:0, current:'-', message:'Ready', error:'' },
-    simulationForm: safeJsonParse(safeStorageGet(SIM_CONFIG_KEY), {}),
+    simulationForm: safeJsonParse(safeStorageGet(SIM_CONFIG_KEY) || safeStorageGet(SIM_LEGACY_CONFIG_KEY), {}),
     simulationLiveActive: false,
     simulationLiveRows: 0,
     thresholds: safeJsonParse(safeStorageGet(THRESHOLD_KEY), {}),
@@ -74,8 +102,28 @@
   const normalizeHeader = (value) => String(value ?? '').trim();
   const normalizeHeaderKey = (value) => normalizeHeader(value).replace(/\s+/g, '').toLowerCase();
   const normalizePath = (value) => String(value || '').replace(/\\/g, '/').replace(/^\/+|\/+$/g, '');
-  const normalizePositionToken = (value) => String(value ?? '').toUpperCase().replace(/[^A-Z]/g, '');
-  const normalizePosition = (value) => POSITIONS.find((position) => normalizePositionToken(position) === normalizePositionToken(value)) || null;
+  const normalizePositionToken = (value) => String(value ?? '').toUpperCase().replace(/[^A-Z0-9]/g, '');
+  const positionDefs = () => state.positions?.length ? state.positions : DEFAULT_POSITION_DEFS;
+  const positionNames = () => positionDefs().map(x => x.name);
+  const positionDefByKey = (key) => positionDefs().find(x => x.key === key) || null;
+  const positionDefByName = (name) => positionDefs().find(x => x.name === name) || null;
+  const normalizePosition = (value) => {
+    const text = String(value ?? '').trim();
+    if (!text) return null;
+    const exact = positionNames().find(position => position.toUpperCase() === text.toUpperCase());
+    if (exact) return exact;
+    const token = normalizePositionToken(text);
+    return positionNames().find(position => normalizePositionToken(position) === token) || null;
+  };
+  const persistPositions = () => safeStorageSet(POSITION_CONFIG_KEY, JSON.stringify(positionDefs()));
+  const positionColorMap = () => {
+    const palette = ['#2563eb','#ef3340','#0f9f9a','#ff8500','#8b5cf6','#06b6d4','#84cc16','#ec4899','#f59e0b','#14b8a6','#6366f1','#f43f5e'];
+    return Object.fromEntries(positionNames().map((name,index) => [name, palette[index % palette.length]]));
+  };
+  const ngFolderSummary = () => {
+    const rows = positionNames().filter(position => state.ngFolderNames[position]).map(position => `${position}: ${state.ngFolderNames[position]}`);
+    return rows.length ? rows.join(' | ') : (state.ngRootName || '미입력');
+  };
   const extractCellId = (value) => {
     const match = String(value ?? '').match(/[JPB][A-Za-z0-9]{15}/);
     return match ? match[0].toUpperCase() : null;
@@ -386,6 +434,7 @@
     }
     else if (action === 'simulation-agent-check') checkSimulationAgent();
     else if (action === 'simulation-agent-launch') launchSimulationAgent();
+    else if (action === 'simulation-agent-remove') removeSimulationAgent();
     else if (action === 'simulation-agent-info') showToast('VisionQC Web은 GUI만 담당하고 VPDL Runtime · GPU · Workspace 처리는 사용자 PC의 Local Agent가 수행합니다.');
     else if (action === 'simulation-browse') browseSimulationPath(control);
     else if (action === 'simulation-runtime-check') checkSimulationRuntime();
@@ -393,6 +442,10 @@
     else if (action === 'simulation-stop') stopSimulation();
     else if (action === 'simulation-add-position') addSimulationPosition();
     else if (action === 'simulation-remove-position') removeSimulationPosition(control.dataset.simKey || '');
+    else if (action === 'position-add') addCustomPosition();
+    else if (action === 'position-remove') removeCustomPosition(control.dataset.positionKey || '');
+    else if (action === 'choose-ng-position') chooseNgPositionFolder(control.closest('[data-vq-position]')?.dataset.vqPosition);
+    else if (action === 'remove-ng-position') removeNgPositionFolder(control.closest('[data-vq-position]')?.dataset.vqPosition);
     else if (action === 'simulation-save-defaults') saveSimulationDefaults();
     else if (action === 'simulation-restore-defaults') restoreSimulationDefaults();
     else if (action === 'simulation-tool-add') addSimulationTool();
@@ -539,10 +592,27 @@
     // 실제 편집 가능한 입력 요소에만 값 동기화 핸들러를 연결합니다.
     $$('input[data-sim-field], select[data-sim-field], textarea[data-sim-field]', shell).forEach((input) => {
       const sync = () => syncSimulationField(input);
-      input.oninput = sync;
-      input.onchange = sync;
+      if (input.type === 'checkbox' || input.tagName === 'SELECT') {
+        input.oninput = null;
+        input.onchange = sync;
+      } else {
+        input.oninput = sync;
+        input.onchange = sync;
+      }
       input.onclick = (event) => event.stopPropagation();
       input.onkeydown = (event) => event.stopPropagation();
+    });
+    $$('input[data-sim-active-position]', shell).forEach((input) => {
+      input.onchange = () => syncSimulationActiveCheckbox(input);
+      input.onclick = (event) => event.stopPropagation();
+    });
+    $$('input[data-position-name-key]', shell).forEach((input) => {
+      input.onkeydown = (event) => {
+        event.stopPropagation();
+        if (event.key === 'Enter') { event.preventDefault(); input.blur(); }
+      };
+      input.onchange = () => renameCustomPosition(input.dataset.positionNameKey || '', input.value);
+      input.onclick = (event) => event.stopPropagation();
     });
     bindSimulationComplexControls();
   }
@@ -647,20 +717,19 @@
   async function restoreInputs() {
     try {
       const handles = await loadHandles();
-      for (const position of POSITIONS) {
+      for (const position of positionNames()) {
         const saved = handles.find((item) => item.key === `${RESULT_PREFIX}${position}`);
-        if (!saved?.handle) continue;
-        if (!(await hasPermission(saved.handle))) {
-          state.restoreWarnings.push(`${position}: 저장된 결과 파일 권한이 해제되어 다시 선택해야 합니다.`);
-          continue;
-        }
-        try {
-          const file = await saved.handle.getFile();
-          state.resultInputs[position] = await parsePositionFile(file, position, saved.handle);
-        } catch (error) {
-          state.restoreWarnings.push(`${position}: ${error.message || '복원 실패'}`);
+        if (saved?.handle) {
+          if (!(await hasPermission(saved.handle))) state.restoreWarnings.push(`${position}: 저장된 결과 파일 권한이 해제되어 다시 선택해야 합니다.`);
+          else {
+            try {
+              const file = await saved.handle.getFile();
+              state.resultInputs[position] = await parsePositionFile(file, position, saved.handle);
+            } catch (error) { state.restoreWarnings.push(`${position}: ${error.message || '복원 실패'}`); }
+          }
         }
       }
+
       const ngSaved = handles.find((item) => item.key === NG_ROOT_KEY);
       if (ngSaved?.handle) {
         if (await hasPermission(ngSaved.handle)) {
@@ -669,13 +738,29 @@
             state.ngRootName = scanned.rootName;
             state.ngImages = scanned.images;
             state.ngWarnings = scanned.warnings;
-          } catch (error) {
-            state.restoreWarnings.push(error.message || '실제 NG 폴더 복원 실패');
-          }
+            positionNames().forEach(position => {
+              if (scanned.images.some(image => image.position === position)) state.ngFolderNames[position] = `${scanned.rootName} / ${position}`;
+            });
+          } catch (error) { state.restoreWarnings.push(error.message || '실제 NG 폴더 복원 실패'); }
         } else {
           state.ngRootName = ngSaved.name || '';
           state.restoreWarnings.push('저장된 실제 NG 폴더 권한이 해제되어 다시 선택해야 합니다.');
         }
+      }
+
+      for (const position of positionNames()) {
+        const saved = handles.find((item) => item.key === `${NG_POSITION_PREFIX}${position}`);
+        if (!saved?.handle) continue;
+        if (!(await hasPermission(saved.handle))) {
+          state.restoreWarnings.push(`${position}: 저장된 실제 NG 폴더 권한이 해제되어 다시 선택해야 합니다.`);
+          continue;
+        }
+        try {
+          const scanned = await scanNgDirectoryForPosition(saved.handle, position, false);
+          state.ngImages = state.ngImages.filter(image => image.position !== position).concat(scanned.images);
+          state.ngFolderNames[position] = scanned.rootName;
+          state.ngWarnings.push(...scanned.warnings.map(w => `${position}: ${w}`));
+        } catch (error) { state.restoreWarnings.push(`${position}: ${error.message || '실제 NG 폴더 복원 실패'}`); }
       }
     } catch (error) {
       console.error(error);
@@ -872,11 +957,22 @@
         catch (error) { if (error.name === 'AbortError') return; throw error; }
         const scanned = await scanNgDirectory(handle, true);
         state.ngRootName = scanned.rootName; state.ngImages = scanned.images; state.ngWarnings = scanned.warnings;
+        state.ngFolderNames = {};
+        positionNames().forEach(position => {
+          if (scanned.images.some(image => image.position === position)) state.ngFolderNames[position] = `${scanned.rootName} / ${position}`;
+        });
         await saveHandle(NG_ROOT_KEY, handle);
+        for (const position of positionNames()) {
+          try { await deleteHandle(`${NG_POSITION_PREFIX}${position}`); } catch (_) { }
+        }
       } else {
         const files = await pickFile('image/*', true);
         const scanned = scanNgFiles(files);
         state.ngRootName = scanned.rootName; state.ngImages = scanned.images; state.ngWarnings = [...scanned.warnings, '새로고침 후 NG 폴더를 다시 선택해야 할 수 있습니다.'];
+        state.ngFolderNames = {};
+        positionNames().forEach(position => {
+          if (scanned.images.some(image => image.position === position)) state.ngFolderNames[position] = `${scanned.rootName} / ${position}`;
+        });
       }
       rebuildModel();
       showToast(`실제 NG 이미지 ${numberText(state.ngImages.length)}개를 불러왔습니다.`);
@@ -915,6 +1011,92 @@
     return { rootName: rootHandle.name || 'NG Images', images, warnings };
   }
 
+
+  async function scanNgDirectoryForPosition(rootHandle, position, requestPermission = true) {
+    if (!position) throw new Error('Position이 없습니다.');
+    if (rootHandle.queryPermission) {
+      let permission = await rootHandle.queryPermission({ mode:'read' });
+      if (permission !== 'granted' && requestPermission && rootHandle.requestPermission) permission = await rootHandle.requestPermission({ mode:'read' });
+      if (permission !== 'granted') throw new Error('실제 NG 폴더 접근 권한이 없습니다.');
+    }
+    const images = [], warnings = [];
+    let invalidCell = 0;
+    async function walk(directory, parts) {
+      for await (const [name, handle] of directory.entries()) {
+        const next = [...parts, name];
+        if (handle.kind === 'directory') await walk(handle, next);
+        else if (handle.kind === 'file' && IMG_RE.test(name)) {
+          const cellId = extractCellId(name) || extractCellId(next.join('/'));
+          if (!cellId) { invalidCell += 1; continue; }
+          const file = await handle.getFile();
+          const relativePath = normalizePath(next.join('/'));
+          images.push({ key:`${position}|${cellId}|${relativePath.toLowerCase()}`, position, cellId, file, relativePath });
+        }
+      }
+    }
+    await walk(rootHandle, [rootHandle.name || '']);
+    if (invalidCell) warnings.push(`Cell ID 추출 실패 이미지 ${numberText(invalidCell)}개 제외`);
+    if (!images.length) warnings.push('분석 가능한 실제 NG 이미지가 없습니다.');
+    return { rootName:rootHandle.name || position, images, warnings };
+  }
+
+  async function chooseNgPositionFolder(position) {
+    if (!position || state.loading) return;
+    try {
+      state.loading = `ng:${position}`;
+      renderSettings(); bindPageControls();
+      let handle;
+      if (window.showDirectoryPicker) {
+        try { handle = await window.showDirectoryPicker({ mode:'read' }); }
+        catch (error) { if (error.name === 'AbortError') return; throw error; }
+        const scanned = await scanNgDirectoryForPosition(handle, position, true);
+        state.ngImages = state.ngImages.filter(image => image.position !== position).concat(scanned.images);
+        state.ngFolderNames[position] = scanned.rootName;
+        if (!state.ngRootName) state.ngRootName = 'Position별 개별 폴더';
+        state.ngWarnings = state.ngWarnings.filter(w => !String(w).startsWith(`${position}:`)).concat(scanned.warnings.map(w => `${position}: ${w}`));
+        await saveHandle(`${NG_POSITION_PREFIX}${position}`, handle);
+      } else {
+        const files = await pickFile('image/*', true);
+        const scanned = scanNgFilesForPosition(files, position);
+        state.ngImages = state.ngImages.filter(image => image.position !== position).concat(scanned.images);
+        state.ngFolderNames[position] = scanned.rootName;
+        if (!state.ngRootName) state.ngRootName = 'Position별 개별 폴더';
+        state.ngWarnings = state.ngWarnings.filter(w => !String(w).startsWith(`${position}:`)).concat(scanned.warnings.map(w => `${position}: ${w}`));
+      }
+      rebuildModel();
+      showToast(`${position} 실제 NG 이미지 ${numberText(state.ngImages.filter(x => x.position === position).length)}개를 불러왔습니다.`);
+    } catch (error) {
+      if (error.name !== 'AbortError') { console.error(error); showToast(`${position} NG 폴더를 읽지 못했습니다: ${error.message || error}`, true); }
+    } finally {
+      state.loading = '';
+      renderSettings(); bindPageControls();
+    }
+  }
+
+  async function removeNgPositionFolder(position) {
+    if (!position) return;
+    state.ngImages = state.ngImages.filter(image => image.position !== position);
+    delete state.ngFolderNames[position];
+    state.ngWarnings = state.ngWarnings.filter(w => !String(w).startsWith(`${position}:`));
+    try { await deleteHandle(`${NG_POSITION_PREFIX}${position}`); } catch (_) { }
+    rebuildModel();
+    renderSettings(); bindPageControls();
+  }
+
+  function scanNgFilesForPosition(files, position) {
+    const images = [], warnings = [];
+    let invalidCell = 0;
+    files.forEach(file => {
+      const relativePath = normalizePath(file.webkitRelativePath || file.name);
+      const cellId = extractCellId(file.name) || extractCellId(relativePath);
+      if (!cellId) { invalidCell += 1; return; }
+      images.push({ key:`${position}|${cellId}|${relativePath.toLowerCase()}`, position, cellId, file, relativePath });
+    });
+    if (invalidCell) warnings.push(`Cell ID 추출 실패 이미지 ${numberText(invalidCell)}개 제외`);
+    const firstPath = files[0]?.webkitRelativePath || '';
+    return { rootName:firstPath.split('/')[0] || position, images, warnings };
+  }
+
   function scanNgFiles(files) {
     const images = [], warnings = [];
     let invalidCell = 0, unknownPosition = 0;
@@ -934,7 +1116,7 @@
 
   async function clearAnalysisInputs() {
     if (!window.confirm('Position 결과 파일과 실제 NG 이미지 설정을 모두 초기화할까요?')) return;
-    state.resultInputs = {}; state.ngRootName = ''; state.ngImages = []; state.ngWarnings = []; state.restoreWarnings = [];
+    state.resultInputs = {}; state.ngRootName = ''; state.ngImages = []; state.ngFolderNames = {}; state.ngWarnings = []; state.restoreWarnings = [];
     try { await clearHandles(); } catch (error) { console.error(error); }
     rebuildModel(); renderSettings();
   }
@@ -993,7 +1175,8 @@
   }
 
   function rebuildModel(renderPage = true) {
-    const rows = POSITIONS.flatMap((position) => state.resultInputs[position]?.rows || []);
+    const positions = positionNames();
+    const rows = positions.flatMap((position) => state.resultInputs[position]?.rows || []);
     const records = aggregateRows(rows);
     applyThresholdSimulation(records);
     const recordMap = new Map(records.map((record) => [record.key, record]));
@@ -1016,16 +1199,16 @@
       if (record.totalResult === 'OK') misses.push({ key, cellId: record.cellId, position: record.position, record, images });
       if (record.totalResult === 'NG') detectedActual.add(key);
     });
-    misses.sort((a, b) => POSITIONS.indexOf(a.position) - POSITIONS.indexOf(b.position) || a.cellId.localeCompare(b.cellId));
+    misses.sort((a, b) => positions.indexOf(a.position) - positions.indexOf(b.position) || a.cellId.localeCompare(b.cellId));
     const tools = [...new Set(records.flatMap((record) => Object.keys(record.tools)))].sort((a, b) => a.localeCompare(b, undefined, { numeric: true, sensitivity: 'base' }));
-    const positionSummaries = POSITIONS.map((position) => {
+    const positionSummaries = positions.map((position) => {
       const positionRecords = records.filter((record) => record.position === position);
       const actualKeys = Array.from(actualMap.keys()).filter((key) => key.startsWith(`${position}|`));
       const ng = positionRecords.filter((record) => record.totalResult === 'NG').length;
       const ok = positionRecords.filter((record) => record.totalResult === 'OK').length;
       return { position, input: !!state.resultInputs[position], total: positionRecords.length, ng, ok, ngRate: positionRecords.length ? ng / positionRecords.length : 0, actualNg: actualKeys.length, detected: actualKeys.filter((key) => detectedActual.has(key)).length, misses: misses.filter((item) => item.position === position).length, unmatched: actualKeys.filter((key) => !recordMap.has(key)).length };
     });
-    const positionToolSummaries = POSITIONS.map((position) => {
+    const positionToolSummaries = positions.map((position) => {
       const positionRecords = records.filter((record) => record.position === position);
       const positionNgRecords = positionRecords.filter((record) => record.totalResult === 'NG');
       const positionTools = [...new Set(positionRecords.flatMap((record) => Object.keys(record.tools)))].sort((a, b) => a.localeCompare(b, undefined, { numeric: true, sensitivity: 'base' }));
@@ -1072,7 +1255,9 @@
       actualCellIdSamples,
       duplicates: records.filter((record) => record.duplicateCount > 0)
     };
+    if (!positions.includes(state.selectedMissPosition)) state.selectedMissPosition = positions[0] || '';
     if (misses.length && !misses.some((item) => item.position === state.selectedMissPosition)) state.selectedMissPosition = misses[0].position;
+    if (state.analysisPosition !== 'ALL' && !positions.includes(state.analysisPosition)) state.analysisPosition = 'ALL';
     if (!tools.includes(state.analysisTool)) state.analysisTool = tools[0] || '';
     if (renderPage && state.page !== 'classification' && state.initialized) renderCurrentPage();
   }
@@ -1111,8 +1296,9 @@
 
   function buildSummaryReportHtml(model, generatedAt = new Date()) {
     const reportTitle = 'VisionQC 검사 요약 리포트';
-    const positionColors = { 'CA(TOP)': '#2563eb', 'AN(TOP)': '#ef3340', 'CA(BOT)': '#0f9f9a', 'AN(BOT)': '#ff8500' };
-    const resultFiles = POSITIONS.map((position) => state.resultInputs[position]?.fileName ? `${position}: ${state.resultInputs[position].fileName}` : `${position}: 미입력`);
+    const positions = positionNames();
+    const positionColors = positionColorMap();
+    const resultFiles = positions.map((position) => state.resultInputs[position]?.fileName ? `${position}: ${state.resultInputs[position].fileName}` : `${position}: 미입력`);
     const totalPositionRows = model.positionSummaries.reduce((sum, item) => sum + item.total, 0);
     const totalPositionNg = model.positionSummaries.reduce((sum, item) => sum + item.ng, 0);
     const totalActual = model.positionSummaries.reduce((sum, item) => sum + item.actualNg, 0);
@@ -1148,7 +1334,7 @@
     }).join('');
 
     const detailBlocks = [];
-    POSITIONS.forEach((position) => {
+    positions.forEach((position) => {
       const misses = model.misses.filter((item) => item.position === position);
       const chunks = chunk(misses, 90);
       (chunks.length ? chunks : [[]]).forEach((items, chunkIndex) => {
@@ -1176,7 +1362,7 @@
       const normalizedBlocks = [...blocks];
       while (normalizedBlocks.length < 2) normalizedBlocks.push({ html: emptyDetailBlock });
       return `<section class="report-page detail-page">
-        <header class="page-head"><div><h1>${reportTitle}</h1><p>미검 상세 리포트 ${pageIndex+1}/${detailPages.length}</p></div><div class="meta"><strong>생성 시각</strong> ${reportDateText(generatedAt)}<br><strong>NG 이미지 경로</strong> ${escapeHtml(state.ngRootName || '미입력')}</div></header>
+        <header class="page-head"><div><h1>${reportTitle}</h1><p>미검 상세 리포트 ${pageIndex+1}/${detailPages.length}</p></div><div class="meta"><strong>생성 시각</strong> ${reportDateText(generatedAt)}<br><strong>NG 이미지 경로</strong> ${escapeHtml(ngFolderSummary())}</div></header>
         <div class="detail-charts"><div><h3>Position별 미검 수 비교</h3>${detailSummaryBars}</div><div><h3>미검 구성 비율</h3><div class="small-donut" style="background:conic-gradient(${stops||'#e2e8f0 0 100%'})"><span><b>${numberText(totalMisses)}</b><small>총 미검</small></span></div></div></div>
         <div class="detail-guide">아래 목록은 결과 CSV와 NG Image 폴더에 동일 Cell ID + Position이 존재하고, 현재 Threshold 적용 후 OK로 판정된 전체 미검 Cell입니다.</div>
         <div class="detail-blocks">${normalizedBlocks.map((block)=>block.html).join('')}</div>${pageFooter(pageIndex+2)}</section>`;
@@ -1198,7 +1384,7 @@
         .detail-guide{margin-top:3mm;border:1px solid #9db5e5;background:#f5f8ff;border-radius:8px;padding:2.5mm 3mm;font-size:7.5px;line-height:1.45;color:#314a79}.detail-blocks{display:grid;grid-template-rows:1fr 1fr;gap:4mm;margin-top:3mm;height:202mm}.miss-detail{border:1px solid var(--accent);border-radius:10px;overflow:hidden;min-height:0}.miss-detail>header{display:flex;justify-content:space-between;align-items:center;padding:2.5mm 3mm;border-bottom:1px solid var(--accent);background:#f8fbff}.miss-detail>header div{display:flex;gap:4mm;align-items:center}.miss-detail>header strong{font-size:13px;color:var(--accent)}.miss-detail>header span{font-size:10px;font-weight:700;color:var(--accent)}.miss-detail>header small{font-size:7px;color:#64748b}.miss-detail-body{display:grid;grid-template-columns:1fr 47mm;gap:3mm;padding:3mm;height:calc(100% - 15mm)}.id-list{columns:3;column-gap:4mm;margin:0;padding:0;list-style:none;font-size:6.8px;line-height:1.35}.id-list li{break-inside:avoid;display:flex;gap:1.5mm}.id-list li span{color:var(--accent);font-weight:700;min-width:5mm}.id-list li b{font-weight:600;color:#10214a}.miss-detail aside{border:1px solid #c8d5ec;border-radius:8px;padding:3mm;background:#fbfdff}.miss-detail aside h4{font-size:9px;margin:0 0 3mm;color:var(--accent)}.score-ref-row{display:grid;grid-template-columns:17mm 1fr 12mm;gap:2mm;align-items:center;font-size:7px;margin:3mm 0}.miss-detail aside p{font-size:6.5px;color:#64748b;margin-top:4mm}.miss-detail.placeholder{border-color:#c8d5ec}.miss-detail.placeholder>header strong,.miss-detail.placeholder>header span{color:#64748b}.placeholder-body{height:calc(100% - 15mm);display:grid;place-items:center;color:#94a3b8;font-size:8px;background:#fbfdff}.empty{font-size:7px;color:#94a3b8}
         @media print{body{background:#fff}.actions{display:none}.report-page{margin:0;box-shadow:none}}
       </style></head><body><div class="actions"><button onclick="window.close()">닫기</button><button class="primary" onclick="window.print()">PDF로 저장</button></div>
-      <section class="report-page summary-page"><header class="page-head"><div><h1>${reportTitle}</h1><p>Threshold 적용 시뮬레이션 결과</p></div><div class="meta"><strong>생성 시각</strong> ${reportDateText(generatedAt)}<br><strong>NG 이미지 폴더</strong> ${escapeHtml(state.ngRootName || '미입력')}<br><strong>결과 파일</strong><br>${resultFiles.map(escapeHtml).join('<br>')}</div></header>
+      <section class="report-page summary-page"><header class="page-head"><div><h1>${reportTitle}</h1><p>Threshold 적용 시뮬레이션 결과</p></div><div class="meta"><strong>생성 시각</strong> ${reportDateText(generatedAt)}<br><strong>NG 이미지 폴더</strong> ${escapeHtml(ngFolderSummary())}<br><strong>결과 파일</strong><br>${resultFiles.map(escapeHtml).join('<br>')}</div></header>
       <div class="kpis"><div class="kpi"><span>고유 검사 CELL</span><strong>${numberText(model.uniqueCellCount)}</strong></div><div class="kpi ng"><span>NG CELL</span><strong>${numberText(model.ngCellCount)}</strong></div><div class="kpi"><span>CELL NG율</span><strong>${rateText(model.ngCellRate)}</strong></div><div class="kpi miss"><span>미검 CELL-POSITION</span><strong>${numberText(totalMisses)}</strong></div></div>
       <h2 class="section-title">Position별 결과</h2><table><thead><tr><th>Position</th><th>검사</th><th>NG</th><th>NG율</th><th>실제 NG</th><th>CSV 매칭</th><th>정상 검출</th><th>미검</th><th>미매칭</th></tr></thead><tbody>${positionRows}<tr><td><strong>합계</strong></td><td>${numberText(totalPositionRows)}</td><td class="ng">${numberText(totalPositionNg)}</td><td class="ng">${rateText(positionNgRate)}</td><td>${numberText(totalActual)}</td><td>${numberText(totalActual-totalUnmatched)}</td><td class="ok">${numberText(totalDetected)}</td><td class="miss">${numberText(totalMisses)}</td><td>${numberText(totalUnmatched)}</td></tr></tbody></table>
       <div class="chart-grid"><section class="chart-card"><h3>Position별 NG율 비교</h3>${positionBars}</section><section class="chart-card"><h3>미검 구성 비율</h3><div class="donut-wrap"><div class="donut" style="background:conic-gradient(${stops||'#e2e8f0 0 100%'})"><span><b>${numberText(totalMisses)}</b><small>총 미검</small></span></div><div class="legend">${missLegend}</div></div></section></div>
@@ -1227,7 +1413,8 @@
   function renderDashboard() {
     const model = state.model;
     if (!model?.records.length) return emptyPage('분석 Input이 없습니다', '설정 메뉴에서 Position별 시뮬레이션 결과 파일과 실제 NG 이미지 폴더를 입력하세요. 결과 파일은 1개 Position만 입력해도 분석할 수 있습니다.');
-    const inputCount = POSITIONS.filter((position) => state.resultInputs[position]).length;
+    const positions = positionNames();
+    const inputCount = positions.filter((position) => state.resultInputs[position]).length;
     const misses = model.misses.filter((item) => item.position === state.selectedMissPosition);
     $('#vq43-page').innerHTML = `
       <div class="vq43-content">
@@ -1242,7 +1429,7 @@
         <section class="vq43-section"><div class="vq43-section-title vq43-threshold-section-title"><span class="vq43-step">3</span><div><h3>Position별 Tool NG 구성</h3><p>원래 NG 결과 중 Score가 Threshold 이상인 Tool만 NG로 유지하여 재계산</p></div><button class="vq43-btn vq43-btn-amber" data-vq-action="reset-thresholds">Threshold 0.50 초기화</button></div>${positionToolCharts(model.positionToolSummaries)}<div class="vq43-note" style="margin-top:12px">Threshold는 CSV에서 원래 NG로 판정된 결과만 필터링합니다. 원래 OK 결과를 NG로 전환하지 않습니다. 동일 Cell에서 여러 Tool이 동시에 NG일 수 있어 Tool 비율 합계는 100%를 초과할 수 있습니다.</div></section>
         ${matchDiagnostic(model)}
         <section class="vq43-section" style="padding-bottom:28px"><div class="vq43-section-title"><span class="vq43-step amber">!</span><div><h3>Position별 미검 Cell ID</h3><p>실제 NG 이미지가 존재하지만 Threshold 적용 시뮬레이션 결과가 OK인 Cell</p></div></div>
-          <div class="vq43-miss-toolbar"><div class="vq43-tabs">${POSITIONS.map((position) => `<button class="vq43-tab ${state.selectedMissPosition === position ? 'active' : ''}" data-vq-action="miss-tab" data-vq-position="${position}">${position}<b>${model.misses.filter((item) => item.position === position).length}</b></button>`).join('')}</div><button class="vq43-btn vq43-btn-green" data-vq-action="download-misses" ${misses.length ? '' : 'disabled'}>선택 Position 미검 CSV</button></div>
+          <div class="vq43-miss-toolbar"><div class="vq43-tabs">${positions.map((position) => `<button class="vq43-tab ${state.selectedMissPosition === position ? 'active' : ''}" data-vq-action="miss-tab" data-vq-position="${position}">${position}<b>${model.misses.filter((item) => item.position === position).length}</b></button>`).join('')}</div><button class="vq43-btn vq43-btn-green" data-vq-action="download-misses" ${misses.length ? '' : 'disabled'}>선택 Position 미검 CSV</button></div>
           <div class="vq43-miss-table"><div class="vq43-miss-row head"><span>Cell ID</span><span>시뮬레이션</span><span>Tool별 Score</span><span>실제 이미지</span></div>${misses.length ? misses.map(missRow).join('') : `<div class="vq43-no-data">${state.selectedMissPosition} 미검 없음</div>`}</div>
         </section>
         ${model.duplicates.length ? `<div class="vq43-note">⚠ 중복 Cell ID + Position ${numberText(model.duplicates.length)}건은 하나라도 NG이면 NG로 통합했습니다.</div>` : ''}
@@ -1354,7 +1541,8 @@
     const headers = ['Cell ID', 'Position', 'Total_result'];
     tools.forEach((tool) => headers.push(`${tool}_result`, `${tool}_score`));
     const lines = [headers.map(csvCell).join(',')];
-    const sorted = [...model.records].sort((a, b) => POSITIONS.indexOf(a.position) - POSITIONS.indexOf(b.position) || a.cellId.localeCompare(b.cellId));
+    const positions = positionNames();
+    const sorted = [...model.records].sort((a, b) => positions.indexOf(a.position) - positions.indexOf(b.position) || a.cellId.localeCompare(b.cellId));
     sorted.forEach((record) => {
       const row = [record.cellId, record.position, record.baseTotalResult];
       tools.forEach((toolName) => {
@@ -1434,7 +1622,7 @@
     }[state.analysisScope];
     $('#vq43-page').innerHTML = `
       <div class="vq43-content"><div class="vq43-eyebrow" style="color:#a78bfa">Detailed Analysis</div><h1 class="vq43-title">Tool별 Score 분석</h1><p class="vq43-subtitle">Tool 판정 결과와 Score를 조건별로 분리하여 분석합니다.</p>
-        <div class="vq43-filter">${customDropdown('position', 'Position', state.analysisPosition, [{ value: 'ALL', label: '전체 Position' }, ...POSITIONS.map((position) => ({ value: position, label: position }))])}${customDropdown('tool', 'Tool', state.analysisTool, model.tools.map((tool) => ({ value: tool, label: tool })))}${customDropdown('scope', '분석 범위', state.analysisScope, [{ value: 'TOOL_OK', label: '선택 Tool의 OK Score' }, { value: 'TOOL_NG', label: '선택 Tool의 NG Score' }, { value: 'ACTUAL_NG_TOOL_NG', label: 'NG Image를 NG로 검출한 Score' }, { value: 'ACTUAL_NG_TOOL_OK', label: 'NG Image를 OK로 판정한 Score' }])}</div>
+        <div class="vq43-filter">${customDropdown('position', 'Position', state.analysisPosition, [{ value: 'ALL', label: '전체 Position' }, ...positionNames().map((position) => ({ value: position, label: position }))])}${customDropdown('tool', 'Tool', state.analysisTool, model.tools.map((tool) => ({ value: tool, label: tool })))}${customDropdown('scope', '분석 범위', state.analysisScope, [{ value: 'TOOL_OK', label: '선택 Tool의 OK Score' }, { value: 'TOOL_NG', label: '선택 Tool의 NG Score' }, { value: 'ACTUAL_NG_TOOL_NG', label: 'NG Image를 NG로 검출한 Score' }, { value: 'ACTUAL_NG_TOOL_OK', label: 'NG Image를 OK로 판정한 Score' }])}</div>
         <div class="vq43-kpi-grid">${kpi('Score 데이터', numberText(points.length), `OK ${okValues.length} · NG ${ngValues.length}`)}${kpi('평균 Score', scoreText(avg), '그래프 파란 점선', 'blue')}${kpi('최소 Score', scoreText(min), '그래프 노란 강조', 'amber')}${kpi('최대 / 중앙값', scoreText(max), `Median ${scoreText(med)}`)}</div>
         <div class="vq43-analysis-export"><div><strong>Score 조건 CSV 저장</strong><span>현재 Position · Tool · 분석 범위 안에서 Score 조건으로 필터합니다.</span></div><label>Score<input id="vq43-score-cutoff" type="number" inputmode="decimal" min="0.50" max="1.00" step="0.01" value="${state.analysisScoreCutoff.toFixed(2)}"></label>${customDropdown('compare', '조건', state.analysisScoreCompare, [{ value: 'GTE', label: '이상 (≥)' }, { value: 'LTE', label: '이하 (≤)' }])}<button class="vq43-btn vq43-btn-green" data-vq-action="download-score-filter">CSV 저장</button></div>
         <div class="vq43-note" style="margin-top:16px">${escapeHtml(scopeInfo.text)}</div>
@@ -1496,12 +1684,7 @@
   }
 
 
-  const SIM_POSITION_DEFS = [
-    { key:'CA_TOP', label:'CA(TOP)' },
-    { key:'AN_TOP', label:'AN(TOP)' },
-    { key:'CA_BOT', label:'CA(BOT)' },
-    { key:'AN_BOT', label:'AN(BOT)' }
-  ];
+  const simulationPositionDefs = () => positionDefs().map(x => ({ key:x.key, label:x.name }));
 
   function simulationDefaultTools() {
     return [
@@ -1511,7 +1694,9 @@
       ['Trimming',0.6,'Scrap'],['Trimming2',0.5,'Scrap'],['Trimming3',0.5,'Scrap'],['Trimming4',0.5,'Scrap'],
       ['SideEdge',0.5,'Scrap'],['SideEdge2',0.5,'Scrap']
     ].map(([toolName,threshold,judgement]) => ({
-      useCaTop:true,useCaBot:true,useAnTop:true,useAnBot:true,toolName,threshold,judgement,selected:false
+      useCaTop:true,useCaBot:true,useAnTop:true,useAnBot:true,
+      positionEnabled:Object.fromEntries(positionDefs().map(p => [p.key, true])),
+      toolName,threshold,judgement,selected:false
     }));
   }
 
@@ -1533,7 +1718,7 @@
 
   function simulationDefaults() {
     const positions = {};
-    SIM_POSITION_DEFS.forEach(({key,label}) => {
+    simulationPositionDefs().forEach(({key,label}) => {
       positions[key] = {
         key, displayName:label,
         greenWorkspacePath:'', blueWorkspacePath:'',
@@ -1545,9 +1730,9 @@
     return {
       outputRoot:'',
       activePositionsByMode:{
-        green:SIM_POSITION_DEFS.map(x => x.key),
-        blue:SIM_POSITION_DEFS.map(x => x.key),
-        integrated:SIM_POSITION_DEFS.map(x => x.key)
+        green:simulationPositionDefs().map(x => x.key),
+        blue:simulationPositionDefs().map(x => x.key),
+        integrated:simulationPositionDefs().map(x => x.key)
       },
       positions,
       green:{
@@ -1560,7 +1745,7 @@
         useGpu:true, gpuDevices:'0', keepSubfolders:true, saveAsJpeg:true, skipExisting:false,
         jpegQuality:80, printEvery:100, cropWidth:2448, cropHeight:2048,
         expectedXMin:1100, expectedXMax:1500, maxYDiff:300,
-        fallbacks:SIM_POSITION_DEFS.map(({key,label}) => simulationDefaultFallback(key,label,'Locate'))
+        fallbacks:simulationPositionDefs().map(({key,label}) => simulationDefaultFallback(key,label,'Locate'))
       },
       integrated:{
         cellIdCsvPath:'', keywordMode:false, keywordInputRoot:'', keepCropImages:false, heatmapImageSave:false
@@ -1579,7 +1764,8 @@
     form.outputRoot = typeof form.outputRoot === 'string' ? form.outputRoot : '';
     form.positions = form.positions && typeof form.positions === 'object' ? form.positions : {};
 
-    SIM_POSITION_DEFS.forEach(({key,label}) => {
+    const currentDefs = simulationPositionDefs();
+    currentDefs.forEach(({key,label}) => {
       const p = form.positions[key] || {};
       form.positions[key] = {
         key,
@@ -1595,13 +1781,13 @@
         integratedKeyword:String(p.integratedKeyword || p.keyword || '')
       };
     });
+    Object.keys(form.positions).forEach(key => { if (!currentDefs.some(x => x.key === key)) delete form.positions[key]; });
 
-    const legacyActive = Array.isArray(form.activePositions) ? form.activePositions.slice() : SIM_POSITION_DEFS.filter(({key}) => form.positions[key]?.enabled !== false).map(x => x.key);
+    const legacyActive = Array.isArray(form.activePositions) ? form.activePositions.slice() : currentDefs.filter(({key}) => form.positions[key]?.enabled !== false).map(x => x.key);
     form.activePositionsByMode = form.activePositionsByMode && typeof form.activePositionsByMode === 'object' ? form.activePositionsByMode : {};
     ['green','blue','integrated'].forEach(mode => {
       const source = Array.isArray(form.activePositionsByMode[mode]) ? form.activePositionsByMode[mode] : (legacyActive.length ? legacyActive : defaults.activePositionsByMode[mode]);
-      form.activePositionsByMode[mode] = source.filter(key => SIM_POSITION_DEFS.some(x => x.key === key));
-      if (!form.activePositionsByMode[mode].length) form.activePositionsByMode[mode] = [SIM_POSITION_DEFS[0].key];
+      form.activePositionsByMode[mode] = source.filter(key => currentDefs.some(x => x.key === key));
     });
     delete form.activePositions;
 
@@ -1629,7 +1815,22 @@
     form.integrated = Object.assign({}, defaults.integrated, Object.fromEntries(Object.entries(legacyIntegrated).filter(([,v]) => v !== undefined)), form.integrated || {});
 
     if (!Array.isArray(form.green.tools) || !form.green.tools.length) form.green.tools = simulationDefaultTools();
-    else form.green.tools = form.green.tools.map(t => Object.assign({useCaTop:true,useCaBot:true,useAnTop:true,useAnBot:true,toolName:'',threshold:0.5,judgement:'Scrap',selected:false}, t || {}));
+    else form.green.tools = form.green.tools.map(t => {
+      const tool = Object.assign({useCaTop:true,useCaBot:true,useAnTop:true,useAnBot:true,toolName:'',threshold:0.5,judgement:'Scrap',selected:false}, t || {});
+      const existingMap = tool.positionEnabled && typeof tool.positionEnabled === 'object' ? tool.positionEnabled : {};
+      tool.positionEnabled = Object.fromEntries(currentDefs.map(def => {
+        let enabled = existingMap[def.key];
+        if (typeof enabled !== 'boolean') {
+          if (def.key === 'CA_TOP') enabled = tool.useCaTop !== false;
+          else if (def.key === 'CA_BOT') enabled = tool.useCaBot !== false;
+          else if (def.key === 'AN_TOP') enabled = tool.useAnTop !== false;
+          else if (def.key === 'AN_BOT') enabled = tool.useAnBot !== false;
+          else enabled = true;
+        }
+        return [def.key, !!enabled];
+      }));
+      return tool;
+    });
     if (!Array.isArray(form.green.judgements) || !form.green.judgements.length) form.green.judgements = simulationDefaultJudgements();
     form.green.judgements = form.green.judgements.map((j,i) => ({ priority:Number(j.priority || i + 1), name:String(j.name || '') }));
     if (!form.green.judgements.some(j => String(j.name || '').trim().toUpperCase() === 'ERROR')) {
@@ -1645,7 +1846,7 @@
   function simulationActivePositions(mode = state.simulationMode || 'integrated', form = ensureSimulationForm()) {
     const key = ['green','blue','integrated'].includes(mode) ? mode : 'integrated';
     const list = form.activePositionsByMode?.[key];
-    return Array.isArray(list) && list.length ? list : [SIM_POSITION_DEFS[0].key];
+    return Array.isArray(list) ? list.filter(key => positionDefByKey(key)) : [];
   }
 
   function persistSimulationForm() {
@@ -1662,7 +1863,23 @@
     return form;
   }
 
-  function syncSimulationField(input) {
+  function renderSimulationPreserveScroll() {
+    if (state.page !== 'simulation') return;
+    const shell = $('#vq43-shell');
+    const page = $('#vq43-page');
+    const windowY = window.scrollY;
+    const shellTop = shell?.scrollTop || 0;
+    const pageTop = page?.scrollTop || 0;
+    renderSimulation();
+    bindPageControls();
+    requestAnimationFrame(() => {
+      window.scrollTo({ top:windowY, left:window.scrollX, behavior:'auto' });
+      if (shell) shell.scrollTop = shellTop;
+      if (page) page.scrollTop = pageTop;
+    });
+  }
+
+  function syncSimulationField(input, allowStructuralRender = true) {
     const field = input.dataset.simField;
     if (!field) return;
     const scope = input.dataset.simScope || (input.dataset.simKey ? 'position' : 'root');
@@ -1672,6 +1889,40 @@
     const value = input.type === 'checkbox' ? input.checked : input.type === 'number' ? Number(input.value) : input.value;
     target[field] = value;
     if (scope === 'position' && field === 'blueToolName') syncSimulationFallbackRows(false);
+    persistSimulationForm();
+    const structural = (scope === 'green' || scope === 'integrated') && field === 'keywordMode';
+    if (structural && allowStructuralRender) renderSimulationPreserveScroll();
+  }
+
+  function syncSimulationActiveCheckbox(input) {
+    const key = input.dataset.simActivePosition;
+    const mode = input.dataset.simMode || state.simulationMode || 'integrated';
+    if (!key || !['green','blue','integrated'].includes(mode)) return;
+    const form = ensureSimulationForm();
+    const list = Array.isArray(form.activePositionsByMode[mode]) ? form.activePositionsByMode[mode] : [];
+    if (input.checked && !list.includes(key)) list.push(key);
+    if (!input.checked) form.activePositionsByMode[mode] = list.filter(x => x !== key);
+    else form.activePositionsByMode[mode] = list;
+    persistSimulationForm();
+  }
+
+  function flushSimulationControls() {
+    const shell = $('#vq43-shell');
+    if (!shell) return;
+    $$('input[data-sim-field], select[data-sim-field], textarea[data-sim-field]', shell).forEach(input => syncSimulationField(input, false));
+    $$('input[data-sim-active-position]', shell).forEach(syncSimulationActiveCheckbox);
+    const form = ensureSimulationForm();
+    $$('[data-sim-tool-index]', shell).forEach((input) => {
+      const index = Number(input.dataset.simToolIndex), field = input.dataset.simToolField;
+      if (!Number.isInteger(index) || !form.green.tools[index] || !field) return;
+      form.green.tools[index][field] = input.type === 'checkbox' ? input.checked : input.type === 'number' ? Number(input.value) : input.value;
+    });
+    $$('[data-sim-tool-position-index]', shell).forEach((input) => {
+      const index = Number(input.dataset.simToolPositionIndex), key = input.dataset.simPositionKey;
+      if (!Number.isInteger(index) || !form.green.tools[index] || !key) return;
+      form.green.tools[index].positionEnabled = form.green.tools[index].positionEnabled || {};
+      form.green.tools[index].positionEnabled[key] = !!input.checked;
+    });
     persistSimulationForm();
   }
 
@@ -1687,7 +1938,20 @@
         form.green.tools[index][field] = input.type === 'checkbox' ? input.checked : input.type === 'number' ? Number(input.value) : input.value;
         persistSimulationForm();
       };
-      input.oninput = sync; input.onchange = sync; input.onclick = (e) => e.stopPropagation(); input.onkeydown = (e) => e.stopPropagation();
+      if (input.type === 'checkbox' || input.tagName === 'SELECT') input.onchange = sync;
+      else { input.oninput = sync; input.onchange = sync; }
+      input.onclick = (e) => e.stopPropagation(); input.onkeydown = (e) => e.stopPropagation();
+    });
+    $$('[data-sim-tool-position-index]', shell).forEach((input) => {
+      const index = Number(input.dataset.simToolPositionIndex);
+      const key = input.dataset.simPositionKey;
+      if (!Number.isInteger(index) || !form.green.tools[index] || !key) return;
+      input.onchange = () => {
+        form.green.tools[index].positionEnabled = form.green.tools[index].positionEnabled || {};
+        form.green.tools[index].positionEnabled[key] = !!input.checked;
+        persistSimulationForm();
+      };
+      input.onclick = (e) => e.stopPropagation();
     });
     $$('[data-sim-judgement-index]', shell).forEach((input) => {
       const index = Number(input.dataset.simJudgementIndex);
@@ -1734,10 +1998,14 @@
     if (state.page === 'simulation') { renderSimulation(); bindPageControls(); }
     try {
       const data = await agentFetch('/api/status', { timeout:2500 });
+      const detectedVersion = data.agentVersion || '-';
+      const versionMismatch = detectedVersion !== EXPECTED_AGENT_VERSION;
       state.simulationAgent = {
-        status:'connected', version:data.agentVersion || '-', vpdl:data.vpdlVersion || '-',
+        status:'connected', version:detectedVersion, vpdl:data.vpdlVersion || '-',
         license:data.license || 'Simulation Start 시 확인', gpu:data.gpu || '-',
-        message:`Local Agent 연결됨 · Engine ${data.engineVersion || '-'}`
+        message:versionMismatch
+          ? `Agent ${detectedVersion} 실행 중 · 현재 Web 권장 ${EXPECTED_AGENT_VERSION}. 새 Agent의 REGISTER_PROTOCOL.cmd를 다시 실행하세요.`
+          : `Local Agent 연결됨 · Engine ${data.engineVersion || '-'}`
       };
       if (data.state) state.simulationProgress = { ...state.simulationProgress, ...data.state };
       connectSimulationEvents();
@@ -1755,6 +2023,28 @@
     window.location.href = 'visionqc-agent://start';
     setTimeout(checkSimulationAgent, 1800);
     setTimeout(checkSimulationAgent, 4000);
+  }
+
+  async function removeSimulationAgent() {
+    if (state.simulationAgent.status !== 'connected') {
+      showToast('실행 중인 Agent가 없습니다. 설치 폴더가 남아 있다면 직접 삭제하면 됩니다.');
+      return;
+    }
+    if (!window.confirm('현재 Local Agent의 프로토콜 등록을 제거하고 Agent를 종료할까요?\n\nAgent 파일 폴더 자체는 자동 삭제하지 않습니다.')) return;
+    try {
+      try {
+        await agentFetch('/api/agent/unregister', { method:'POST', body:{}, timeout:4000 });
+      } catch (_) {
+        await agentFetch('/api/agent/exit', { method:'POST', body:{}, timeout:4000 });
+      }
+      closeSimulationEvents();
+      state.simulationAgent = { status:'offline', version:'-', vpdl:'-', license:'-', gpu:'-', message:'Agent 등록 제거/종료 요청 완료' };
+      state.simulationProgress = { running:false, processed:0, total:0, ok:0, ng:0, current:'-', message:'Ready', error:'' };
+      renderSimulation(); bindPageControls();
+      showToast('Agent 등록을 제거하고 종료했습니다. 로컬 Agent 폴더는 필요하면 직접 삭제하세요.');
+    } catch (error) {
+      showToast(`Agent 제거 실패: ${error.message}`, true);
+    }
   }
 
   async function checkSimulationRuntime() {
@@ -1821,29 +2111,137 @@
     }
   }
 
-  function addSimulationPosition() {
-    const select = $('#vq43-sim-add-position-select');
-    const key = select?.value || '';
-    if (!key) { showToast('추가할 Position을 선택하세요.', true); return; }
-    const form = ensureSimulationForm();
-    const mode = state.simulationMode || 'integrated';
-    const active = simulationActivePositions(mode, form);
-    if (!active.includes(key)) active.push(key);
-    form.activePositionsByMode[mode] = active;
-    syncSimulationFallbackRows(false);
-    persistSimulationForm();
-    renderSimulation(); bindPageControls();
+  function createPositionKey(name) {
+    const base = String(name || '').toUpperCase().replace(/[^A-Z0-9]+/g, '_').replace(/^_+|_+$/g, '').slice(0, 28) || 'POSITION';
+    let key = base, seq = 2;
+    while (positionDefs().some(p => p.key.toUpperCase() === key.toUpperCase())) key = `${base}_${seq++}`;
+    return key;
   }
 
-  function removeSimulationPosition(key) {
-    const form = ensureSimulationForm();
-    const mode = state.simulationMode || 'integrated';
-    const active = simulationActivePositions(mode, form);
-    if (active.length <= 1) { showToast('Position은 최소 1개 필요합니다.', true); return; }
-    form.activePositionsByMode[mode] = active.filter(x => x !== key);
-    persistSimulationForm();
-    renderSimulation(); bindPageControls();
+  function migrateThresholdPosition(oldName, newName) {
+    const next = {};
+    Object.entries(state.thresholds || {}).forEach(([key,value]) => {
+      if (key.startsWith(`${oldName}|`)) next[`${newName}|${key.slice(oldName.length + 1)}`] = value;
+      else next[key] = value;
+    });
+    state.thresholds = next;
+    persistThresholds();
   }
+
+  function addPositionDefinition(name) {
+    const clean = String(name || '').trim();
+    if (!clean) { showToast('Position 이름을 입력하세요.', true); return null; }
+    if (positionNames().some(x => x.toUpperCase() === clean.toUpperCase())) { showToast('같은 Position 이름이 이미 있습니다.', true); return null; }
+    const def = { key:createPositionKey(clean), name:clean };
+    state.positions.push(def);
+    persistPositions();
+    const form = ensureSimulationForm();
+    form.positions[def.key] = simulationDefaults().positions[def.key] || {
+      key:def.key, displayName:def.name, greenWorkspacePath:'', blueWorkspacePath:'', greenImageRoot:'', blueImageRoot:'',
+      greenStreamName:'기본값', blueStreamName:'기본값', blueToolName:'Locate', greenKeyword:'', integratedKeyword:''
+    };
+    ['green','blue','integrated'].forEach(mode => {
+      form.activePositionsByMode[mode] = Array.isArray(form.activePositionsByMode[mode]) ? form.activePositionsByMode[mode] : [];
+      form.activePositionsByMode[mode].push(def.key);
+    });
+    form.green.tools.forEach(tool => {
+      tool.positionEnabled = tool.positionEnabled || {};
+      tool.positionEnabled[def.key] = true;
+    });
+    syncSimulationFallbackRows(false, form);
+    persistSimulationForm();
+    if (!state.selectedMissPosition) state.selectedMissPosition = clean;
+    rebuildModel(false);
+    return def;
+  }
+
+  function addCustomPosition() {
+    const input = $('#vq43-new-position-name') || $('#vq43-sim-new-position-name');
+    const def = addPositionDefinition(input?.value || '');
+    if (!def) return;
+    if (input) input.value = '';
+    if (state.page === 'simulation') renderSimulationPreserveScroll();
+    else { renderCurrentPage(); bindPageControls(); }
+    showToast(`${def.name} Position을 추가했습니다.`);
+  }
+
+  function addSimulationPosition() { addCustomPosition(); }
+
+  async function renameCustomPosition(key, requestedName) {
+    const def = positionDefByKey(key);
+    if (!def) return;
+    const oldName = def.name;
+    const newName = String(requestedName || '').trim();
+    if (!newName) { renderCurrentPage(); return showToast('Position 이름은 비워둘 수 없습니다.', true); }
+    if (oldName === newName) return;
+    if (positionNames().some(name => name !== oldName && name.toUpperCase() === newName.toUpperCase())) {
+      renderCurrentPage(); return showToast('같은 Position 이름이 이미 있습니다.', true);
+    }
+
+    def.name = newName;
+    persistPositions();
+    const input = state.resultInputs[oldName];
+    if (input) {
+      delete state.resultInputs[oldName];
+      input.position = newName;
+      (input.rows || []).forEach(row => { row.position = newName; });
+      state.resultInputs[newName] = input;
+      try {
+        if (input.handle) await saveHandle(`${RESULT_PREFIX}${newName}`, input.handle);
+        await deleteHandle(`${RESULT_PREFIX}${oldName}`);
+      } catch (_) { }
+    }
+    state.ngImages.forEach(image => { if (image.position === oldName) image.position = newName; });
+    if (state.ngFolderNames[oldName]) {
+      state.ngFolderNames[newName] = state.ngFolderNames[oldName];
+      delete state.ngFolderNames[oldName];
+    }
+    try {
+      const handles = await loadHandles();
+      const savedNg = handles.find(item => item.key === `${NG_POSITION_PREFIX}${oldName}`);
+      if (savedNg?.handle) await saveHandle(`${NG_POSITION_PREFIX}${newName}`, savedNg.handle);
+      await deleteHandle(`${NG_POSITION_PREFIX}${oldName}`);
+    } catch (_) { }
+    migrateThresholdPosition(oldName, newName);
+    if (state.selectedMissPosition === oldName) state.selectedMissPosition = newName;
+    if (state.analysisPosition === oldName) state.analysisPosition = newName;
+    const form = ensureSimulationForm();
+    if (form.positions[key]) form.positions[key].displayName = newName;
+    const fallback = (form.blue.fallbacks || []).find(x => x.slotKey === key);
+    if (fallback) fallback.displayName = newName;
+    persistSimulationForm();
+    rebuildModel(false);
+    renderCurrentPage(); bindPageControls();
+    showToast(`Position 이름을 ${oldName} → ${newName}(으)로 변경했습니다.`);
+  }
+
+  async function removeCustomPosition(key) {
+    const def = positionDefByKey(key);
+    if (!def) return;
+    if (positionDefs().length <= 1) return showToast('Position은 최소 1개 유지해야 합니다.', true);
+    const name = def.name;
+    const hasData = !!state.resultInputs[name] || state.ngImages.some(x => x.position === name);
+    if (hasData && !window.confirm(`${name} Position과 연결된 분석 Input/NG 이미지 설정도 함께 제거할까요?`)) return;
+    state.positions = positionDefs().filter(p => p.key !== key);
+    persistPositions();
+    delete state.resultInputs[name];
+    state.ngImages = state.ngImages.filter(x => x.position !== name);
+    delete state.ngFolderNames[name];
+    try { await deleteHandle(`${RESULT_PREFIX}${name}`); await deleteHandle(`${NG_POSITION_PREFIX}${name}`); } catch (_) { }
+    const form = ensureSimulationForm();
+    delete form.positions[key];
+    ['green','blue','integrated'].forEach(mode => { form.activePositionsByMode[mode] = (form.activePositionsByMode[mode] || []).filter(x => x !== key); });
+    form.green.tools.forEach(tool => { if (tool.positionEnabled) delete tool.positionEnabled[key]; });
+    form.blue.fallbacks = (form.blue.fallbacks || []).filter(x => x.slotKey !== key);
+    persistSimulationForm();
+    if (state.selectedMissPosition === name) state.selectedMissPosition = positionNames()[0] || '';
+    if (state.analysisPosition === name) state.analysisPosition = 'ALL';
+    rebuildModel(false);
+    renderCurrentPage(); bindPageControls();
+    showToast(`${name} Position을 제거했습니다.`);
+  }
+
+  function removeSimulationPosition(key) { removeCustomPosition(key); }
 
   function saveSimulationDefaults() {
     const form = ensureSimulationForm();
@@ -1852,7 +2250,7 @@
   }
 
   function restoreSimulationDefaults() {
-    const saved = safeJsonParse(safeStorageGet(SIM_DEFAULT_KEY), null);
+    const saved = safeJsonParse(safeStorageGet(SIM_DEFAULT_KEY) || safeStorageGet(SIM_LEGACY_DEFAULT_KEY), null);
     state.simulationForm = saved && typeof saved === 'object' ? cloneSimulation(saved) : simulationDefaults();
     ensureSimulationForm(); persistSimulationForm();
     renderSimulation(); bindPageControls();
@@ -1861,7 +2259,7 @@
 
   function addSimulationTool() {
     const form = ensureSimulationForm();
-    form.green.tools.push({ useCaTop:true,useCaBot:true,useAnTop:true,useAnBot:true,toolName:'',threshold:0.5,judgement:form.green.judgements[0]?.name || 'Scrap',selected:false });
+    form.green.tools.push({ useCaTop:true,useCaBot:true,useAnTop:true,useAnBot:true,positionEnabled:Object.fromEntries(positionDefs().map(p=>[p.key,true])),toolName:'',threshold:0.5,judgement:form.green.judgements[0]?.name || 'Scrap',selected:false });
     persistSimulationForm(); renderSimulation(); bindPageControls();
   }
 
@@ -1917,8 +2315,8 @@
     form.blue = form.blue || simulationDefaults().blue;
     const existing = Array.isArray(form.blue.fallbacks) ? form.blue.fallbacks : [];
     const next = [];
-    SIM_POSITION_DEFS.map(x => x.key).forEach(key => {
-      const def = SIM_POSITION_DEFS.find(x => x.key === key); if (!def) return;
+    simulationPositionDefs().map(x => x.key).forEach(key => {
+      const def = simulationPositionDefs().find(x => x.key === key); if (!def) return;
       const toolName = form.positions?.[key]?.blueToolName || 'Locate';
       const found = existing.find(x => x && x.slotKey === key && String(x.toolName || '').toLowerCase() === String(toolName).toLowerCase()) || existing.find(x => x && x.slotKey === key);
       next.push(Object.assign(simulationDefaultFallback(key,def.label,toolName), found || {}, {slotKey:key,displayName:def.label,toolName}));
@@ -1961,9 +2359,14 @@
   function buildSimulationRequest() {
     const form = ensureSimulationForm();
     syncSimulationFallbackRows(false);
+    const green = cloneSimulation(form.green);
+    green.tools = (green.tools || []).map(tool => ({
+      ...tool,
+      positionKeys:simulationPositionDefs().filter(def => tool.positionEnabled?.[def.key] !== false).map(def => def.key)
+    }));
     return {
       mode:state.simulationMode || 'integrated', outputRoot:form.outputRoot,
-      green:cloneSimulation(form.green), blue:cloneSimulation(form.blue), integrated:cloneSimulation(form.integrated),
+      green, blue:cloneSimulation(form.blue), integrated:cloneSimulation(form.integrated),
       positions:simulationActivePositions(state.simulationMode || 'integrated', form).map(key => {
         const p = form.positions[key];
         return { ...cloneSimulation(p), enabled:true };
@@ -2014,8 +2417,10 @@
 
   async function startSimulation() {
     if (state.simulationAgent.status !== 'connected') { launchSimulationAgent(); return; }
+    flushSimulationControls();
     persistSimulationForm();
     const request = buildSimulationRequest();
+    if (!request.positions.length) { showToast('현재 시뮬레이션 모드에서 사용할 Position을 1개 이상 체크하세요.', true); return; }
     try {
       prepareLiveSimulationData(request);
       const data = await agentFetch('/api/simulation/start', { method:'POST', body:request, timeout:10000 });
@@ -2065,10 +2470,11 @@
   function simulationPositionRows() {
     const mode = state.simulationMode || 'integrated';
     const form = ensureSimulationForm();
+    const active = simulationActivePositions(mode, form);
     const keywordMode = mode === 'green' ? !!form.green.keywordMode : mode === 'integrated' ? !!form.integrated.keywordMode : false;
-    return simulationActivePositions(mode, form).map(key => {
-      const p = form.positions[key], label = p.displayName;
-      const head = `<div class="vq43-sim-position-ident"><strong>${escapeHtml(label)}</strong><button class="vq43-sim-remove-position" data-vq-action="simulation-remove-position" data-sim-key="${key}" title="Position 제거">×</button></div>`;
+    return simulationPositionDefs().map(({key,label}) => {
+      const p = form.positions[key], enabled = active.includes(key);
+      const head = `<div class="vq43-sim-position-ident"><label class="vq43-sim-position-enable"><input type="checkbox" data-sim-active-position="${key}" data-sim-mode="${mode}" ${enabled?'checked':''}><strong>${escapeHtml(label)}</strong></label><button class="vq43-sim-remove-position" data-vq-action="simulation-remove-position" data-sim-key="${key}" title="Position 전체 제거">×</button></div>`;
       if (mode === 'green') {
         return `<div class="vq43-sim-position-row-new">${head}${simPathField('position',key,'greenWorkspacePath','Workspace','Green Runtime Workspace','file','workspace')}${simPathField('position',key,'greenImageRoot','Image Folder','Green 이미지 폴더','folder','folder',keywordMode)}<label class="vq43-sim-compact-field"><span>Stream</span><input data-sim-scope="position" data-sim-field="greenStreamName" data-sim-key="${key}" value="${escapeHtml(p.greenStreamName)}"></label>${keywordMode?`<label class="vq43-sim-compact-field"><span>Keyword</span><input data-sim-scope="position" data-sim-field="greenKeyword" data-sim-key="${key}" value="${escapeHtml(p.greenKeyword)}"></label>`:''}</div>`;
       }
@@ -2080,10 +2486,7 @@
   }
 
   function simulationPositionToolbar() {
-    const form = ensureSimulationForm();
-    const active = simulationActivePositions(state.simulationMode || 'integrated', form);
-    const missing = SIM_POSITION_DEFS.filter(x => !active.includes(x.key));
-    return `<div class="vq43-sim-position-toolbar"><div><strong>Position 구성</strong><span>필요한 Position만 추가/삭제합니다.</span></div><div><select id="vq43-sim-add-position-select" ${missing.length?'':'disabled'}>${missing.length?missing.map(x=>`<option value="${x.key}">${x.label}</option>`).join(''):'<option>모든 Position 사용 중</option>'}</select><button class="vq43-btn vq43-btn-blue" data-vq-action="simulation-add-position" ${missing.length?'':'disabled'}>+ Position</button></div></div>`;
+    return `<div class="vq43-sim-position-toolbar"><div><strong>Position 구성</strong><span>체크박스는 현재 모드의 사용 여부입니다. Position 추가/삭제는 메인·분석·설정에도 공통 반영됩니다.</span></div><div><input id="vq43-sim-new-position-name" placeholder="새 Position 이름"><button class="vq43-btn vq43-btn-blue" data-vq-action="simulation-add-position">+ Position 추가</button></div></div>`;
   }
 
   function simulationCheck(scope, field, label) {
@@ -2125,7 +2528,14 @@
   function toolSettingsOptions() {
     const form = ensureSimulationForm();
     const judgements = form.green.judgements.map(x => x.name).filter(Boolean);
-    return `<section class="vq43-sim-option-section"><div class="vq43-sim-option-titlebar"><h3>Tool Settings</h3><div><button data-vq-action="simulation-tool-add">추가</button><button data-vq-action="simulation-tool-remove">선택 제거</button><button data-vq-action="simulation-tool-reset">원본 기본값</button></div></div><div class="vq43-sim-table-wrap"><table class="vq43-sim-table tools"><thead><tr><th>선택</th><th>CA(T)</th><th>CA(B)</th><th>AN(T)</th><th>AN(B)</th><th>ToolName</th><th>Threshold</th><th>Judgement</th></tr></thead><tbody>${form.green.tools.map((t,i)=>`<tr><td><input type="checkbox" data-sim-tool-index="${i}" data-sim-tool-field="selected" ${t.selected?'checked':''}></td><td><input type="checkbox" data-sim-tool-index="${i}" data-sim-tool-field="useCaTop" ${t.useCaTop?'checked':''}></td><td><input type="checkbox" data-sim-tool-index="${i}" data-sim-tool-field="useCaBot" ${t.useCaBot?'checked':''}></td><td><input type="checkbox" data-sim-tool-index="${i}" data-sim-tool-field="useAnTop" ${t.useAnTop?'checked':''}></td><td><input type="checkbox" data-sim-tool-index="${i}" data-sim-tool-field="useAnBot" ${t.useAnBot?'checked':''}></td><td><input data-sim-tool-index="${i}" data-sim-tool-field="toolName" value="${escapeHtml(t.toolName)}"></td><td><input type="number" step="0.01" min="0" max="1" data-sim-tool-index="${i}" data-sim-tool-field="threshold" value="${escapeHtml(t.threshold)}"></td><td><select data-sim-tool-index="${i}" data-sim-tool-field="judgement">${judgements.map(j=>`<option ${j===t.judgement?'selected':''}>${escapeHtml(j)}</option>`).join('')}</select></td></tr>`).join('')}</tbody></table></div></section>`;
+    const defs = simulationPositionDefs();
+    const positionHead = defs.map(def => `<th>${escapeHtml(def.label)}</th>`).join('');
+    const rows = form.green.tools.map((t,i) => {
+      t.positionEnabled = t.positionEnabled || {};
+      const positionCells = defs.map(def => `<td><input type="checkbox" data-sim-tool-position-index="${i}" data-sim-position-key="${def.key}" ${t.positionEnabled[def.key] !== false ? 'checked' : ''}></td>`).join('');
+      return `<tr><td><input type="checkbox" data-sim-tool-index="${i}" data-sim-tool-field="selected" ${t.selected?'checked':''}></td>${positionCells}<td><input data-sim-tool-index="${i}" data-sim-tool-field="toolName" value="${escapeHtml(t.toolName)}"></td><td><input type="number" step="0.01" min="0" max="1" data-sim-tool-index="${i}" data-sim-tool-field="threshold" value="${escapeHtml(t.threshold)}"></td><td><select data-sim-tool-index="${i}" data-sim-tool-field="judgement">${judgements.map(j=>`<option ${j===t.judgement?'selected':''}>${escapeHtml(j)}</option>`).join('')}</select></td></tr>`;
+    }).join('');
+    return `<section class="vq43-sim-option-section"><div class="vq43-sim-option-titlebar"><h3>Tool Settings</h3><div><button data-vq-action="simulation-tool-add">추가</button><button data-vq-action="simulation-tool-remove">선택 제거</button><button data-vq-action="simulation-tool-reset">원본 기본값</button></div></div><p class="vq43-sim-option-note">Position 열은 설정의 공통 Position 목록과 자동 동기화됩니다.</p><div class="vq43-sim-table-wrap"><table class="vq43-sim-table tools"><thead><tr><th>선택</th>${positionHead}<th>ToolName</th><th>Threshold</th><th>Judgement</th></tr></thead><tbody>${rows}</tbody></table></div></section>`;
   }
 
   function judgementOptions() {
@@ -2191,7 +2601,7 @@
     const modeDescription = mode === 'integrated' ? 'Blue Crop → Green 검사를 사용자 PC VPDL Runtime에서 연속 실행합니다.' : mode === 'green' ? 'Green Tool 단독 시뮬레이션입니다.' : 'Blue Tool Locate 결과 기준 Crop 시뮬레이션입니다.';
 
     page.innerHTML = `<div class="vq43-content vq43-sim-page">
-      <div class="vq43-topline"><div><div class="vq43-eyebrow">VPDL Local Simulation</div><h1 class="vq43-title">VPDL 시뮬레이션</h1><p class="vq43-subtitle">DL_Simulation v1.13의 Runtime/Tool/Filter/Crop/Fallback 설정을 Web GUI에서 제어합니다.</p></div><div class="vq43-top-actions"><button class="vq43-btn" data-vq-action="simulation-agent-info">구조 안내</button><button class="vq43-btn" data-vq-action="simulation-agent-launch">Agent 실행</button><button class="vq43-btn vq43-btn-blue" data-vq-action="simulation-agent-check">${checking?'◌ 확인 중...':'연결 확인'}</button></div></div>
+      <div class="vq43-topline"><div><div class="vq43-eyebrow">VPDL Local Simulation</div><h1 class="vq43-title">VPDL 시뮬레이션</h1><p class="vq43-subtitle">DL_Simulation v1.13의 Runtime/Tool/Filter/Crop/Fallback 설정을 Web GUI에서 제어합니다.</p></div><div class="vq43-top-actions"><button class="vq43-btn" data-vq-action="simulation-agent-info">구조 안내</button><button class="vq43-btn" data-vq-action="simulation-agent-launch">Agent 실행</button><button class="vq43-btn vq43-btn-red" data-vq-action="simulation-agent-remove" ${connected?'':'disabled'}>Agent 제거</button><button class="vq43-btn vq43-btn-blue" data-vq-action="simulation-agent-check">${checking?'◌ 확인 중...':'연결 확인'}</button></div></div>
       <section class="vq43-sim-agent-card ${statusClass}"><div class="vq43-sim-agent-title"><div><span class="vq43-sim-dot"></span><strong>Local Engine</strong></div><b>${statusText}</b></div><div class="vq43-sim-agent-grid"><div><span>Agent</span><strong>${escapeHtml(agent.version||'-')}</strong></div><div><span>VPDL Runtime</span><strong>${escapeHtml(agent.vpdl||'-')}</strong></div><div><span>License</span><strong>${escapeHtml(agent.license||'-')}</strong></div><div><span>GPU</span><strong>${escapeHtml(agent.gpu||'-')}</strong></div></div><p>${escapeHtml(agent.message||'Local Agent 연결 전')}</p>${connected?'<button class="vq43-btn vq43-btn-blue vq43-sim-runtime-check" data-vq-action="simulation-runtime-check">Runtime / License 실제 확인</button>':''}</section>
       <div class="vq43-sim-tabs"><button class="${mode==='integrated'?'active':''}" data-vq-action="simulation-mode" data-vq-mode="integrated">Integrated Simulation</button><button class="${mode==='green'?'active':''}" data-vq-action="simulation-mode" data-vq-mode="green">Green Simulation</button><button class="${mode==='blue'?'active':''}" data-vq-action="simulation-mode" data-vq-mode="blue">Blue Crop</button></div>
       <div class="vq43-sim-layout"><main class="vq43-sim-maincol"><section class="vq43-sim-panel"><div class="vq43-sim-panel-head"><div><strong>${modeText}</strong><span>${modeDescription}</span></div><span class="vq43-sim-local-badge">LOCAL PC</span></div>${simulationPositionToolbar()}<div class="vq43-sim-position-list">${simulationPositionRows()}</div></section>${simulationOutputPanel()}${simulationStatusPanel()}<section class="vq43-sim-runbar"><div><strong>Local VPDL 실행</strong><span>Green/Integrated 결과는 Progress Update 단위로 Main/분석 NG율에 실시간 반영됩니다.</span></div><div><button id="vq43-sim-stop" class="vq43-btn vq43-btn-red" data-vq-action="simulation-stop" ${s.running?'':'disabled'}>Stop</button><button id="vq43-sim-start" class="vq43-btn vq43-btn-blue" data-vq-action="simulation-start" ${connected&&!s.running?'':'disabled'}>Simulation Start</button></div></section></main>${simulationOptionsPanel()}</div>
@@ -2202,13 +2612,22 @@
 
   function renderSettings() {
     const model = state.model || { uniqueCellCount:0, misses:[], duplicates:[] };
-    const warningList = [...state.restoreWarnings, ...POSITIONS.flatMap((position) => (state.resultInputs[position]?.warnings || []).map((warning) => `${position}: ${warning}`)), ...state.ngWarnings];
-    const ngCounts = Object.fromEntries(POSITIONS.map((position) => [position, state.ngImages.filter((image) => image.position === position).length]));
+    const positions = positionNames();
+    const warningList = [...state.restoreWarnings, ...positions.flatMap((position) => (state.resultInputs[position]?.warnings || []).map((warning) => `${position}: ${warning}`)), ...state.ngWarnings];
+    const ngCounts = Object.fromEntries(positions.map((position) => [position, state.ngImages.filter((image) => image.position === position).length]));
+    const positionRows = positionDefs().map(def => `<div class="vq43-position-config-row"><input data-position-name-key="${escapeHtml(def.key)}" value="${escapeHtml(def.name)}" aria-label="Position 이름"><span class="vq43-position-sync-note">Simulation · Main · Analysis · NG 경로 공통</span><button class="vq43-icon-btn" data-vq-action="position-remove" data-position-key="${escapeHtml(def.key)}" title="Position 제거" ${positionDefs().length<=1?'disabled':''}>×</button></div>`).join('');
+    const ngRows = positions.map(position => {
+      const count = ngCounts[position] || 0;
+      const loading = state.loading === `ng:${position}`;
+      const folder = state.ngFolderNames[position] || (count ? `${state.ngRootName || '선택된 루트'} / ${position}` : '폴더 미입력');
+      return `<div class="vq43-ng-position-row" data-vq-position="${escapeHtml(position)}"><div class="vq43-position-label">${escapeHtml(position)}</div><div><div class="vq43-input-name">${escapeHtml(folder)}</div><div class="vq43-input-meta">실제 NG 이미지 ${numberText(count)}개</div></div><button class="vq43-btn vq43-btn-amber" data-vq-action="choose-ng-position" ${state.loading?'disabled':''}>${loading?'읽는 중...':count?'교체':'폴더 선택'}</button>${count||state.ngFolderNames[position]?'<button class="vq43-icon-btn" data-vq-action="remove-ng-position" title="해당 Position NG 경로 제거">×</button>':'<span></span>'}</div>`;
+    }).join('');
     $('#vq43-page').innerHTML = `
-      <div class="vq43-content"><div class="vq43-topline"><div><div class="vq43-eyebrow" style="color:#22d3ee">Input & Configuration</div><h1 class="vq43-title">분석 Input 설정</h1><p class="vq43-subtitle">Position 결과 파일은 1개만 입력해도 되며 입력하지 않은 Position은 분석에서 제외합니다.</p></div><button class="vq43-btn vq43-btn-red" data-vq-action="clear-inputs">전체 초기화</button></div>
-        <section class="vq43-settings-card"><div class="vq43-settings-title"><span class="vq43-settings-icon">▦</span><div><h3>1. Position별 시뮬레이션 결과 파일</h3><p>CSV 또는 XLSX · Cell ID, Total_result, Tool_result, Tool_score 열 자동 인식</p></div></div><div class="vq43-input-list">${POSITIONS.map(resultInputRow).join('')}</div></section>
-        <section class="vq43-settings-card"><div class="vq43-settings-title"><span class="vq43-settings-icon amber">▣</span><div><h3>2. 실제 최종 NG 이미지 경로</h3><p>루트 아래 CA(TOP), AN(TOP), CA(BOT), AN(BOT) 폴더에서 이미지와 Cell ID를 찾습니다.</p></div></div><div class="vq43-folder-box"><div class="vq43-folder-info"><div class="vq43-folder-label">Selected Folder</div><div class="vq43-folder-name">${escapeHtml(state.ngRootName || '실제 NG 이미지 폴더 미입력')}</div><div class="vq43-folder-counts">${POSITIONS.map((position) => `<span>${position}<b>${ngCounts[position]}</b></span>`).join('')}</div></div><button class="vq43-btn vq43-btn-amber vq43-btn-icon" data-vq-action="choose-ng-folder">${state.loading==='ng'?'◌ 읽는 중...':'▣ NG 폴더 선택'}</button></div><div class="vq43-folder-example">${POSITIONS.map((position)=>`<code>실제_NG_이미지 / ${position} / ...이미지</code>`).join('')}</div></section>
-        <section class="vq43-settings-card"><div class="vq43-settings-title"><span class="vq43-settings-icon green">✓</span><div><h3>분석 준비 상태</h3><p>현재 입력 데이터의 집계 결과</p></div></div><div class="vq43-ready-grid"><div><span>결과 Position</span><b>${POSITIONS.filter((position)=>state.resultInputs[position]).length} / 4</b></div><div><span>고유 Cell</span><b>${numberText(model.uniqueCellCount)}</b></div><div><span>실제 NG 고유값</span><b>${numberText(model.actualUniqueCount || 0)}</b></div><div><span>CSV 매칭</span><b class="vq43-blue">${numberText(model.matchedActualCount || 0)}</b></div><div><span>미매칭</span><b class="vq43-red">${numberText(model.unmatchedActualCount || 0)}</b></div><div><span>미검</span><b class="vq43-amber">${numberText(model.misses.length)}</b></div></div>${model.actualUniqueCount ? matchDiagnostic(model) : ''}</section>
+      <div class="vq43-content"><div class="vq43-topline"><div><div class="vq43-eyebrow" style="color:#22d3ee">Input & Configuration</div><h1 class="vq43-title">분석 Input 설정</h1><p class="vq43-subtitle">Position 목록은 Simulation · Main · Analysis · 실제 NG 경로에 공통 적용됩니다.</p></div><button class="vq43-btn vq43-btn-red" data-vq-action="clear-inputs">Input 전체 초기화</button></div>
+        <section class="vq43-settings-card"><div class="vq43-settings-title"><span class="vq43-settings-icon cyan">◎</span><div><h3>0. Position 구성</h3><p>이름 변경/추가/삭제 시 모든 분석·시뮬레이션 화면에 동일하게 반영됩니다.</p></div></div><div class="vq43-position-config-list">${positionRows}</div><div class="vq43-position-add-row"><input id="vq43-new-position-name" placeholder="예: CA(MID), AN(SIDE), CUSTOM-01"><button class="vq43-btn vq43-btn-blue" data-vq-action="position-add">+ Position 추가</button></div></section>
+        <section class="vq43-settings-card"><div class="vq43-settings-title"><span class="vq43-settings-icon">▦</span><div><h3>1. Position별 시뮬레이션 결과 파일</h3><p>CSV 또는 XLSX · Cell ID, Total_result, Tool_result, Tool_score 열 자동 인식</p></div></div><div class="vq43-input-list">${positions.map(resultInputRow).join('')}</div></section>
+        <section class="vq43-settings-card"><div class="vq43-settings-title"><span class="vq43-settings-icon amber">▣</span><div><h3>2. 실제 최종 NG 이미지 경로</h3><p>각 Position별 폴더를 독립적으로 선택/교체할 수 있습니다. 전체 루트를 한 번에 읽는 기존 방식도 유지합니다.</p></div><button class="vq43-btn vq43-btn-amber" data-vq-action="choose-ng-folder" ${state.loading?'disabled':''}>${state.loading==='ng'?'◌ 전체 루트 읽는 중...':'▣ 전체 NG 루트 선택'}</button></div><div class="vq43-ng-position-list">${ngRows}</div></section>
+        <section class="vq43-settings-card"><div class="vq43-settings-title"><span class="vq43-settings-icon green">✓</span><div><h3>분석 준비 상태</h3><p>현재 입력 데이터의 집계 결과</p></div></div><div class="vq43-ready-grid"><div><span>결과 Position</span><b>${positions.filter((position)=>state.resultInputs[position]).length} / ${positions.length}</b></div><div><span>고유 Cell</span><b>${numberText(model.uniqueCellCount)}</b></div><div><span>실제 NG 고유값</span><b>${numberText(model.actualUniqueCount || 0)}</b></div><div><span>CSV 매칭</span><b class="vq43-blue">${numberText(model.matchedActualCount || 0)}</b></div><div><span>미매칭</span><b class="vq43-red">${numberText(model.unmatchedActualCount || 0)}</b></div><div><span>미검</span><b class="vq43-amber">${numberText(model.misses.length)}</b></div></div>${model.actualUniqueCount ? matchDiagnostic(model) : ''}</section>
         ${(warningList.length || model.duplicates.length) ? `<section class="vq43-warning"><strong>⚠ 확인 필요</strong>${warningList.map((warning)=>`<div>• ${escapeHtml(warning)}</div>`).join('')}${model.duplicates.length?`<div>• 중복 Cell ID + Position ${numberText(model.duplicates.length)}건: 하나라도 NG이면 NG로 통합하고 Score 원본 행은 유지합니다.</div>`:''}</section>`:''}
       </div>`;
   }
@@ -2489,7 +2908,7 @@
       seedReport() {
         const resultInputs = {};
         const ngImages = [];
-        POSITIONS.forEach((position, positionIndex) => {
+        positionNames().forEach((position, positionIndex) => {
           const rows = [];
           for (let index = 1; index <= 100; index += 1) {
             const cellId = `${['P','J','B','P'][positionIndex]}${String(positionIndex + 1).padStart(2,'0')}${String(index).padStart(13,'0')}`.slice(0,16);
