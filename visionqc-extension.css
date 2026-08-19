@@ -426,7 +426,7 @@ body:not([data-vq-page="classification"]) #root>div>main{
 }
 
 /* v4.4.14 - VPDL Local Simulation UI prototype */
-#root>div>header.vq43-host-header>.vq43-brand::after{content:"INSPECTION TERMINAL V4.4.24"}
+#root>div>header.vq43-host-header>.vq43-brand::after{content:"INSPECTION TERMINAL V4.4.25"}
 .vq43-sim-page{padding-bottom:42px!important}
 .vq43-sim-agent-card{margin-top:18px;border:1px solid #2b3b55;background:linear-gradient(145deg,#0c1629,#091221);border-radius:18px;padding:16px 18px}
 .vq43-sim-agent-card.ready{border-color:rgba(16,185,129,.48)}.vq43-sim-agent-card.checking{border-color:rgba(59,130,246,.48)}.vq43-sim-agent-card.offline{border-color:rgba(71,85,105,.65)}

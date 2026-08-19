@@ -1,0 +1,44 @@
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>VisionQC v4.4.25 Browser Regression</title>
+  <style>
+    body{margin:0;padding:24px;background:#020617;color:#dbeafe;font:14px/1.5 system-ui,sans-serif}
+    h1{font-size:20px}#status{padding:14px;border:1px solid #334155;border-radius:10px;background:#071323;white-space:pre-wrap}
+    #status.pass{border-color:#059669;color:#6ee7b7}#status.fail{border-color:#dc2626;color:#fca5a5}
+    .viewport{width:960px;height:540px;max-width:100%;overflow:hidden;border:1px solid #334155;margin-top:16px;background:#000}
+    iframe{width:1920px;height:1080px;border:0;transform:scale(.5);transform-origin:0 0}
+  </style>
+</head>
+<body>
+  <h1>VisionQC v4.4.25 · FHD Browser Regression</h1>
+  <div id="status">테스트 준비 중...</div>
+  <div class="viewport"><iframe id="app" src="../index.html?vqDebug=1&amp;browserRegression=1"></iframe></div>
+  <script>
+    const status = document.getElementById('status');
+    const frame = document.getElementById('app');
+    const wait = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+    frame.addEventListener('load', async () => {
+      try {
+        let debug = null;
+        for (let i=0;i<100;i+=1) {
+          debug = frame.contentWindow.__VISIONQC_DEBUG__;
+          if (debug) break;
+          await wait(50);
+        }
+        if (!debug) throw new Error('VisionQC debug API timeout');
+        const result = await debug.runSimulationUiRegression();
+        status.className = result.ok ? 'pass' : 'fail';
+        status.textContent = `${result.ok ? 'PASS' : 'FAIL'}\n${JSON.stringify(result, null, 2)}`;
+        document.title = `${result.ok ? 'PASS' : 'FAIL'} · VisionQC v4.4.25 Browser Regression`;
+      } catch (error) {
+        status.className = 'fail';
+        status.textContent = `FAIL\n${error.stack || error.message || error}`;
+        document.title = 'FAIL · VisionQC v4.4.25 Browser Regression';
+      }
+    });
+  </script>
+</body>
+</html>

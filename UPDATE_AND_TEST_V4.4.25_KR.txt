@@ -1,0 +1,51 @@
+VisionQC Web v4.4.25 업데이트/테스트 순서
+=========================================
+
+기준 화면
+- 해상도: 1920 x 1080 (FHD)
+- 브라우저 배율: 100%
+- Chrome: Ctrl + Shift + R 후 테스트
+
+Web 배포
+1) repository root에 v4.4.25 파일 덮어쓰기
+2) index.html이 assets/index-v4.4.25.js와 visionqc-v4425-clean.css를 참조하는지 확인
+3) Commit / Push
+4) GitHub Pages 배포 완료 후 Ctrl + Shift + R
+
+핵심 UI 확인
+1) MENU 클릭: drawer 272px까지 확장되고 본문도 오른쪽으로 함께 이동
+2) MENU 재클릭 또는 메뉴 선택: 72px icon rail로 복귀
+3) FHD Simulation: Main + Options 2열 유지
+4) Options 내부를 아래로 scroll한 뒤 Main 빈 공간 클릭: Options 위치 유지
+5) Tool Settings: 좌우 scrollbar가 없고 ToolName/Threshold/Judgement가 모두 panel 안에 표시
+6) Judgement/Tool 추가·삭제·순서 변경: Options scroll/focus 유지
+7) 연결 확인/Runtime 확인: Options scroll 위치 유지
+8) 1439px 이하 viewport: Main 다음에 Options가 1열로 표시
+9) 일반 설명/오류 텍스트를 드래그: mouse button을 놓아도 selection 유지
+10) Fallback / Preview: 좌우 scrollbar 없이 Position별 card가 panel 안에 표시
+11) Preview modal: 이미지가 viewport 안에 표시되고 가로 scrollbar 없음
+
+자동 Browser 검사
+1) npm ci
+2) npx playwright install --with-deps chromium
+3) npm run test:browser
+4) 3개 test가 모두 PASS인지 확인
+   - synthetic DOM/scroll/selection/overflow regression
+   - 실제 mouse drag + mouseup selection 유지 / Main 실제 click scroll 유지
+   - Tool/Fallback/Preview horizontal overflow 1px 이하
+
+Agent v0.2.4 수정 사항
+- Runtime Check / Workspace Inspect가 매 요청마다 새 Control을 만들지 않고 하나를 재사용
+- Workspace 요청 직렬화 및 파일 상태 기반 구조 cache
+- Simulation 시작 전 Inspect Control 해제, 실행 중 새 Control 생성 차단
+- 같은 Workspace를 여러 Position이 사용해도 Agent/Web 양쪽에서 중복 요청 제거
+- v0.2.3의 OptimizedGPUMemory 오류/CMD BOM hotfix 유지
+
+Agent 빌드/등록
+1) 수정된 LocalAgent_v0.2.4 폴더에서 BUILD_RELEASE_x64.cmd 실행
+2) 오류 0개와 bin\x64\Release\VisionQC.LocalAgent.exe 생성 확인
+3) REGISTER_PROTOCOL.cmd 실행
+4) CHECK_PROTOCOL.cmd에서 AgentVersion 0.2.4와 현재 EXE 경로 확인
+5) Web에서 연결 확인 및 같은 Workspace를 2개 이상 Position에 지정
+6) 각 Position이 READ OK인지 확인
+7) Runtime Check 직후와 Simulation 종료 후에도 구조가 정상인지 확인

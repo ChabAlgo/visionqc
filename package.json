@@ -1,0 +1,13 @@
+{
+  "name": "visionqc-browser-regression",
+  "private": true,
+  "version": "4.4.25",
+  "type": "module",
+  "scripts": {
+    "test": "node --test tests/v4425-regression.test.mjs",
+    "test:browser": "playwright test"
+  },
+  "devDependencies": {
+    "@playwright/test": "1.62.1"
+  }
+}

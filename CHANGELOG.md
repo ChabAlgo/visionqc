@@ -1,3 +1,31 @@
+# VisionQC v4.4.25
+
+## Workspace Runtime Structure
+- Web에서 같은 Workspace/GPU 요청을 하나의 in-flight 요청으로 합칩니다.
+- Local Agent v0.2.4는 Runtime Check와 Workspace Inspect에 하나의 VPDL Control을 재사용하고 요청을 직렬화합니다.
+- 파일 경로·크기·수정 시간·GPU 설정이 같으면 구조 결과를 재사용합니다.
+- Simulation 시작 전 Inspect Control을 해제하고 실행 중 새 Control 생성을 차단합니다.
+
+## Selection / Simulation Options scroll
+- 전역 click 위임이 `body[data-vq-page]`를 메뉴 버튼으로 오인해 매 클릭마다 전체 화면을 재생성하던 직접 원인을 제거했습니다.
+- Simulation 텍스트와 입력의 native selection을 명시적으로 허용했습니다.
+- Agent 연결/Runtime 확인에서 전체 Simulation DOM 재렌더를 제거했습니다.
+- Workspace 구조 응답은 해당 Position summary/select만 부분 갱신합니다.
+- Options scrollTop을 state에 계속 기록하고 외부 pointer/click에서 예상치 못한 변경만 복원합니다.
+- FHD에서는 Options를 viewport 고정 scroller로 분리하고 1439px 이하에서는 일반 1열 panel로 전환합니다.
+
+## Fallback / Preview
+- 980px 최소폭의 10열 표를 Position별 반응형 카드로 교체했습니다.
+- Shift/ROI는 3열 compact grid, Sample Image는 panel 폭 안의 input+button으로 배치했습니다.
+- Preview modal의 가로 overflow를 차단하고 1439px 이하에서는 이미지 1열로 전환합니다.
+
+## 검증
+- Web source/layout/state 회귀검사 확장
+- Agent v0.2.4 Control ownership/cache/version/CMD 회귀검사 확장
+- Chromium 1920×1080 실제 mouse drag/mouseup, Main click, Options/Fallback/Preview overflow 자동검사 추가
+
+---
+
 # VisionQC v4.4.24
 
 ## FHD 메뉴 / 레이아웃

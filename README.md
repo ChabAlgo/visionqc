@@ -1,6 +1,16 @@
-# VisionQC GitHub Pages v4.4.24
+# VisionQC GitHub Pages v4.4.25
 
-GitHub Pages 정적 배포용 VisionQC Web입니다. 실제 VPDL Runtime/GPU 작업은 사용자 PC의 VisionQC Local Agent v0.2.3에서 실행합니다.
+GitHub Pages 정적 배포용 VisionQC Web입니다. 실제 VPDL Runtime/GPU 작업은 사용자 PC의 VisionQC Local Agent v0.2.4에서 실행합니다.
+
+## v4.4.25 핵심
+- `body[data-vq-page]`를 navigation으로 잘못 인식하던 전역 click selector를 실제 메뉴 버튼으로 제한
+- Options scrollTop을 상태로 추적하고 Options 외부 pointer/click에서 값이 바뀌면 즉시 복원
+- Agent 연결/Runtime 확인은 Simulation 전체 DOM을 다시 만들지 않고 Agent 카드만 갱신
+- Workspace 구조 응답은 해당 Position의 summary/select만 갱신해 텍스트 선택과 Options DOM을 보존
+- 동일 Workspace 요청을 Web에서 합치고 Agent에서 단일 Control·cache로 처리
+- Fallback / Preview의 980px 표를 반응형 카드로 교체해 가로 scrollbar 제거
+- Simulation 일반 텍스트와 입력의 native text selection을 명시적으로 허용
+- Chromium 1920×1080에서 실제 mouse drag/mouseup, Main click, Fallback/Preview overflow를 반복 검사하는 Playwright workflow 추가
 
 ## v4.4.24 핵심
 - FHD 1920×1080 / 브라우저 100% 배율을 기준으로 Simulation 2열 레이아웃 재정렬
@@ -28,4 +38,10 @@ GitHub Pages 정적 배포용 VisionQC Web입니다. 실제 VPDL Runtime/GPU 작
 ## 배포
 Repository root에 이 ZIP의 내용물을 그대로 놓고 GitHub Pages를 `main / (root)`로 배포합니다.
 
-권장 Local Agent: **v0.2.3**
+## 회귀검사
+- `npm ci`
+- `npm test` — source/layout/state 정적 회귀검사
+- `npx playwright install --with-deps chromium`
+- `npm run test:browser` — Chromium FHD 실제 interaction 검사
+
+권장 Local Agent: **v0.2.4**
