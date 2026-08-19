@@ -1,6 +1,17 @@
-# VisionQC GitHub Pages v4.4.25
+# VisionQC GitHub Pages v4.4.26
 
 GitHub Pages 정적 배포용 VisionQC Web입니다. 실제 VPDL Runtime/GPU 작업은 사용자 PC의 VisionQC Local Agent v0.2.4에서 실행합니다.
+
+## v4.4.26 핵심
+- Web에서 여러 Workspace 구조 읽기를 Agent로 동시에 보내지 않고 한 건씩 순차 처리
+- 각 항목의 `파일 선택 중 → 읽기 대기 중 → 구조 읽는 중 → READ OK/ERROR` 상태를 단일 상태로 유지
+- Workspace 요청 제한시간을 실제 실행 시작 후 180초로 적용하고, 시간 초과 시 Agent 완료 확인을 1회 자동 재시도
+- 다른 메뉴를 다녀와도 진행 상태가 유지되고, 성공 결과는 10분 Web cache + Agent 파일 상태 cache로 재사용
+- 이전 경로의 늦은 응답이 새 경로 결과를 덮어쓰지 않도록 Position별 generation/path 검증 추가
+- 이전 버전이 저장한 raw abort 실패를 폐기하고 Agent 연결 시 저장 경로 자동 재검사
+- Progress Log 시간을 모두 `HH:mm:ss.SSS [LEVEL]` 형식으로 통일
+- Fallback 입력을 34px dark input으로 통일하고 Sample Image 버튼 높이/정렬 수정
+- FHD Options를 정상 grid column의 sticky panel로 되돌려 상단 버튼/Workspace 카드 위를 덮지 않도록 수정
 
 ## v4.4.25 핵심
 - `body[data-vq-page]`를 navigation으로 잘못 인식하던 전역 click selector를 실제 메뉴 버튼으로 제한

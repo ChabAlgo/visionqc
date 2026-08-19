@@ -8,7 +8,7 @@ async function openSimulation(page) {
   await expect(page.locator('.vq43-sim-options-scroll')).toBeVisible();
 }
 
-test.describe('VisionQC v4.4.25 FHD interaction regression', () => {
+test.describe('VisionQC v4.4.26 FHD interaction regression', () => {
   test('debug regression covers scroll, selection, fallback and preview overflow', async ({ page }) => {
     await openSimulation(page);
     const result = await page.evaluate(() => window.__VISIONQC_DEBUG__.runSimulationUiRegression());
@@ -85,5 +85,41 @@ test.describe('VisionQC v4.4.25 FHD interaction regression', () => {
       expect(dimensions, `${selector} is missing`).not.toBeNull();
       expect(dimensions.overflow, `${selector}: ${JSON.stringify(dimensions)}`).toBeLessThanOrEqual(1);
     }
+  });
+
+  test('FHD Options does not cover upper content and fallback controls align', async ({ page }) => {
+    await openSimulation(page);
+    const result = await page.evaluate(() => {
+      const rect = (selector) => {
+        const element = document.querySelector(selector);
+        if (!element) return null;
+        const box = element.getBoundingClientRect();
+        return { left:box.left, top:box.top, right:box.right, bottom:box.bottom, width:box.width, height:box.height };
+      };
+      const input = document.querySelector('.vq43-fallback-metrics input');
+      const sampleButton = document.querySelector('.vq43-fallback-sample button');
+      const style = input ? getComputedStyle(input) : null;
+      return {
+        options:rect('.vq43-sim-options'),
+        workspace:rect('.vq43-workspace-panel'),
+        actions:rect('.vq43-top-actions'),
+        inputHeight:input?.getBoundingClientRect().height || 0,
+        buttonHeight:sampleButton?.getBoundingClientRect().height || 0,
+        inputBackground:style?.backgroundColor || '',
+        koreanTime:window.__VISIONQC_DEBUG__.formatLogTime('17시 17분 4초'),
+        agentTime:window.__VISIONQC_DEBUG__.formatLogTime('17:17:26.771')
+      };
+    });
+
+    expect(result.options).not.toBeNull();
+    expect(result.workspace).not.toBeNull();
+    expect(result.actions).not.toBeNull();
+    expect(result.options.top).toBeGreaterThanOrEqual(result.workspace.bottom - 1);
+    expect(result.options.top).toBeGreaterThanOrEqual(result.actions.bottom - 1);
+    expect(result.inputHeight).toBe(34);
+    expect(result.buttonHeight).toBe(34);
+    expect(result.inputBackground).toBe('rgb(5, 13, 24)');
+    expect(result.koreanTime).toBe('17:17:04.000');
+    expect(result.agentTime).toBe('17:17:26.771');
   });
 });

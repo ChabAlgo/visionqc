@@ -1,7 +1,7 @@
 (() => {
   'use strict';
 
-  const VERSION = '4.4.25';
+  const VERSION = '4.4.26';
   const DEFAULT_POSITION_DEFS = [
     { key:'CA_TOP', name:'CA(TOP)' },
     { key:'AN_TOP', name:'AN(TOP)' },
@@ -24,8 +24,13 @@
   const IMG_RE = /\.(png|jpe?g|bmp|gif|webp|tif?f)$/i;
   const LOCAL_AGENT_URL = 'http://127.0.0.1:17891';
   const EXPECTED_AGENT_VERSION = '0.2.4';
+  const WORKSPACE_INSPECT_TIMEOUT_MS = 180000;
+  const WORKSPACE_INSPECT_CACHE_MS = 10 * 60 * 1000;
   const workspaceInspectCache = new Map();
   const workspaceInspectInflight = new Map();
+  const workspaceInspectStatus = new Map();
+  const workspaceInspectGeneration = new Map();
+  let workspaceInspectQueueTail = Promise.resolve();
   const safeStorageGet = (key) => { try { return localStorage.getItem(key); } catch (_) { return null; } };
   const safeStorageSet = (key, value) => { try { localStorage.setItem(key, value); } catch (_) { /* unavailable origin */ } };
   const safeJsonParse = (value, fallback = {}) => { try { return value ? JSON.parse(value) : fallback; } catch (_) { return fallback; } };
@@ -1814,8 +1819,8 @@
         greenStreamName:String(p.greenStreamName || p.streamName || '기본값'),
         blueStreamName:String(p.blueStreamName || p.streamName || '기본값'),
         blueToolName:String(p.blueToolName || 'Locate'),
-        greenWorkspaceInfo:p.greenWorkspaceInfo && typeof p.greenWorkspaceInfo === 'object' ? p.greenWorkspaceInfo : null,
-        blueWorkspaceInfo:p.blueWorkspaceInfo && typeof p.blueWorkspaceInfo === 'object' ? p.blueWorkspaceInfo : null,
+        greenWorkspaceInfo:normalizeStoredWorkspaceInfo(p.greenWorkspaceInfo),
+        blueWorkspaceInfo:normalizeStoredWorkspaceInfo(p.blueWorkspaceInfo),
         greenKeyword:String(p.greenKeyword || p.keyword || ''),
         integratedKeyword:String(p.integratedKeyword || p.keyword || '')
       };
@@ -2110,14 +2115,21 @@
       '[data-vq-action="simulation-fallback-sync"]','[data-vq-action="simulation-fallback-sample"]','[data-vq-action="simulation-fallback-preview"]',
       '[data-vq-action="simulation-mode"]','#vq43-sim-new-position-name'
     ];
-    $$(selectors.join(','), page).forEach((el) => { el.disabled = running; });
+    $$(selectors.join(','), page).forEach((el) => {
+      el.disabled = running || el.dataset.vqWorkspaceBusy === '1';
+    });
     const start = $('#vq43-sim-start'); if (start) start.disabled = running || state.simulationAgent.status !== 'connected';
     const stop = $('#vq43-sim-stop'); if (stop) stop.disabled = !running;
   }
 
   async function agentFetch(path, options = {}) {
     const controller = new AbortController();
-    const timer = setTimeout(() => controller.abort(), options.timeout || 6000);
+    const timeout = options.timeout || 6000;
+    let timedOut = false;
+    const timer = setTimeout(() => {
+      timedOut = true;
+      controller.abort();
+    }, timeout);
     try {
       const response = await fetch(`${LOCAL_AGENT_URL}${path}`, {
         method: options.method || 'GET', cache:'no-store',
@@ -2128,6 +2140,13 @@
       const data = await response.json();
       if (!response.ok) throw new Error(data?.error || `HTTP ${response.status}`);
       return data;
+    } catch (error) {
+      if (timedOut) {
+        const timeoutError = new Error(options.timeoutMessage || `요청 제한 시간 초과 (${Math.ceil(timeout / 1000)}초)`);
+        timeoutError.code = 'REQUEST_TIMEOUT';
+        throw timeoutError;
+      }
+      throw error;
     } finally { clearTimeout(timer); }
   }
 
@@ -2155,6 +2174,7 @@
     } finally {
       state.simulationChecking = false;
       if (state.page === 'simulation') updateSimulationAgentDom();
+      if (state.simulationAgent.status === 'connected') resumeStoredWorkspaceInspections();
     }
   }
 
@@ -2239,24 +2259,41 @@
     const target = simulationScopeObject(scope, key);
     if (!target || !field) return;
     const current = target[field] || '';
+    const workspaceKind = fileType === 'workspace' && scope === 'position' && key
+      ? (field.toLowerCase().startsWith('blue') ? 'blue' : 'green')
+      : '';
     const originalText = control.textContent;
-    control.disabled = true; control.textContent = '여는 중...';
+    if (workspaceKind) {
+      setWorkspaceInspectStatus(key, workspaceKind, current, 'picking', 'Workspace 선택 창을 여는 중...');
+    } else {
+      control.disabled = true;
+      control.textContent = '여는 중...';
+    }
     try {
       const data = await agentFetch(kind === 'file' ? '/api/pick/file' : '/api/pick/folder', {
-        method:'POST', body:{ initialPath:current, fileType }, timeout:120000
+        method:'POST', body:{ initialPath:current, fileType }, timeout:120000,
+        timeoutMessage:'파일 선택 창 응답 제한 시간 초과 (120초)'
       });
-      if (!data.ok || !data.path) { if (data.error) showToast(`선택 실패: ${data.error}`, true); return; }
+      if (!data.ok || !data.path) {
+        if (workspaceKind) clearWorkspaceInspectStatus(key, workspaceKind, true);
+        if (data.error) showToast(`선택 실패: ${data.error}`, true);
+        return;
+      }
       target[field] = data.path;
+      if (workspaceKind === 'green') target.greenWorkspaceInfo = null;
+      else if (workspaceKind === 'blue') target.blueWorkspaceInfo = null;
       persistSimulationForm();
-      if (fileType === 'workspace' && scope === 'position' && key) {
-        const kindName = field.toLowerCase().startsWith('blue') ? 'blue' : 'green';
-        await inspectSimulationWorkspace(key, kindName, data.path, true);
+      if (workspaceKind) {
+        await inspectSimulationWorkspace(key, workspaceKind, data.path, true);
       } else {
         const selector = `input[data-sim-scope="${CSS.escape(scope)}"][data-sim-field="${CSS.escape(field)}"]${key?`[data-sim-key="${CSS.escape(key)}"]`:''}`;
         const input = $(selector, $('#vq43-page'));
         if (input) input.value = data.path;
       }
-    } catch (error) { showToast(`선택 실패: ${error.message}`, true); }
+    } catch (error) {
+      if (workspaceKind) clearWorkspaceInspectStatus(key, workspaceKind, true);
+      showToast(`선택 실패: ${error.message}`, true);
+    }
     finally {
       if (control && control.isConnected) { control.disabled = false; control.textContent = originalText || '선택'; }
     }
@@ -2632,6 +2669,62 @@
     return p ? (kind === 'green' ? p.greenWorkspaceInfo : p.blueWorkspaceInfo) : null;
   }
 
+  function normalizeStoredWorkspaceInfo(info) {
+    if (!info || typeof info !== 'object') return null;
+    const error = String(info.error || '');
+    if (!info.ok && /(signal is aborted without reason|aborterror|request_timeout|요청 제한 시간 초과)/i.test(error)) return null;
+    return info;
+  }
+
+  function workspaceStatusKey(positionKey, kind) {
+    return `${positionKey}:${kind}`;
+  }
+
+  function workspacePathFor(positionKey, kind) {
+    const p = ensureSimulationForm().positions?.[positionKey];
+    return p ? String(kind === 'green' ? p.greenWorkspacePath || '' : p.blueWorkspacePath || '') : '';
+  }
+
+  function workspacePathMatches(left, right) {
+    return String(left || '').replace(/\//g, '\\').toLowerCase() === String(right || '').replace(/\//g, '\\').toLowerCase();
+  }
+
+  function workspaceInspectStatusFor(positionKey, kind, path = workspacePathFor(positionKey, kind)) {
+    const status = workspaceInspectStatus.get(workspaceStatusKey(positionKey, kind)) || null;
+    return status && workspacePathMatches(status.path, path) ? status : null;
+  }
+
+  function setWorkspaceInspectStatus(positionKey, kind, path, phase, message = '', refresh = true) {
+    workspaceInspectStatus.set(workspaceStatusKey(positionKey, kind), {
+      phase, path:String(path || ''), message:String(message || ''), updatedAt:Date.now()
+    });
+    if (refresh && state.page === 'simulation') refreshWorkspaceInspectionUi(positionKey, kind);
+  }
+
+  function clearWorkspaceInspectStatus(positionKey, kind, refresh = false) {
+    workspaceInspectStatus.delete(workspaceStatusKey(positionKey, kind));
+    if (refresh && state.page === 'simulation') refreshWorkspaceInspectionUi(positionKey, kind);
+  }
+
+  function workspaceLoadingPresentation(status) {
+    if (!status) return null;
+    if (status.phase === 'picking') return { cls:'loading', title:'파일 선택 중', badge:'FILE PICKER', detail:status.message || 'Workspace 선택 창을 확인하세요.' };
+    if (status.phase === 'queued') return { cls:'loading', title:'읽기 대기 중', badge:'QUEUED', detail:status.message || '앞선 Workspace 작업이 끝나면 자동으로 읽습니다.' };
+    if (status.phase === 'reading') return { cls:'loading', title:'구조 읽는 중', badge:'READING', detail:status.message || 'Agent가 VPDL Runtime으로 Workspace 구조를 읽고 있습니다.' };
+    return null;
+  }
+
+  function resumeStoredWorkspaceInspections() {
+    if (state.simulationAgent.status !== 'connected') return;
+    const form = ensureSimulationForm();
+    Object.entries(form.positions || {}).forEach(([positionKey, position]) => {
+      [['green', position.greenWorkspacePath, position.greenWorkspaceInfo], ['blue', position.blueWorkspacePath, position.blueWorkspaceInfo]].forEach(([kind,path,info]) => {
+        if (!path || info?.ok || workspaceLoadingPresentation(workspaceInspectStatusFor(positionKey, kind, path))) return;
+        inspectSimulationWorkspace(positionKey, kind, path, true);
+      });
+    });
+  }
+
   function workspaceStreams(info) {
     return Array.isArray(info?.streams) ? info.streams : [];
   }
@@ -2662,6 +2755,8 @@
   function workspaceInfoSummary(positionKey, kind) {
     const info = workspaceInfoFor(positionKey, kind);
     const marker = ` data-vq-workspace-summary="${escapeHtml(`${positionKey}:${kind}`)}"`;
+    const loading = workspaceLoadingPresentation(workspaceInspectStatusFor(positionKey, kind));
+    if (loading) return `<div class="vq43-workspace-inspect ${loading.cls}"${marker}><em>${kind.toUpperCase()}</em><span><b>${escapeHtml(loading.title)}</b><small>${escapeHtml(loading.detail)}</small></span></div>`;
     if (!info) return `<div class="vq43-workspace-inspect pending"${marker}><em>${kind.toUpperCase()}</em><span><b>미확인</b><small>Workspace 선택 후 구조를 자동으로 읽습니다.</small></span></div>`;
     if (!info.ok) return `<div class="vq43-workspace-inspect error"${marker}><em>${kind.toUpperCase()}</em><span><b>구조 읽기 실패</b><small>${escapeHtml(info.error || '알 수 없는 오류')}</small></span></div>`;
     const p = ensureSimulationForm().positions[positionKey];
@@ -2719,6 +2814,16 @@
       holder.innerHTML = workspaceSelectHtml(positionKey, kind, field, value, typePrefix);
       oldField.replaceWith(holder.firstElementChild);
     });
+    const workspaceField = kind === 'green' ? 'greenWorkspacePath' : 'blueWorkspacePath';
+    const pathInput = $(`input[data-sim-scope="position"][data-sim-key="${CSS.escape(positionKey)}"][data-sim-field="${workspaceField}"]`, $('#vq43-page'));
+    const pathButton = pathInput?.parentElement?.querySelector('button[data-vq-action="simulation-browse"]');
+    if (pathInput && pathButton) {
+      const status = workspaceInspectStatusFor(positionKey, kind, pathInput.value);
+      const busy = !!status && ['picking','queued','reading'].includes(status.phase);
+      pathButton.dataset.vqWorkspaceBusy = busy ? '1' : '0';
+      pathButton.setAttribute('aria-busy', busy ? 'true' : 'false');
+      pathButton.textContent = status?.phase === 'picking' ? '선택 중' : status?.phase === 'queued' ? '대기 중' : status?.phase === 'reading' ? '읽는 중' : pathInput.value ? '변경' : '선택';
+    }
     bindPageControls();
     restoreSimulationViewport(view);
     refreshAllToolNameValidation();
@@ -2728,19 +2833,45 @@
     return `${String(path || '').replace(/\//g,'\\').toLowerCase()}|${opt.useGpu?'gpu':'cpu'}|${String(opt.gpuDevices || '0')}`;
   }
 
-  function requestWorkspaceInspection(path, opt) {
+  function requestWorkspaceInspection(path, opt, onPhase = () => {}) {
     const requestKey = workspaceInspectRequestKey(path, opt);
     const cached = workspaceInspectCache.get(requestKey);
-    if (cached && Date.now() - cached.time < 2000) return Promise.resolve(cached.data);
+    if (cached && Date.now() - cached.time < WORKSPACE_INSPECT_CACHE_MS) {
+      onPhase('cached');
+      return Promise.resolve(cached.data);
+    }
     if (cached) workspaceInspectCache.delete(requestKey);
-    if (workspaceInspectInflight.has(requestKey)) return workspaceInspectInflight.get(requestKey);
-    const request = agentFetch('/api/workspace/inspect', {
-      method:'POST', body:{ path, useGpu:!!opt.useGpu, gpuDevices:String(opt.gpuDevices || '0') }, timeout:30000
-    }).then((data) => {
+    const existing = workspaceInspectInflight.get(requestKey);
+    if (existing) {
+      existing.listeners.add(onPhase);
+      onPhase(existing.phase);
+      return existing.promise;
+    }
+
+    const record = { phase:'queued', listeners:new Set([onPhase]), promise:null };
+    const notify = (phase) => {
+      record.phase = phase;
+      record.listeners.forEach((listener) => { try { listener(phase); } catch (_) { } });
+    };
+    onPhase('queued');
+    const started = workspaceInspectQueueTail.catch(() => undefined).then(() => {
+      notify('reading');
+      return agentFetch('/api/workspace/inspect', {
+        method:'POST',
+        body:{ path, useGpu:!!opt.useGpu, gpuDevices:String(opt.gpuDevices || '0') },
+        timeout:WORKSPACE_INSPECT_TIMEOUT_MS,
+        timeoutMessage:'Workspace 구조 읽기 제한 시간 초과 (180초)'
+      });
+    });
+    const request = started.then((data) => {
       if (data?.ok) workspaceInspectCache.set(requestKey, { data, time:Date.now() });
       return data;
-    }).finally(() => workspaceInspectInflight.delete(requestKey));
-    workspaceInspectInflight.set(requestKey, request);
+    }).finally(() => {
+      if (workspaceInspectInflight.get(requestKey) === record) workspaceInspectInflight.delete(requestKey);
+    });
+    record.promise = request;
+    workspaceInspectInflight.set(requestKey, record);
+    workspaceInspectQueueTail = request.catch(() => undefined);
     return request;
   }
 
@@ -2749,35 +2880,60 @@
     const p = form.positions?.[positionKey];
     if (!p || !path || state.simulationAgent.status !== 'connected') return;
     const opt = kind === 'blue' ? form.blue : form.green;
-    try {
-      const data = await requestWorkspaceInspection(path, opt);
-      if (!data?.ok) throw Object.assign(new Error(data?.error || 'Workspace 구조 확인 실패'), { workspaceData:data });
-      if (kind === 'green') {
-        p.greenWorkspaceInfo = data;
-        p.greenStreamName = preferredWorkspaceStream(data, 'Green', p.greenStreamName);
-      } else {
-        p.blueWorkspaceInfo = data;
-        p.blueStreamName = preferredWorkspaceStream(data, 'Blue', p.blueStreamName);
-        const blueTools = workspaceTools(data, p.blueStreamName, 'Blue');
-        if (!blueTools.some(x => x.name === p.blueToolName)) p.blueToolName = blueTools.find(x => x.name === 'Locate')?.name || blueTools[0]?.name || p.blueToolName || 'Locate';
-        syncSimulationFallbackRows(false, form);
+    const targetKey = workspaceStatusKey(positionKey, kind);
+    const generation = (workspaceInspectGeneration.get(targetKey) || 0) + 1;
+    workspaceInspectGeneration.set(targetKey, generation);
+    const isCurrent = () => workspaceInspectGeneration.get(targetKey) === generation
+      && workspacePathMatches(workspacePathFor(positionKey, kind), path);
+    const onPhase = (phase) => {
+      if (!isCurrent()) return;
+      if (phase === 'queued') setWorkspaceInspectStatus(positionKey, kind, path, 'queued', 'Agent 순차 처리 대기 중');
+      else if (phase === 'reading' || phase === 'cached') setWorkspaceInspectStatus(positionKey, kind, path, 'reading', phase === 'cached' ? '최근 읽은 구조를 불러오는 중' : 'VPDL Runtime 구조 분석 중');
+    };
+
+    for (let attempt = 0; attempt < 2; attempt += 1) {
+      try {
+        const data = await requestWorkspaceInspection(path, opt, onPhase);
+        if (!isCurrent()) return;
+        if (!data?.ok) throw Object.assign(new Error(data?.error || 'Workspace 구조 확인 실패'), { workspaceData:data });
+        if (kind === 'green') {
+          p.greenWorkspaceInfo = data;
+          p.greenStreamName = preferredWorkspaceStream(data, 'Green', p.greenStreamName);
+        } else {
+          p.blueWorkspaceInfo = data;
+          p.blueStreamName = preferredWorkspaceStream(data, 'Blue', p.blueStreamName);
+          const blueTools = workspaceTools(data, p.blueStreamName, 'Blue');
+          if (!blueTools.some(x => x.name === p.blueToolName)) p.blueToolName = blueTools.find(x => x.name === 'Locate')?.name || blueTools[0]?.name || p.blueToolName || 'Locate';
+          syncSimulationFallbackRows(false, form);
+        }
+        setWorkspaceInspectStatus(positionKey, kind, path, 'success', '', false);
+        persistSimulationForm();
+        appendSimulationLog({ level:'INFO', message:`Workspace 구조 읽기 완료: ${data.workspaceName || path} · Method=${data.method || 'Agent'} · Stream ${data.streamCount ?? workspaceStreams(data).length} · Tool ${data.toolCount ?? 0}` });
+        if (state.page === 'simulation') refreshWorkspaceInspectionUi(positionKey, kind);
+        return data;
+      } catch (error) {
+        if (!isCurrent()) return;
+        if (error?.code === 'REQUEST_TIMEOUT' && attempt === 0) {
+          setWorkspaceInspectStatus(positionKey, kind, path, 'queued', 'Agent 완료 확인을 한 번 더 시도합니다.');
+          appendSimulationLog({ level:'WARN', message:`Workspace 응답 확인 재시도: ${path.split(/[\\/]/).pop() || path} · Agent 작업은 계속 진행 중` });
+          continue;
+        }
+        const failInfo = { ok:false, path, error:error.message || String(error), streams:[], workspaceName:path.split(/[\\/]/).pop() || path };
+        if (kind === 'green') p.greenWorkspaceInfo = failInfo; else p.blueWorkspaceInfo = failInfo;
+        setWorkspaceInspectStatus(positionKey, kind, path, 'error', failInfo.error, false);
+        persistSimulationForm();
+        appendSimulationLog({ level:'ERROR', message:`Workspace 구조 읽기 실패: ${failInfo.workspaceName} · ${failInfo.error}` });
+        const noticeKey = `${workspaceInspectRequestKey(path, opt)}|${failInfo.error}`;
+        const now = Date.now();
+        if (!inspectSimulationWorkspace.lastNotice || inspectSimulationWorkspace.lastNotice.key !== noticeKey || now - inspectSimulationWorkspace.lastNotice.time > 2000) {
+          inspectSimulationWorkspace.lastNotice = { key:noticeKey, time:now };
+          showToast(`Workspace 구조 읽기 실패: ${failInfo.error}`, true);
+        }
+        if (state.page === 'simulation') refreshWorkspaceInspectionUi(positionKey, kind);
+        return null;
       }
-      persistSimulationForm();
-      appendSimulationLog({ level:'INFO', message:`Workspace 구조 읽기 완료: ${data.workspaceName || path} · Stream ${data.streamCount ?? workspaceStreams(data).length} · Tool ${data.toolCount ?? 0}` });
-      if (state.page === 'simulation') refreshWorkspaceInspectionUi(positionKey, kind);
-    } catch (error) {
-      const failInfo = { ok:false, path, error:error.message || String(error), streams:[], workspaceName:path.split(/[\\/]/).pop() || path };
-      if (kind === 'green') p.greenWorkspaceInfo = failInfo; else p.blueWorkspaceInfo = failInfo;
-      persistSimulationForm();
-      appendSimulationLog({ level:'ERROR', message:`Workspace 구조 읽기 실패: ${failInfo.workspaceName} · ${failInfo.error}` });
-      const noticeKey = `${workspaceInspectRequestKey(path, opt)}|${failInfo.error}`;
-      const now = Date.now();
-      if (!inspectSimulationWorkspace.lastNotice || inspectSimulationWorkspace.lastNotice.key !== noticeKey || now - inspectSimulationWorkspace.lastNotice.time > 2000) {
-        inspectSimulationWorkspace.lastNotice = { key:noticeKey, time:now };
-        showToast(`Workspace 구조 읽기 실패: ${failInfo.error}`, true);
-      }
-      if (state.page === 'simulation') refreshWorkspaceInspectionUi(positionKey, kind);
     }
+    return null;
   }
 
   function simulationWorkspaceInspectorPanel() {
@@ -2786,14 +2942,18 @@
     simulationPositionDefs().forEach(({key,label})=>{
       const p=form.positions[key]; if(!p) return;
       [['green','Green',p.greenWorkspaceInfo,p.greenWorkspacePath],['blue','Blue',p.blueWorkspaceInfo,p.blueWorkspacePath]].forEach(([kind,title,info,path])=>{
-        if(!path&&!info) return;
-        const status=!info?'pending':info.ok?'ok':'error';
+        const loadState=workspaceInspectStatusFor(key,kind,path);
+        const loading=workspaceLoadingPresentation(loadState);
+        if(!path&&!info&&!loading) return;
+        const status=loading?'loading':!info?'pending':info.ok?'ok':'error';
         const streams=workspaceStreams(info);
         const streamHtml=streams.map(st=>`<div class="vq43-workspace-stream"><strong>${escapeHtml(st.name||'')}</strong>${(st.tools||[]).map(t=>{
           const meta=[]; if(t.tags?.length)meta.push('Tags '+t.tags.join(', ')); if(t.classes?.length)meta.push('Classes '+t.classes.join(', ')); if(t.features?.length)meta.push('Features '+t.features.join(', '));
           return `<span class="vq43-workspace-tool"><b>${escapeHtml(t.type||'Tool')}</b> ${escapeHtml(t.name||'')}<small>${escapeHtml(meta.join(' · ')||'-')}</small></span>`;
         }).join('')||'<em>Tool 없음</em>'}</div>`).join('');
-        cards.push(`<article class="vq43-workspace-card ${status}"><header><div><b>${escapeHtml(label)} · ${title}</b><small>${escapeHtml(path||'')}</small></div><span>${status==='ok'?'READ OK':status==='error'?'READ ERROR':'WAIT'}</span></header>${status==='error'?`<p>${escapeHtml(info?.error||'구조 읽기 실패')}</p>`:streamHtml||'<p>Workspace를 선택하면 Stream / Tool / Tag / Class / Feature 정보를 표시합니다.</p>'}</article>`);
+        const badge=loading?.badge || (status==='ok'?'READ OK':status==='error'?'READ ERROR':'WAIT');
+        const content=loading?`<p>${escapeHtml(loading.detail)}</p>`:status==='error'?`<p>${escapeHtml(info?.error||'구조 읽기 실패')}</p>`:streamHtml||'<p>Workspace를 선택하면 Stream / Tool / Tag / Class / Feature 정보를 표시합니다.</p>';
+        cards.push(`<article class="vq43-workspace-card ${status}"><header><div><b>${escapeHtml(label)} · ${title}</b><small>${escapeHtml(path||'')}</small></div><span>${escapeHtml(badge)}</span></header>${content}</article>`);
       });
     });
     return `<section class="vq43-sim-panel vq43-workspace-panel"><div class="vq43-sim-panel-head"><div><strong>Workspace Runtime Structure</strong><span>선택한 Runtime Workspace에서 읽은 Stream · Tool Type · Tag/Class/Feature</span></div></div><div class="vq43-workspace-card-grid">${cards.join('')||'<div class="vq43-workspace-empty">Workspace를 선택하면 이 영역에 구조 정보가 표시됩니다.</div>'}</div></section>`;
@@ -2802,7 +2962,11 @@
   function simPathField(scope, key, field, title, placeholder, kind='file', fileType='workspace', disabled=false) {
     const target = simulationScopeObject(scope, key);
     const value = target?.[field] || '';
-    return `<div class="vq43-sim-path ${disabled?'disabled':''}"><span>${escapeHtml(title)}</span><div><input data-sim-scope="${scope}" data-sim-field="${field}" ${key?`data-sim-key="${key}"`:''} value="${escapeHtml(value)}" placeholder="${escapeHtml(placeholder)}" ${disabled?'disabled':''}><button type="button" data-vq-action="simulation-browse" data-sim-scope="${scope}" data-sim-kind="${kind}" data-sim-file-type="${fileType}" data-sim-field="${field}" ${key?`data-sim-key="${key}"`:''} ${disabled?'disabled':''}>선택</button></div></div>`;
+    const workspaceKind = fileType === 'workspace' && scope === 'position' && key ? (field.toLowerCase().startsWith('blue') ? 'blue' : 'green') : '';
+    const status = workspaceKind ? workspaceInspectStatusFor(key, workspaceKind, value) : null;
+    const busy = !!status && ['picking','queued','reading'].includes(status.phase);
+    const buttonText = status?.phase === 'picking' ? '선택 중' : status?.phase === 'queued' ? '대기 중' : status?.phase === 'reading' ? '읽는 중' : value ? '변경' : '선택';
+    return `<div class="vq43-sim-path ${disabled?'disabled':''}"><span>${escapeHtml(title)}</span><div><input data-sim-scope="${scope}" data-sim-field="${field}" ${key?`data-sim-key="${key}"`:''} value="${escapeHtml(value)}" placeholder="${escapeHtml(placeholder)}" ${disabled?'disabled':''}><button type="button" data-vq-action="simulation-browse" data-sim-scope="${scope}" data-sim-kind="${kind}" data-sim-file-type="${fileType}" data-sim-field="${field}" ${key?`data-sim-key="${key}"`:''} data-vq-workspace-busy="${busy?'1':'0'}" ${disabled||busy?'disabled':''} aria-busy="${busy?'true':'false'}">${escapeHtml(buttonText)}</button></div></div>`;
   }
 
   function simulationPositionRows() {
@@ -2960,9 +3124,20 @@
     return h>0?`${h}h ${String(m).padStart(2,'0')}m ${String(s).padStart(2,'0')}s`:`${m}m ${String(s).padStart(2,'0')}s`;
   }
 
+  function formatSimulationLogTime(value) {
+    const text = String(value ?? '').trim();
+    const clock = text.match(/^(\d{1,2}):(\d{2}):(\d{2})(?:\.(\d{1,3}))?$/);
+    if (clock) return `${String(clock[1]).padStart(2,'0')}:${clock[2]}:${clock[3]}.${String(clock[4] || '0').padEnd(3,'0')}`;
+    const korean = text.match(/^(\d{1,2})시\s*(\d{1,2})분\s*(\d{1,2})초$/);
+    if (korean) return `${String(korean[1]).padStart(2,'0')}:${String(korean[2]).padStart(2,'0')}:${String(korean[3]).padStart(2,'0')}.000`;
+    const parsed = value instanceof Date ? value : (text && !Number.isNaN(Date.parse(text)) ? new Date(text) : new Date());
+    const pad2 = (number) => String(number).padStart(2, '0');
+    return `${pad2(parsed.getHours())}:${pad2(parsed.getMinutes())}:${pad2(parsed.getSeconds())}.${String(parsed.getMilliseconds()).padStart(3,'0')}`;
+  }
+
   function appendSimulationLog(entry) {
     const item=typeof entry==='string'?{message:entry}:entry||{};
-    const line={ time:item.time||new Date().toLocaleTimeString('ko-KR',{hour12:false}), level:String(item.level||'INFO').toUpperCase(), message:String(item.message||'') };
+    const line={ time:formatSimulationLogTime(item.time), level:String(item.level||'INFO').toUpperCase(), message:String(item.message||'') };
     if(!line.message) return;
     state.simulationLogs.push(line); if(state.simulationLogs.length>1500) state.simulationLogs.splice(0,state.simulationLogs.length-1500);
     const box=$('#vq43-sim-detail-log');
@@ -3433,6 +3608,7 @@
         result.ok = result.scrollPreserved && result.simulationDomPreserved && result.selectionPreserved && result.optionsNoHorizontal && result.fallbackNoHorizontal && result.previewNoHorizontal;
         return result;
       },
+      formatLogTime(value) { return formatSimulationLogTime(value); },
       snapshot() { return { page: state.page, menuOpen: state.menuOpen, modalOpen: $('#vq43-modal')?.classList.contains('open'), chartModalOpen: $('#vq43-chart-modal')?.classList.contains('open'), openDropdowns: $$('.vq43-dropdown.open').length, analysisScope: state.analysisScope, analysisPointCount: state.analysisPoints.length }; },
       getThreshold(position, tool) { return getThreshold(position, tool); },
       buildReportHtml() { return buildSummaryReportHtml(state.model, new Date('2026-07-31T08:37:00')); }

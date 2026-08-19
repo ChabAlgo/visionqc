@@ -1,0 +1,41 @@
+VisionQC Web v4.4.26 업데이트/테스트 순서
+=========================================
+
+기준 화면
+- 해상도: 1920 x 1080 (FHD)
+- 브라우저 배율: 100%
+- 배포 직후 Chrome에서 Ctrl + Shift + R
+
+Web 배포
+1) repository root에 v4.4.26 파일 덮어쓰기
+2) index.html이 assets/index-v4.4.26.js와 visionqc-v4426-clean.css를 참조하는지 확인
+3) Commit / Push 후 GitHub Pages 배포 완료 대기
+4) Ctrl + Shift + R로 이전 Web cache 제거
+
+Workspace 구조 읽기 확인
+1) Agent v0.2.4 연결 확인
+2) 서로 다른 Workspace를 3개 Position에서 연속 선택
+3) 첫 항목은 "읽는 중", 나머지는 "대기 중"으로 표시되는지 확인
+4) 메뉴를 Main/설정으로 이동했다가 Simulation으로 복귀
+5) 버튼/Position 요약/Workspace Runtime Structure 카드의 상태가 서로 같은지 확인
+6) 완료 항목이 READ OK이고 Stream/Tool 수가 Progress Log와 같은지 확인
+7) 같은 Workspace를 다시 선택했을 때 최근 구조가 즉시 표시되는지 확인
+8) Progress Log 시간이 17:17:26.771 [INFO] 형태인지 확인
+
+FHD UI 확인
+1) Options가 Workspace Runtime Structure/상단 버튼 위를 덮지 않는지 확인
+2) Options를 아래로 scroll한 뒤 Main 영역 클릭 및 텍스트 drag/mouseup
+3) Options scroll과 텍스트 selection이 유지되는지 확인
+4) Tool Settings에 가로 scrollbar가 없는지 확인
+5) Fallback 숫자 입력 3열, Sample Image 입력/선택 버튼 높이가 맞는지 확인
+6) Preview modal에 가로 scrollbar가 없는지 확인
+
+자동 검사
+1) node --check visionqc-extension.js
+2) node --check assets/index-v4.4.26.js
+3) node --test tests/v4426-regression.test.mjs
+4) GitHub Actions Browser Regression에서 Chromium 1920x1080 검사 확인
+
+권장 Local Agent
+- v0.2.4 (변경 없음)
+- 기존 REGISTER_PROTOCOL.cmd로 등록된 v0.2.4를 계속 사용

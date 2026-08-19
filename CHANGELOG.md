@@ -1,3 +1,27 @@
+# VisionQC v4.4.26
+
+## Workspace 요청/상태 정합성
+- Web의 30초 취소 후 Agent만 성공하던 원인을 제거했습니다. Workspace 요청은 Web queue에서 한 건씩 Agent로 전달하며 180초 제한시간은 실제 실행이 시작된 뒤 적용됩니다.
+- 동일 Workspace/GPU 요청은 진행 중 Promise를 공유하고, 성공 결과는 10분 동안 Web에서 재사용합니다. Agent의 파일 크기/수정 시간 cache도 그대로 유지됩니다.
+- 파일 선택, queue 대기, VPDL 읽기, 성공/실패 상태를 Position·Green/Blue별 Map에서 관리해 메뉴를 이동해도 버튼·요약·Runtime Structure 카드가 같은 상태를 표시합니다.
+- 경로별 generation 검증으로 이전 요청의 늦은 응답이 새 경로를 덮어쓰지 않습니다.
+- 180초 응답 제한시간을 넘겨도 즉시 READ ERROR로 확정하지 않고 Agent 완료 확인을 한 번 자동 재시도합니다.
+- 브라우저의 raw `signal is aborted without reason` 대신 명시적인 제한시간 오류를 사용합니다.
+- 이전 버전에 저장된 raw abort 실패는 설정 복원 시 제거하고, Agent 연결 확인 후 저장된 경로를 자동으로 다시 검사합니다.
+
+## FHD UI / Log
+- Simulation Options를 FHD grid의 두 번째 열에 포함되는 sticky panel로 변경해 상단 action과 Workspace 카드 위를 덮던 문제를 제거했습니다.
+- Fallback 숫자/Sample Image 입력과 선택 버튼을 동일한 34px 높이 및 dark theme로 정렬했습니다.
+- Preview 너비를 줄이고 image/figure 가로 overflow를 차단했습니다.
+- Progress Log 시간을 `HH:mm:ss.SSS [LEVEL]`로 통일하고 시간 열 너비를 확장했습니다.
+
+## 검증
+- Web 정적/회귀검사 15종 통과
+- extension/base bundle syntax 검사 통과
+- Local Agent v0.2.4 회귀검사 유지
+
+---
+
 # VisionQC v4.4.25
 
 ## Workspace Runtime Structure
