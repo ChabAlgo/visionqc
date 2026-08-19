@@ -1,1 +1,2 @@
-4.4.19
+VisionQC Web v4.4.20
+Required Local Agent: v0.2.0+
