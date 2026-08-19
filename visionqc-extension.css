@@ -426,7 +426,7 @@ body:not([data-vq-page="classification"]) #root>div>main{
 }
 
 /* v4.4.14 - VPDL Local Simulation UI prototype */
-#root>div>header.vq43-host-header>.vq43-brand::after{content:"INSPECTION TERMINAL V4.4.21"}
+#root>div>header.vq43-host-header>.vq43-brand::after{content:"INSPECTION TERMINAL V4.4.22"}
 .vq43-sim-page{padding-bottom:42px!important}
 .vq43-sim-agent-card{margin-top:18px;border:1px solid #2b3b55;background:linear-gradient(145deg,#0c1629,#091221);border-radius:18px;padding:16px 18px}
 .vq43-sim-agent-card.ready{border-color:rgba(16,185,129,.48)}.vq43-sim-agent-card.checking{border-color:rgba(59,130,246,.48)}.vq43-sim-agent-card.offline{border-color:rgba(71,85,105,.65)}
@@ -578,3 +578,89 @@ body[data-vq-page="classification"] #root>div>header.vq43-host-header{display:fl
 .vq43-sim-table.tools th{white-space:nowrap;min-width:72px}
 .vq43-sim-table.tools th:first-child{min-width:54px}
 .vq43-sim-table.tools th:nth-last-child(-n+3){min-width:110px}
+
+/* v4.4.22: stable position inputs, option scroll preservation, runtime lock, larger simulation text, workspace inspect */
+#vq43-shell input[type="text"],#vq43-shell input:not([type]),#vq43-shell textarea,
+#vq43-new-position-name,#vq43-sim-new-position-name{
+  cursor:text!important;user-select:text!important;-webkit-user-select:text!important;position:relative;z-index:5;
+}
+#vq43-new-position-name,#vq43-sim-new-position-name{pointer-events:auto!important;touch-action:manipulation!important}
+
+.vq43-sim-page .vq43-title{font-size:31px!important}
+.vq43-sim-page .vq43-subtitle{font-size:16px!important;line-height:1.55!important}
+.vq43-sim-page .vq43-sim-panel-head strong{font-size:18px!important}
+.vq43-sim-page .vq43-sim-panel-head span{font-size:13px!important}
+.vq43-sim-page .vq43-sim-agent-title strong{font-size:19px!important}
+.vq43-sim-page .vq43-sim-agent-grid span{font-size:12px!important}
+.vq43-sim-page .vq43-sim-agent-grid strong{font-size:15px!important}
+.vq43-sim-page .vq43-sim-tabs button{font-size:14px!important}
+.vq43-sim-page .vq43-sim-position-toolbar strong{font-size:16px!important}
+.vq43-sim-page .vq43-sim-position-toolbar span{font-size:12px!important;line-height:1.45!important}
+.vq43-sim-page .vq43-sim-position-ident strong{font-size:15px!important}
+.vq43-sim-page .vq43-sim-option-field>span,
+.vq43-sim-page .vq43-sim-compact-field>span,
+.vq43-sim-page .vq43-sim-position-row-new .vq43-sim-path>span,
+.vq43-sim-page .vq43-sim-options .vq43-sim-path>span{font-size:12px!important}
+.vq43-sim-page .vq43-sim-option-field input,
+.vq43-sim-page .vq43-sim-option-field select,
+.vq43-sim-page .vq43-sim-compact-field input,
+.vq43-sim-page .vq43-sim-compact-field select,
+.vq43-sim-page .vq43-sim-position-row-new .vq43-sim-path input,
+.vq43-sim-page .vq43-sim-output-row input{font-size:14px!important}
+.vq43-sim-page .vq43-sim-position-row-new .vq43-sim-path button,
+.vq43-sim-page .vq43-sim-options .vq43-sim-path button,
+.vq43-sim-page .vq43-sim-output-row button{font-size:13px!important}
+.vq43-sim-page .vq43-sim-options-head strong{font-size:20px!important}
+.vq43-sim-page .vq43-sim-options-head span{font-size:13px!important}
+.vq43-sim-page .vq43-sim-option-section>h3,
+.vq43-sim-page .vq43-sim-option-titlebar h3{font-size:16px!important}
+.vq43-sim-page .vq43-sim-option-note{font-size:12px!important}
+.vq43-sim-page .vq43-sim-check span{font-size:14px!important}
+.vq43-sim-page .vq43-sim-options-head button,
+.vq43-sim-page .vq43-sim-option-titlebar button,
+.vq43-sim-page .vq43-sim-table button,
+.vq43-sim-page .vq43-sim-judgement-row button{font-size:13px!important}
+.vq43-sim-page .vq43-sim-table{font-size:12px!important}
+.vq43-sim-page .vq43-sim-table th{font-size:11px!important}
+.vq43-sim-page .vq43-sim-table input,
+.vq43-sim-page .vq43-sim-table select{font-size:12px!important}
+.vq43-sim-page .vq43-sim-judgement-row input{font-size:13px!important}
+.vq43-sim-page .vq43-sim-log{font-size:13px!important;line-height:1.55!important}
+.vq43-sim-page .vq43-sim-kpis span{font-size:11px!important}
+.vq43-sim-page .vq43-sim-kpis b{font-size:17px!important}
+
+.vq43-sim-compact-field select{
+  width:100%;min-width:0;height:32px!important;min-height:32px!important;box-sizing:border-box;
+  border:1px solid #2a3a55!important;background:#040b16!important;color:#dbeafe!important;
+  border-radius:8px!important;padding:5px 8px!important;outline:none!important;
+}
+.vq43-sim-compact-field select:focus{border-color:#3b82f6!important}
+
+.vq43-workspace-inspect{
+  grid-column:1/-1;display:flex;align-items:flex-start;gap:6px;flex-wrap:wrap;
+  border-top:1px dashed #20314b;padding-top:7px;margin-top:1px;min-width:0;
+}
+.vq43-workspace-inspect>em{
+  color:#7dd3fc;font-style:normal;font-size:12px;font-weight:800;padding:4px 7px;
+  border:1px solid rgba(56,189,248,.24);border-radius:7px;background:rgba(14,116,144,.08)
+}
+.vq43-workspace-inspect>span{
+  display:inline-flex;flex-direction:column;gap:2px;color:#d7e2f3;font-size:12px;font-weight:700;
+  border:1px solid #263a58;border-radius:7px;background:#0a1628;padding:4px 7px;max-width:100%;
+}
+.vq43-workspace-inspect>span b{color:#a5b4fc;font-size:11px;text-transform:uppercase;letter-spacing:.04em}
+.vq43-workspace-inspect>span small{color:#7890b1;font-size:11px;font-weight:600;white-space:normal;line-height:1.35}
+.vq43-workspace-summary-pair{grid-column:1/-1;display:grid;gap:5px}
+
+.vq43-sim-running-lock .vq43-sim-options,
+.vq43-sim-running-lock .vq43-sim-position-list,
+.vq43-sim-running-lock .vq43-sim-position-toolbar,
+.vq43-sim-running-lock .vq43-sim-output-main{position:relative}
+.vq43-sim-running-lock input:disabled,
+.vq43-sim-running-lock select:disabled,
+.vq43-sim-running-lock button:disabled{cursor:not-allowed!important}
+.vq43-sim-running-lock .vq43-sim-options input:disabled,
+.vq43-sim-running-lock .vq43-sim-options select:disabled,
+.vq43-sim-running-lock .vq43-sim-position-list input:disabled,
+.vq43-sim-running-lock .vq43-sim-position-list select:disabled,
+.vq43-sim-running-lock .vq43-sim-output-main input:disabled{opacity:.62!important}

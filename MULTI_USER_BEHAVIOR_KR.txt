@@ -1,0 +1,22 @@
+VisionQC 여러 사용자 동시 사용 영향 범위
+
+1. 서로 다른 PC
+- 영향 없음.
+- GitHub Pages는 정적 HTML/CSS/JS만 전달합니다.
+- Local Agent는 각 PC의 127.0.0.1:17891에서 실행됩니다.
+- 이미지/Workspace/CSV/VPDL/GPU 작업은 각 PC 로컬에서 처리됩니다.
+- localStorage / IndexedDB도 각 PC 브라우저에 따로 저장됩니다.
+
+2. 같은 PC + 같은 Chrome 프로필 + 여러 탭
+- 일부 영향 가능.
+- Position/Threshold/Simulation 설정은 같은 origin의 localStorage를 공유합니다.
+- FileSystem handle 저장 IndexedDB도 같은 Chrome 프로필에서 공유됩니다.
+- Local Agent 한 개를 공유하므로 한 탭에서 시작/중지한 Simulation 상태를 다른 탭도 볼 수 있습니다.
+
+3. 같은 PC + 다른 Chrome 프로필
+- Web localStorage/IndexedDB는 프로필별로 분리됩니다.
+- 그러나 Local Agent 127.0.0.1:17891은 같은 PC의 단일 Agent를 사용하므로 Simulation 실행은 공유됩니다.
+
+권장 운영:
+- 사용자마다 별도 PC에서 접속하는 일반 생산 환경: 서로 영향 없음.
+- 한 PC에서 여러 사용자가 동시에 Simulation을 독립 실행해야 하는 경우: 향후 Agent client/session ID 분리 기능 필요.

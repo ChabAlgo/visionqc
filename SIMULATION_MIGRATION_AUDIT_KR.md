@@ -1,4 +1,4 @@
-# DL_Simulation v1.13 → VisionQC v4.4.21 이식 점검
+# DL_Simulation v1.13 → VisionQC v4.4.22 이식 점검
 
 기준 소스: `DL_Simulation_v1.13_cell_position_summary_source`
 
@@ -81,7 +81,7 @@ CSV 파일을 중간에 읽지 않습니다.
 - Tool별 result
 - Tool별 score
 
-Agent v0.2.1이 각 이미지의 상세 결과 객체를 내부 버퍼에 저장하고 `Progress Update = N`이면 N개가 쌓였을 때 SSE `analysis` 이벤트 한 번으로 Web에 Batch 전송합니다.
+Agent v0.2.2이 각 이미지의 상세 결과 객체를 내부 버퍼에 저장하고 `Progress Update = N`이면 N개가 쌓였을 때 SSE `analysis` 이벤트 한 번으로 Web에 Batch 전송합니다.
 
 예: `Progress Update = 100`
 - VPDL 검사는 1장씩 계속 처리

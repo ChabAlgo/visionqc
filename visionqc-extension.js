@@ -1,7 +1,7 @@
 (() => {
   'use strict';
 
-  const VERSION = '4.4.21';
+  const VERSION = '4.4.22';
   const DEFAULT_POSITION_DEFS = [
     { key:'CA_TOP', name:'CA(TOP)' },
     { key:'AN_TOP', name:'AN(TOP)' },
@@ -15,15 +15,15 @@
   const NG_ROOT_KEY = 'ng-root';
   const RESULT_PREFIX = 'result:';
   const THRESHOLD_KEY = 'visionqc-v439-tool-thresholds';
-  const SIM_CONFIG_KEY = 'visionqc-v4421-simulation-config';
-  const SIM_DEFAULT_KEY = 'visionqc-v4421-simulation-defaults';
-  const SIM_LEGACY_CONFIG_KEY = 'visionqc-v4420-simulation-config';
-  const SIM_LEGACY_DEFAULT_KEY = 'visionqc-v4420-simulation-defaults';
+  const SIM_CONFIG_KEY = 'visionqc-v4422-simulation-config';
+  const SIM_DEFAULT_KEY = 'visionqc-v4422-simulation-defaults';
+  const SIM_LEGACY_CONFIG_KEY = 'visionqc-v4421-simulation-config';
+  const SIM_LEGACY_DEFAULT_KEY = 'visionqc-v4421-simulation-defaults';
   const POSITION_CONFIG_KEY = 'visionqc-v4421-position-config';
   const NG_POSITION_PREFIX = 'ng-position:';
   const IMG_RE = /\.(png|jpe?g|bmp|gif|webp|tif?f)$/i;
   const LOCAL_AGENT_URL = 'http://127.0.0.1:17891';
-  const EXPECTED_AGENT_VERSION = '0.2.1';
+  const EXPECTED_AGENT_VERSION = '0.2.2';
   const safeStorageGet = (key) => { try { return localStorage.getItem(key); } catch (_) { return null; } };
   const safeStorageSet = (key, value) => { try { localStorage.setItem(key, value); } catch (_) { /* unavailable origin */ } };
   const safeJsonParse = (value, fallback = {}) => { try { return value ? JSON.parse(value) : fallback; } catch (_) { return fallback; } };
@@ -425,12 +425,17 @@
     if (!control) return;
     const action = control.dataset.vqAction;
     if (!action) return;
+    const simulationConfigAction = action.startsWith('simulation-') && !['simulation-stop','simulation-agent-check','simulation-agent-info'].includes(action);
+    if (state.simulationProgress?.running && simulationConfigAction && action !== 'simulation-start') {
+      showToast('Simulation 실행 중에는 옵션/Position/Workspace를 변경할 수 없습니다.', true);
+      return;
+    }
     if (action === 'close-menu') toggleMenu(false);
     else if (action === 'open-settings') setPage('settings');
     else if (action === 'simulation-mode') {
+      if (state.simulationProgress?.running) return showToast('Simulation 실행 중에는 모드를 변경할 수 없습니다.', true);
       state.simulationMode = control.dataset.vqMode || 'integrated';
-      renderSimulation();
-      bindPageControls();
+      renderSimulationPreserveScroll();
     }
     else if (action === 'simulation-agent-check') checkSimulationAgent();
     else if (action === 'simulation-agent-launch') launchSimulationAgent();
@@ -592,12 +597,20 @@
     // 실제 편집 가능한 입력 요소에만 값 동기화 핸들러를 연결합니다.
     $$('input[data-sim-field], select[data-sim-field], textarea[data-sim-field]', shell).forEach((input) => {
       const sync = () => syncSimulationField(input);
+      const inspectWorkspaceOnCommit = () => {
+        sync();
+        const field = input.dataset.simField || '';
+        const key = input.dataset.simKey || '';
+        if (input.dataset.simScope === 'position' && key && (field === 'greenWorkspacePath' || field === 'blueWorkspacePath') && input.value) {
+          inspectSimulationWorkspace(key, field.startsWith('blue') ? 'blue' : 'green', input.value, true);
+        }
+      };
       if (input.type === 'checkbox' || input.tagName === 'SELECT') {
         input.oninput = null;
         input.onchange = sync;
       } else {
         input.oninput = sync;
-        input.onchange = sync;
+        input.onchange = (input.dataset.simField === 'greenWorkspacePath' || input.dataset.simField === 'blueWorkspacePath') ? inspectWorkspaceOnCommit : sync;
       }
       input.onclick = (event) => event.stopPropagation();
       input.onkeydown = (event) => event.stopPropagation();
@@ -612,9 +625,22 @@
         if (event.key === 'Enter') { event.preventDefault(); input.blur(); }
       };
       input.onchange = () => renameCustomPosition(input.dataset.positionNameKey || '', input.value);
-      input.onclick = (event) => event.stopPropagation();
+      ['pointerdown','mousedown','mouseup','click'].forEach(type => input.addEventListener(type, (event) => event.stopPropagation()));
+    });
+    ['#vq43-new-position-name','#vq43-sim-new-position-name'].forEach((selector) => {
+      const input = $(selector, shell);
+      if (!input) return;
+      ['pointerdown','mousedown','mouseup','click'].forEach(type => input.addEventListener(type, (event) => event.stopPropagation()));
+      input.onkeydown = (event) => {
+        event.stopPropagation();
+        if (event.key === 'Enter') {
+          event.preventDefault();
+          if (selector.includes('sim-')) addSimulationPosition(); else addCustomPosition();
+        }
+      };
     });
     bindSimulationComplexControls();
+    applySimulationLockDom();
   }
 
   function handleDelegatedClick(event) {
@@ -1724,6 +1750,7 @@
         greenWorkspacePath:'', blueWorkspacePath:'',
         greenImageRoot:'', blueImageRoot:'',
         greenStreamName:'기본값', blueStreamName:'기본값', blueToolName:'Locate',
+        greenWorkspaceInfo:null, blueWorkspaceInfo:null,
         greenKeyword:'', integratedKeyword:''
       };
     });
@@ -1777,6 +1804,8 @@
         greenStreamName:String(p.greenStreamName || p.streamName || '기본값'),
         blueStreamName:String(p.blueStreamName || p.streamName || '기본값'),
         blueToolName:String(p.blueToolName || 'Locate'),
+        greenWorkspaceInfo:p.greenWorkspaceInfo && typeof p.greenWorkspaceInfo === 'object' ? p.greenWorkspaceInfo : null,
+        blueWorkspaceInfo:p.blueWorkspaceInfo && typeof p.blueWorkspaceInfo === 'object' ? p.blueWorkspaceInfo : null,
         greenKeyword:String(p.greenKeyword || p.keyword || ''),
         integratedKeyword:String(p.integratedKeyword || p.keyword || '')
       };
@@ -1863,23 +1892,69 @@
     return form;
   }
 
+  function simulationFocusDescriptor() {
+    const el = document.activeElement;
+    if (!el || !el.closest?.('#vq43-page')) return null;
+    const attrs = ['id','data-sim-field','data-sim-scope','data-sim-key','data-sim-tool-index','data-sim-tool-field','data-sim-judgement-index','data-sim-judgement-field','data-sim-fallback-index','data-sim-fallback-field'];
+    const parts = [];
+    attrs.forEach((name) => {
+      const value = name === 'id' ? el.id : el.getAttribute?.(name);
+      if (value !== null && value !== undefined && value !== '') parts.push({ name, value:String(value) });
+    });
+    if (!parts.length) return null;
+    return {
+      parts,
+      start:typeof el.selectionStart === 'number' ? el.selectionStart : null,
+      end:typeof el.selectionEnd === 'number' ? el.selectionEnd : null
+    };
+  }
+
+  function findSimulationFocusTarget(desc) {
+    if (!desc?.parts?.length) return null;
+    const selectors = desc.parts.map(({name,value}) => name === 'id'
+      ? `#${CSS.escape(value)}`
+      : `[${name}="${CSS.escape(value)}"]`);
+    return $(selectors.join(''));
+  }
+
   function renderSimulationPreserveScroll() {
     if (state.page !== 'simulation') return;
     const shell = $('#vq43-shell');
     const page = $('#vq43-page');
+    const options = $('.vq43-sim-options');
     const windowY = window.scrollY;
+    const windowX = window.scrollX;
     const shellTop = shell?.scrollTop || 0;
+    const shellLeft = shell?.scrollLeft || 0;
     const pageTop = page?.scrollTop || 0;
+    const pageLeft = page?.scrollLeft || 0;
+    const optionsTop = options?.scrollTop || 0;
+    const optionsLeft = options?.scrollLeft || 0;
+    const focus = simulationFocusDescriptor();
     renderSimulation();
     bindPageControls();
-    requestAnimationFrame(() => {
-      window.scrollTo({ top:windowY, left:window.scrollX, behavior:'auto' });
-      if (shell) shell.scrollTop = shellTop;
-      if (page) page.scrollTop = pageTop;
-    });
+    const restore = () => {
+      window.scrollTo({ top:windowY, left:windowX, behavior:'auto' });
+      const nextShell = $('#vq43-shell');
+      const nextPage = $('#vq43-page');
+      const nextOptions = $('.vq43-sim-options');
+      if (nextShell) { nextShell.scrollTop = shellTop; nextShell.scrollLeft = shellLeft; }
+      if (nextPage) { nextPage.scrollTop = pageTop; nextPage.scrollLeft = pageLeft; }
+      if (nextOptions) { nextOptions.scrollTop = optionsTop; nextOptions.scrollLeft = optionsLeft; }
+      const target = findSimulationFocusTarget(focus);
+      if (target && !target.disabled) {
+        try { target.focus({ preventScroll:true }); } catch (_) { target.focus(); }
+        if (focus?.start !== null && typeof target.setSelectionRange === 'function') {
+          try { target.setSelectionRange(focus.start, focus.end ?? focus.start); } catch (_) { }
+        }
+      }
+      applySimulationLockDom();
+    };
+    requestAnimationFrame(() => { restore(); setTimeout(restore, 0); });
   }
 
   function syncSimulationField(input, allowStructuralRender = true) {
+    if (state.simulationProgress?.running) return;
     const field = input.dataset.simField;
     if (!field) return;
     const scope = input.dataset.simScope || (input.dataset.simKey ? 'position' : 'root');
@@ -1890,11 +1965,13 @@
     target[field] = value;
     if (scope === 'position' && field === 'blueToolName') syncSimulationFallbackRows(false);
     persistSimulationForm();
-    const structural = (scope === 'green' || scope === 'integrated') && field === 'keywordMode';
+    const structural = ((scope === 'green' || scope === 'integrated') && field === 'keywordMode')
+      || (scope === 'position' && (field === 'greenStreamName' || field === 'blueStreamName'));
     if (structural && allowStructuralRender) renderSimulationPreserveScroll();
   }
 
   function syncSimulationActiveCheckbox(input) {
+    if (state.simulationProgress?.running) return;
     const key = input.dataset.simActivePosition;
     const mode = input.dataset.simMode || state.simulationMode || 'integrated';
     if (!key || !['green','blue','integrated'].includes(mode)) return;
@@ -1935,6 +2012,7 @@
       const field = input.dataset.simToolField;
       if (!Number.isInteger(index) || !form.green.tools[index] || !field) return;
       const sync = () => {
+        if (state.simulationProgress?.running) return;
         form.green.tools[index][field] = input.type === 'checkbox' ? input.checked : input.type === 'number' ? Number(input.value) : input.value;
         persistSimulationForm();
       };
@@ -1947,6 +2025,7 @@
       const key = input.dataset.simPositionKey;
       if (!Number.isInteger(index) || !form.green.tools[index] || !key) return;
       input.onchange = () => {
+        if (state.simulationProgress?.running) return;
         form.green.tools[index].positionEnabled = form.green.tools[index].positionEnabled || {};
         form.green.tools[index].positionEnabled[key] = !!input.checked;
         persistSimulationForm();
@@ -1958,6 +2037,7 @@
       const field = input.dataset.simJudgementField;
       if (!Number.isInteger(index) || !form.green.judgements[index] || !field) return;
       const sync = () => {
+        if (state.simulationProgress?.running) return;
         form.green.judgements[index][field] = input.type === 'number' ? Number(input.value) : input.value;
         persistSimulationForm();
       };
@@ -1968,11 +2048,33 @@
       const field = input.dataset.simFallbackField;
       if (!Number.isInteger(index) || !form.blue.fallbacks[index] || !field) return;
       const sync = () => {
+        if (state.simulationProgress?.running) return;
         form.blue.fallbacks[index][field] = input.type === 'number' ? Number(input.value) : input.value;
         persistSimulationForm();
       };
       input.oninput = sync; input.onchange = sync; input.onclick = (e) => e.stopPropagation(); input.onkeydown = (e) => e.stopPropagation();
     });
+  }
+
+  function applySimulationLockDom() {
+    if (state.page !== 'simulation') return;
+    const running = !!state.simulationProgress?.running;
+    const page = $('#vq43-page');
+    if (!page) return;
+    page.classList.toggle('vq43-sim-running-lock', running);
+    const selectors = [
+      '[data-sim-field]','[data-sim-active-position]','[data-sim-tool-index]','[data-sim-tool-position-index]',
+      '[data-sim-judgement-index]','[data-sim-fallback-index]',
+      '[data-vq-action="simulation-browse"]','[data-vq-action="simulation-add-position"]','[data-vq-action="simulation-remove-position"]',
+      '[data-vq-action="simulation-save-defaults"]','[data-vq-action="simulation-restore-defaults"]',
+      '[data-vq-action="simulation-tool-add"]','[data-vq-action="simulation-tool-remove"]','[data-vq-action="simulation-tool-reset"]',
+      '[data-vq-action="simulation-judgement-add"]','[data-vq-action="simulation-judgement-remove"]','[data-vq-action="simulation-judgement-up"]','[data-vq-action="simulation-judgement-down"]',
+      '[data-vq-action="simulation-fallback-sync"]','[data-vq-action="simulation-fallback-sample"]','[data-vq-action="simulation-fallback-preview"]',
+      '[data-vq-action="simulation-mode"]','#vq43-sim-new-position-name'
+    ];
+    $$(selectors.join(','), page).forEach((el) => { el.disabled = running; });
+    const start = $('#vq43-sim-start'); if (start) start.disabled = running || state.simulationAgent.status !== 'connected';
+    const stop = $('#vq43-sim-stop'); if (stop) stop.disabled = !running;
   }
 
   async function agentFetch(path, options = {}) {
@@ -2104,7 +2206,12 @@
       if (!data.ok || !data.path) { if (data.error) showToast(`선택 실패: ${data.error}`, true); return; }
       target[field] = data.path;
       persistSimulationForm();
-      renderSimulation(); bindPageControls();
+      if (fileType === 'workspace' && scope === 'position' && key) {
+        const kindName = field.toLowerCase().startsWith('blue') ? 'blue' : 'green';
+        await inspectSimulationWorkspace(key, kindName, data.path, true);
+      } else {
+        renderSimulationPreserveScroll();
+      }
     } catch (error) { showToast(`선택 실패: ${error.message}`, true); }
     finally {
       if (control && control.isConnected) { control.disabled = false; control.textContent = originalText || '선택'; }
@@ -2138,7 +2245,7 @@
     const form = ensureSimulationForm();
     form.positions[def.key] = simulationDefaults().positions[def.key] || {
       key:def.key, displayName:def.name, greenWorkspacePath:'', blueWorkspacePath:'', greenImageRoot:'', blueImageRoot:'',
-      greenStreamName:'기본값', blueStreamName:'기본값', blueToolName:'Locate', greenKeyword:'', integratedKeyword:''
+      greenStreamName:'기본값', blueStreamName:'기본값', blueToolName:'Locate', greenWorkspaceInfo:null, blueWorkspaceInfo:null, greenKeyword:'', integratedKeyword:''
     };
     ['green','blue','integrated'].forEach(mode => {
       form.activePositionsByMode[mode] = Array.isArray(form.activePositionsByMode[mode]) ? form.activePositionsByMode[mode] : [];
@@ -2253,14 +2360,14 @@
     const saved = safeJsonParse(safeStorageGet(SIM_DEFAULT_KEY) || safeStorageGet(SIM_LEGACY_DEFAULT_KEY), null);
     state.simulationForm = saved && typeof saved === 'object' ? cloneSimulation(saved) : simulationDefaults();
     ensureSimulationForm(); persistSimulationForm();
-    renderSimulation(); bindPageControls();
+    renderSimulationPreserveScroll();
     showToast(saved ? '저장한 기본값을 복원했습니다.' : '원본 DL_Simulation v1.13 기본값으로 복원했습니다.');
   }
 
   function addSimulationTool() {
     const form = ensureSimulationForm();
     form.green.tools.push({ useCaTop:true,useCaBot:true,useAnTop:true,useAnBot:true,positionEnabled:Object.fromEntries(positionDefs().map(p=>[p.key,true])),toolName:'',threshold:0.5,judgement:form.green.judgements[0]?.name || 'Scrap',selected:false });
-    persistSimulationForm(); renderSimulation(); bindPageControls();
+    persistSimulationForm(); renderSimulationPreserveScroll();
   }
 
   function removeSelectedSimulationTools() {
@@ -2268,12 +2375,12 @@
     const next = form.green.tools.filter(x => !x.selected);
     if (next.length === form.green.tools.length) { showToast('제거할 Tool의 선택 체크박스를 먼저 체크하세요.', true); return; }
     form.green.tools = next.length ? next : simulationDefaultTools();
-    persistSimulationForm(); renderSimulation(); bindPageControls();
+    persistSimulationForm(); renderSimulationPreserveScroll();
   }
 
   function resetSimulationTools() {
     ensureSimulationForm().green.tools = simulationDefaultTools();
-    persistSimulationForm(); renderSimulation(); bindPageControls();
+    persistSimulationForm(); renderSimulationPreserveScroll();
   }
 
   function addSimulationJudgement() {
@@ -2282,14 +2389,14 @@
     const nextPriority = nonError.reduce((m,x) => Math.max(m, Number(x.priority)||0), 0) + 1;
     form.green.judgements.splice(Math.max(0, form.green.judgements.findIndex(x => String(x.name).toUpperCase() === 'ERROR')), 0, {priority:nextPriority,name:''});
     renumberSimulationJudgements(form);
-    persistSimulationForm(); renderSimulation(); bindPageControls();
+    persistSimulationForm(); renderSimulationPreserveScroll();
   }
 
   function removeSimulationJudgement(index) {
     const form = ensureSimulationForm();
     if (!form.green.judgements[index]) return;
     if (String(form.green.judgements[index].name).toUpperCase() === 'ERROR') { showToast('ERROR Judgement는 유지합니다.', true); return; }
-    form.green.judgements.splice(index,1); renumberSimulationJudgements(form); persistSimulationForm(); renderSimulation(); bindPageControls();
+    form.green.judgements.splice(index,1); renumberSimulationJudgements(form); persistSimulationForm(); renderSimulationPreserveScroll();
   }
 
   function moveSimulationJudgement(index, delta) {
@@ -2299,7 +2406,7 @@
     const a = form.green.judgements[index], b = form.green.judgements[next];
     if (String(a.name).toUpperCase() === 'ERROR' || String(b.name).toUpperCase() === 'ERROR') return;
     form.green.judgements[index] = b; form.green.judgements[next] = a;
-    renumberSimulationJudgements(form); persistSimulationForm(); renderSimulation(); bindPageControls();
+    renumberSimulationJudgements(form); persistSimulationForm(); renderSimulationPreserveScroll();
   }
 
   function renumberSimulationJudgements(form = ensureSimulationForm()) {
@@ -2322,7 +2429,7 @@
       next.push(Object.assign(simulationDefaultFallback(key,def.label,toolName), found || {}, {slotKey:key,displayName:def.label,toolName}));
     });
     form.blue.fallbacks = next;
-    if (!suppliedForm) { persistSimulationForm(); if (rerender) { renderSimulation(); bindPageControls(); } }
+    if (!suppliedForm) { persistSimulationForm(); if (rerender) renderSimulationPreserveScroll(); }
   }
 
   async function pickSimulationFallbackSample(index) {
@@ -2330,7 +2437,7 @@
     if (state.simulationAgent.status !== 'connected') { showToast('먼저 Local Agent를 연결하세요.', true); return; }
     try {
       const data = await agentFetch('/api/pick/file', { method:'POST', body:{initialPath:row.sampleImagePath || '',fileType:'image'}, timeout:120000 });
-      if (data.ok && data.path) { row.sampleImagePath = data.path; persistSimulationForm(); renderSimulation(); bindPageControls(); }
+      if (data.ok && data.path) { row.sampleImagePath = data.path; persistSimulationForm(); renderSimulationPreserveScroll(); }
     } catch (error) { showToast(`샘플 선택 실패: ${error.message}`, true); }
   }
 
@@ -2369,7 +2476,13 @@
       green, blue:cloneSimulation(form.blue), integrated:cloneSimulation(form.integrated),
       positions:simulationActivePositions(state.simulationMode || 'integrated', form).map(key => {
         const p = form.positions[key];
-        return { ...cloneSimulation(p), enabled:true };
+        return {
+          key:p.key, displayName:p.displayName, enabled:true,
+          greenWorkspacePath:p.greenWorkspacePath, blueWorkspacePath:p.blueWorkspacePath,
+          greenImageRoot:p.greenImageRoot, blueImageRoot:p.blueImageRoot,
+          greenStreamName:p.greenStreamName, blueStreamName:p.blueStreamName, blueToolName:p.blueToolName,
+          greenKeyword:p.greenKeyword, integratedKeyword:p.integratedKeyword
+        };
       })
     };
   }
@@ -2423,12 +2536,16 @@
     if (!request.positions.length) { showToast('현재 시뮬레이션 모드에서 사용할 Position을 1개 이상 체크하세요.', true); return; }
     try {
       prepareLiveSimulationData(request);
+      state.simulationProgress = { ...state.simulationProgress, running:true, message:'Simulation 시작 요청 중...', error:'' };
+      updateSimulationStatusDom();
       const data = await agentFetch('/api/simulation/start', { method:'POST', body:request, timeout:10000 });
       if (!data.ok) throw new Error(data.error || 'Simulation 시작 실패');
       state.simulationProgress = { ...state.simulationProgress, ...(data.state || {}), running:true };
       updateSimulationStatusDom();
     } catch (error) {
       state.simulationLiveActive = false;
+      state.simulationProgress = { ...state.simulationProgress, running:false, message:'Simulation 시작 실패', error:error.message || String(error) };
+      updateSimulationStatusDom();
       showToast(error.message, true);
     }
   }
@@ -2453,12 +2570,98 @@
     const log = $('#vq43-sim-log'); if (log) log.innerHTML = `<span>${s.error ? '[ERROR]' : s.running ? '[RUN]' : '[READY]'}</span> ${escapeHtml(s.message || 'Ready')}`;
     const start = $('#vq43-sim-start'); if (start) start.disabled = !!s.running || state.simulationAgent.status !== 'connected';
     const stop = $('#vq43-sim-stop'); if (stop) stop.disabled = !s.running;
+    applySimulationLockDom();
   }
 
   function simulationModeLabel(mode) {
     if (mode === 'green') return 'Green Simulation';
     if (mode === 'blue') return 'Blue Crop';
     return 'Integrated Simulation';
+  }
+
+  function workspaceInfoFor(positionKey, kind) {
+    const p = ensureSimulationForm().positions?.[positionKey];
+    return p ? (kind === 'green' ? p.greenWorkspaceInfo : p.blueWorkspaceInfo) : null;
+  }
+
+  function workspaceStreams(info) {
+    return Array.isArray(info?.streams) ? info.streams : [];
+  }
+
+  function workspaceTools(info, streamName = '', typePrefix = '') {
+    const streams = workspaceStreams(info);
+    const selected = streamName ? streams.filter(s => String(s.name) === String(streamName)) : streams;
+    const tools = selected.flatMap(s => Array.isArray(s.tools) ? s.tools : []);
+    return tools.filter(t => !typePrefix || String(t.type || '').toLowerCase().startsWith(typePrefix.toLowerCase()));
+  }
+
+  function workspaceSelectHtml(positionKey, kind, field, value, typePrefix = '') {
+    const info = workspaceInfoFor(positionKey, kind);
+    const p = ensureSimulationForm().positions[positionKey];
+    const isStream = field.toLowerCase().includes('stream');
+    let options = [];
+    if (isStream) options = workspaceStreams(info).map(x => String(x.name || '')).filter(Boolean);
+    else {
+      const streamField = kind === 'green' ? 'greenStreamName' : 'blueStreamName';
+      options = workspaceTools(info, p?.[streamField] || '', typePrefix).map(x => String(x.name || '')).filter(Boolean);
+    }
+    if (value && !options.includes(value)) options.unshift(value);
+    if (!options.length) options = [value || (isStream ? '기본값' : typePrefix === 'Blue' ? 'Locate' : '')].filter(Boolean);
+    const label = isStream ? 'Stream' : (typePrefix === 'Blue' ? 'Blue Tool' : 'Tool');
+    return `<label class="vq43-sim-compact-field"><span>${label}</span><select data-sim-scope="position" data-sim-field="${field}" data-sim-key="${positionKey}">${options.map(x=>`<option value="${escapeHtml(x)}" ${x===value?'selected':''}>${escapeHtml(x)}</option>`).join('')}</select></label>`;
+  }
+
+  function workspaceInfoSummary(positionKey, kind) {
+    const info = workspaceInfoFor(positionKey, kind);
+    if (!info?.ok || !workspaceStreams(info).length) return '';
+    const p = ensureSimulationForm().positions[positionKey];
+    const streamName = kind === 'green' ? p.greenStreamName : p.blueStreamName;
+    const stream = workspaceStreams(info).find(x => x.name === streamName) || workspaceStreams(info)[0];
+    if (!stream) return '';
+    const chips = (stream.tools || []).map(t => {
+      const details = [];
+      if (Array.isArray(t.tags) && t.tags.length) details.push(`Tags: ${t.tags.join(', ')}`);
+      if (Array.isArray(t.classes) && t.classes.length) details.push(`Classes: ${t.classes.join(', ')}`);
+      if (Array.isArray(t.features) && t.features.length) details.push(`Features: ${t.features.join(', ')}`);
+      return `<span><b>${escapeHtml(t.type || 'Tool')}</b> ${escapeHtml(t.name || '')}${details.length ? `<small>${escapeHtml(details.join(' · '))}</small>` : ''}</span>`;
+    }).join('');
+    return `<div class="vq43-workspace-inspect"><em>${escapeHtml(stream.name || '')}</em>${chips || '<span>Tool 없음</span>'}</div>`;
+  }
+
+  function preferredWorkspaceStream(info, typePrefix, current) {
+    const streams = workspaceStreams(info);
+    if (!streams.length) return current || '기본값';
+    if (current && streams.some(x => x.name === current)) return current;
+    const typed = streams.find(s => workspaceTools({streams:[s]}, '', typePrefix).length);
+    return typed?.name || streams.find(s => s.name === '기본값')?.name || streams[0].name;
+  }
+
+  async function inspectSimulationWorkspace(positionKey, kind, path, preserveScroll = true) {
+    const form = ensureSimulationForm();
+    const p = form.positions?.[positionKey];
+    if (!p || !path || state.simulationAgent.status !== 'connected') return;
+    const opt = kind === 'blue' ? form.blue : form.green;
+    try {
+      const data = await agentFetch('/api/workspace/inspect', {
+        method:'POST', body:{ path, useGpu:!!opt.useGpu, gpuDevices:String(opt.gpuDevices || '0') }, timeout:30000
+      });
+      if (!data?.ok) throw new Error(data?.error || 'Workspace 구조 확인 실패');
+      if (kind === 'green') {
+        p.greenWorkspaceInfo = data;
+        p.greenStreamName = preferredWorkspaceStream(data, 'Green', p.greenStreamName);
+      } else {
+        p.blueWorkspaceInfo = data;
+        p.blueStreamName = preferredWorkspaceStream(data, 'Blue', p.blueStreamName);
+        const blueTools = workspaceTools(data, p.blueStreamName, 'Blue');
+        if (!blueTools.some(x => x.name === p.blueToolName)) p.blueToolName = blueTools.find(x => x.name === 'Locate')?.name || blueTools[0]?.name || p.blueToolName || 'Locate';
+        syncSimulationFallbackRows(false, form);
+      }
+      persistSimulationForm();
+      if (state.page === 'simulation') preserveScroll ? renderSimulationPreserveScroll() : (renderSimulation(), bindPageControls());
+    } catch (error) {
+      showToast(`Workspace 구조 읽기 실패: ${error.message}`, true);
+      if (state.page === 'simulation') preserveScroll ? renderSimulationPreserveScroll() : (renderSimulation(), bindPageControls());
+    }
   }
 
   function simPathField(scope, key, field, title, placeholder, kind='file', fileType='workspace', disabled=false) {
@@ -2476,12 +2679,12 @@
       const p = form.positions[key], enabled = active.includes(key);
       const head = `<div class="vq43-sim-position-ident"><label class="vq43-sim-position-enable"><input type="checkbox" data-sim-active-position="${key}" data-sim-mode="${mode}" ${enabled?'checked':''}><strong>${escapeHtml(label)}</strong></label><button class="vq43-sim-remove-position" data-vq-action="simulation-remove-position" data-sim-key="${key}" title="Position 전체 제거">×</button></div>`;
       if (mode === 'green') {
-        return `<div class="vq43-sim-position-row-new">${head}${simPathField('position',key,'greenWorkspacePath','Workspace','Green Runtime Workspace','file','workspace')}${simPathField('position',key,'greenImageRoot','Image Folder','Green 이미지 폴더','folder','folder',keywordMode)}<label class="vq43-sim-compact-field"><span>Stream</span><input data-sim-scope="position" data-sim-field="greenStreamName" data-sim-key="${key}" value="${escapeHtml(p.greenStreamName)}"></label>${keywordMode?`<label class="vq43-sim-compact-field"><span>Keyword</span><input data-sim-scope="position" data-sim-field="greenKeyword" data-sim-key="${key}" value="${escapeHtml(p.greenKeyword)}"></label>`:''}</div>`;
+        return `<div class="vq43-sim-position-row-new">${head}${simPathField('position',key,'greenWorkspacePath','Workspace','Green Runtime Workspace','file','workspace')}${simPathField('position',key,'greenImageRoot','Image Folder','Green 이미지 폴더','folder','folder',keywordMode)}${workspaceSelectHtml(key,'green','greenStreamName',p.greenStreamName,'Green')}${keywordMode?`<label class="vq43-sim-compact-field"><span>Keyword</span><input data-sim-scope="position" data-sim-field="greenKeyword" data-sim-key="${key}" value="${escapeHtml(p.greenKeyword)}"></label>`:''}${workspaceInfoSummary(key,'green')}</div>`;
       }
       if (mode === 'blue') {
-        return `<div class="vq43-sim-position-row-new">${head}${simPathField('position',key,'blueWorkspacePath','Workspace','Blue Runtime Workspace','file','workspace')}${simPathField('position',key,'blueImageRoot','Image Folder','Blue 원본 이미지 폴더','folder','folder')}<label class="vq43-sim-compact-field"><span>Stream</span><input data-sim-scope="position" data-sim-field="blueStreamName" data-sim-key="${key}" value="${escapeHtml(p.blueStreamName)}"></label><label class="vq43-sim-compact-field"><span>Blue Tool</span><input data-sim-scope="position" data-sim-field="blueToolName" data-sim-key="${key}" value="${escapeHtml(p.blueToolName)}"></label></div>`;
+        return `<div class="vq43-sim-position-row-new">${head}${simPathField('position',key,'blueWorkspacePath','Workspace','Blue Runtime Workspace','file','workspace')}${simPathField('position',key,'blueImageRoot','Image Folder','Blue 원본 이미지 폴더','folder','folder')}${workspaceSelectHtml(key,'blue','blueStreamName',p.blueStreamName,'Blue')}${workspaceSelectHtml(key,'blue','blueToolName',p.blueToolName,'Blue')}${workspaceInfoSummary(key,'blue')}</div>`;
       }
-      return `<div class="vq43-sim-position-row-new integrated">${head}${simPathField('position',key,'greenWorkspacePath','Green Workspace','Green Runtime Workspace','file','workspace')}${simPathField('position',key,'blueWorkspacePath','Blue Workspace','Blue Runtime Workspace','file','workspace')}${simPathField('position',key,'blueImageRoot','Image Folder','Blue Crop와 공유되는 원본 이미지 폴더','folder','folder',keywordMode)}<label class="vq43-sim-compact-field"><span>Green Stream</span><input data-sim-scope="position" data-sim-field="greenStreamName" data-sim-key="${key}" value="${escapeHtml(p.greenStreamName)}"></label><label class="vq43-sim-compact-field"><span>Blue Stream</span><input data-sim-scope="position" data-sim-field="blueStreamName" data-sim-key="${key}" value="${escapeHtml(p.blueStreamName)}"></label><label class="vq43-sim-compact-field"><span>Blue Tool</span><input data-sim-scope="position" data-sim-field="blueToolName" data-sim-key="${key}" value="${escapeHtml(p.blueToolName)}"></label>${keywordMode?`<label class="vq43-sim-compact-field"><span>Keyword</span><input data-sim-scope="position" data-sim-field="integratedKeyword" data-sim-key="${key}" value="${escapeHtml(p.integratedKeyword)}"></label>`:''}</div>`;
+      return `<div class="vq43-sim-position-row-new integrated">${head}${simPathField('position',key,'greenWorkspacePath','Green Workspace','Green Runtime Workspace','file','workspace')}${simPathField('position',key,'blueWorkspacePath','Blue Workspace','Blue Runtime Workspace','file','workspace')}${simPathField('position',key,'blueImageRoot','Image Folder','Blue Crop와 공유되는 원본 이미지 폴더','folder','folder',keywordMode)}${workspaceSelectHtml(key,'green','greenStreamName',p.greenStreamName,'Green')}${workspaceSelectHtml(key,'blue','blueStreamName',p.blueStreamName,'Blue')}${workspaceSelectHtml(key,'blue','blueToolName',p.blueToolName,'Blue')}${keywordMode?`<label class="vq43-sim-compact-field"><span>Keyword</span><input data-sim-scope="position" data-sim-field="integratedKeyword" data-sim-key="${key}" value="${escapeHtml(p.integratedKeyword)}"></label>`:''}<div class="vq43-workspace-summary-pair">${workspaceInfoSummary(key,'green')}${workspaceInfoSummary(key,'blue')}</div></div>`;
     }).join('');
   }
 
@@ -2533,7 +2736,12 @@
     const rows = form.green.tools.map((t,i) => {
       t.positionEnabled = t.positionEnabled || {};
       const positionCells = defs.map(def => `<td><input type="checkbox" data-sim-tool-position-index="${i}" data-sim-position-key="${def.key}" ${t.positionEnabled[def.key] !== false ? 'checked' : ''}></td>`).join('');
-      return `<tr><td><input type="checkbox" data-sim-tool-index="${i}" data-sim-tool-field="selected" ${t.selected?'checked':''}></td>${positionCells}<td><input data-sim-tool-index="${i}" data-sim-tool-field="toolName" value="${escapeHtml(t.toolName)}"></td><td><input type="number" step="0.01" min="0" max="1" data-sim-tool-index="${i}" data-sim-tool-field="threshold" value="${escapeHtml(t.threshold)}"></td><td><select data-sim-tool-index="${i}" data-sim-tool-field="judgement">${judgements.map(j=>`<option ${j===t.judgement?'selected':''}>${escapeHtml(j)}</option>`).join('')}</select></td></tr>`;
+      const detectedGreenTools = [...new Set(Object.values(form.positions || {}).flatMap(p => workspaceTools(p.greenWorkspaceInfo, p.greenStreamName, 'Green').map(x => x.name)).filter(Boolean))];
+      if (t.toolName && !detectedGreenTools.includes(t.toolName)) detectedGreenTools.unshift(t.toolName);
+      const toolEditor = detectedGreenTools.length
+        ? `<select data-sim-tool-index="${i}" data-sim-tool-field="toolName">${detectedGreenTools.map(name=>`<option value="${escapeHtml(name)}" ${name===t.toolName?'selected':''}>${escapeHtml(name)}</option>`).join('')}</select>`
+        : `<input data-sim-tool-index="${i}" data-sim-tool-field="toolName" value="${escapeHtml(t.toolName)}">`;
+      return `<tr><td><input type="checkbox" data-sim-tool-index="${i}" data-sim-tool-field="selected" ${t.selected?'checked':''}></td>${positionCells}<td>${toolEditor}</td><td><input type="number" step="0.01" min="0" max="1" data-sim-tool-index="${i}" data-sim-tool-field="threshold" value="${escapeHtml(t.threshold)}"></td><td><select data-sim-tool-index="${i}" data-sim-tool-field="judgement">${judgements.map(j=>`<option ${j===t.judgement?'selected':''}>${escapeHtml(j)}</option>`).join('')}</select></td></tr>`;
     }).join('');
     return `<section class="vq43-sim-option-section"><div class="vq43-sim-option-titlebar"><h3>Tool Settings</h3><div><button data-vq-action="simulation-tool-add">추가</button><button data-vq-action="simulation-tool-remove">선택 제거</button><button data-vq-action="simulation-tool-reset">원본 기본값</button></div></div><p class="vq43-sim-option-note">Position 열은 설정의 공통 Position 목록과 자동 동기화됩니다.</p><div class="vq43-sim-table-wrap"><table class="vq43-sim-table tools"><thead><tr><th>선택</th>${positionHead}<th>ToolName</th><th>Threshold</th><th>Judgement</th></tr></thead><tbody>${rows}</tbody></table></div></section>`;
   }

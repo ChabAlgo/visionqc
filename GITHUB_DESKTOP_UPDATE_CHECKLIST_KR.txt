@@ -1,10 +1,10 @@
-VisionQC v4.4.21 GitHub Pages 업데이트
+VisionQC v4.4.22 GitHub Pages 업데이트
 
 1. 현재 로컬 GitHub repository의 .git 폴더는 삭제하지 않습니다.
-2. VisionQC_GitHubPages_v4.4.21_* ZIP의 내용물을 repository 루트에 덮어씁니다.
-3. index.html / visionqc-extension.js / visionqc-extension.css / assets/index-v4.4.21.js 존재 확인
-4. GitHub Desktop Summary: VisionQC v4.4.21 Custom Positions + Agent Fix
+2. VisionQC_GitHubPages_v4.4.22_* ZIP의 내용물을 repository 루트에 덮어씁니다.
+3. index.html / visionqc-extension.js / visionqc-extension.css / assets/index-v4.4.22.js 존재 확인
+4. GitHub Desktop Summary: VisionQC v4.4.22 Custom Positions + Agent Fix
 5. Commit to main -> Push origin
 6. GitHub Pages 배포 완료 후 Chrome에서 Ctrl + Shift + R
-7. Simulation은 Local Agent v0.2.1과 함께 사용합니다.
-8. Web 시뮬레이션의 연결 확인에서 Agent 0.2.1 표시 확인
+7. Simulation은 Local Agent v0.2.2과 함께 사용합니다.
+8. Web 시뮬레이션의 연결 확인에서 Agent 0.2.2 표시 확인

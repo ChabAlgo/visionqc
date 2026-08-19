@@ -1,0 +1,22 @@
+Workspace 구조 자동 인식 구현 근거
+
+첨부 BeadGridInspector 소스 확인:
+- CognexRuntimeAdapter.Load(): Runtime Workspace 로드
+- CognexRuntimeAdapter.InspectStructure(): workspace.Streams 순회
+- 각 Stream의 Root Tool 및 Child Tool을 재귀 수집
+- MainWindow.LoadRuntime_Click(): Stream ComboBox / Tool ComboBox 자동 구성
+
+첨부 버전 자체는 Workspace의 Green Tag / Red Class / Blue Feature 이름을 UI에 수집하는 코드는 포함하지 않았습니다.
+다만 함께 포함된 ViDi Runtime API 문서에서 다음 Runtime property를 확인했습니다.
+- ViDi2.ITool.Type
+- ViDi2.IGreenTool.KnownTags
+- ViDi2.IRedTool.KnownClasses
+- ViDi2.IBlueTool.KnownFeatures
+
+VisionQC Agent v0.2.2는 위 Runtime 정보를 /api/workspace/inspect 로 반환합니다.
+Web v4.4.22는 Workspace 선택 직후 이 API를 호출하여:
+- Stream dropdown
+- Blue Tool dropdown
+- Green Tool Settings의 Tool dropdown
+- Green Tags / Red Classes / Blue Features 요약
+을 표시합니다.
