@@ -1,0 +1,30 @@
+VisionQC Web v4.4.24 정적/회귀 검증
+===================================
+
+PASS
+- visionqc-extension.js: node --check
+- assets/index-v4.4.24.js: node --check
+- tests/v4424-regression.test.mjs: 7/7 PASS
+- index.html v4.4.24 asset/version 참조 확인
+- v4424 stylesheet가 legacy extension stylesheet 뒤에 로드됨
+- expanded drawer가 shell/classification content를 272px 기준으로 이동
+- Simulation Options outer sticky + inner scroller 분리 확인
+- Agent 상태 관련 render 경로가 scroll-preserving renderer 사용
+- Tool Settings fixed table layout / min-width:0 / horizontal overflow 차단 확인
+- 1439px 이하 1열 responsive fallback 확인
+- authoritative stylesheet brace balance 확인
+- Local Agent v0.2.3 static regression: 6/6 PASS
+- Workspace Inspect fallback의 잘못된 OptimizedGPUMemory(GPU index) 호출 제거 확인
+- Agent CMD 9개 모두 UTF-8 BOM 없음 / 첫 줄 @echo off / ASCII-safe 확인
+- Agent csproj의 Compile Include 파일 존재 및 0.2.3 버전 정합성 확인
+
+브라우저 현재 배포본 v4.4.23 재현
+- Options를 wheel로 scroll한 뒤 Main 빈 영역 클릭
+- Options DOM outerHTML 변화 없음
+- click 직후 scrollTop이 520 -> 0으로 초기화되는 현상 확인
+- v4.4.24에서는 self-scrolling sticky element를 제거하고 inner scroller로 분리
+
+제작환경 제한
+- GitHub Pages에 배포하기 전이므로 v4.4.24 실제 Pages URL E2E는 배포 후 최종 확인 필요
+- 현재 작업 환경에는 Windows .NET Framework/MSBuild 및 Cognex VPDL 4.0 DLL이 없어 Agent 실제 Rebuild/Runtime 검증은 VPDL PC에서 수행 필요
+- 사용자 제공 Windows 빌드 로그는 수정 전 전체 C# 컴파일에서 CS1503 1건만 보고했으며, 해당 호출은 제거함

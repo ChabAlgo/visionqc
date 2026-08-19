@@ -1,7 +1,7 @@
 (() => {
   'use strict';
 
-  const VERSION = '4.4.23';
+  const VERSION = '4.4.24';
   const DEFAULT_POSITION_DEFS = [
     { key:'CA_TOP', name:'CA(TOP)' },
     { key:'AN_TOP', name:'AN(TOP)' },
@@ -15,10 +15,10 @@
   const NG_ROOT_KEY = 'ng-root';
   const RESULT_PREFIX = 'result:';
   const THRESHOLD_KEY = 'visionqc-v439-tool-thresholds';
-  const SIM_CONFIG_KEY = 'visionqc-v4423-simulation-config';
-  const SIM_DEFAULT_KEY = 'visionqc-v4423-simulation-defaults';
-  const SIM_LEGACY_CONFIG_KEY = 'visionqc-v4422-simulation-config';
-  const SIM_LEGACY_DEFAULT_KEY = 'visionqc-v4422-simulation-defaults';
+  const SIM_CONFIG_KEY = 'visionqc-v4424-simulation-config';
+  const SIM_DEFAULT_KEY = 'visionqc-v4424-simulation-defaults';
+  const SIM_LEGACY_CONFIG_KEY = 'visionqc-v4423-simulation-config';
+  const SIM_LEGACY_DEFAULT_KEY = 'visionqc-v4423-simulation-defaults';
   const POSITION_CONFIG_KEY = 'visionqc-v4421-position-config';
   const NG_POSITION_PREFIX = 'ng-position:';
   const IMG_RE = /\.(png|jpe?g|bmp|gif|webp|tif?f)$/i;
@@ -1892,7 +1892,7 @@
   }
 
   function captureSimulationViewport() {
-    const options = $('.vq43-sim-options');
+    const options = $('.vq43-sim-options-scroll') || $('.vq43-sim-options');
     const shell = $('#vq43-shell');
     const page = $('#vq43-page');
     return {
@@ -1908,7 +1908,7 @@
     if (!view) return;
     const restore = () => {
       try { window.scrollTo(view.windowX, view.windowY); } catch (_) { }
-      const shell = $('#vq43-shell'), page = $('#vq43-page'), options = $('.vq43-sim-options');
+      const shell = $('#vq43-shell'), page = $('#vq43-page'), options = $('.vq43-sim-options-scroll') || $('.vq43-sim-options');
       if (shell) { shell.scrollTop=view.shellTop; shell.scrollLeft=view.shellLeft; }
       if (page) { page.scrollTop=view.pageTop; page.scrollLeft=view.pageLeft; }
       if (options) { options.scrollTop=view.optionsTop; options.scrollLeft=view.optionsLeft; }
@@ -1922,8 +1922,7 @@
       applySimulationLockDom();
     };
     restore();
-    requestAnimationFrame(() => { restore(); requestAnimationFrame(restore); });
-    setTimeout(restore, 30);
+    requestAnimationFrame(restore);
   }
 
   function renderSimulationPreserveScroll() {
@@ -2091,7 +2090,7 @@
     if (state.simulationChecking) return;
     state.simulationChecking = true;
     state.simulationAgent = { ...state.simulationAgent, status:'checking', message:'127.0.0.1 Local Agent 확인 중...' };
-    if (state.page === 'simulation') { renderSimulation(); bindPageControls(); }
+    if (state.page === 'simulation') renderSimulationPreserveScroll();
     try {
       const data = await agentFetch('/api/status', { timeout:2500 });
       const detectedVersion = data.agentVersion || '-';
@@ -2110,7 +2109,7 @@
       closeSimulationEvents();
     } finally {
       state.simulationChecking = false;
-      if (state.page === 'simulation') { renderSimulation(); bindPageControls(); }
+      if (state.page === 'simulation') renderSimulationPreserveScroll();
     }
   }
 
@@ -2136,7 +2135,7 @@
       closeSimulationEvents();
       state.simulationAgent = { status:'offline', version:'-', vpdl:'-', license:'-', gpu:'-', message:'Agent 등록 제거/종료 요청 완료' };
       state.simulationProgress = { running:false, processed:0, total:0, ok:0, ng:0, current:'-', message:'Ready', error:'' };
-      renderSimulation(); bindPageControls();
+      renderSimulationPreserveScroll();
       showToast('Agent 등록을 제거하고 종료했습니다. 로컬 Agent 폴더는 필요하면 직접 삭제하세요.');
     } catch (error) {
       showToast(`Agent 제거 실패: ${error.message}`, true);
@@ -2153,7 +2152,7 @@
       state.simulationAgent.vpdl = data.vpdlVersion || state.simulationAgent.vpdl;
       state.simulationAgent.gpu = data.gpu || state.simulationAgent.gpu;
       state.simulationAgent.message = data.ok ? 'VPDL Runtime 생성 확인 완료' : (data.error || 'Runtime 확인 실패');
-      renderSimulation(); bindPageControls();
+      renderSimulationPreserveScroll();
     } catch (error) { showToast(`Runtime 확인 실패: ${error.message}`, true); }
   }
 
@@ -2787,9 +2786,9 @@
   function toolRuntimeState(toolName) {
     const name=String(toolName||'').trim();
     if (!name) return {cls:'unknown', label:'미입력'};
-    if (!hasSuccessfulGreenInspection()) return {cls:'unknown', label:'구조 미확인'};
+    if (!hasSuccessfulGreenInspection()) return {cls:'unknown', label:'미확인'};
     const found=detectedGreenToolNames().some(x=>x.toLowerCase()===name.toLowerCase());
-    return found ? {cls:'found',label:'Runtime 확인'} : {cls:'missing',label:'Runtime 없음'};
+    return found ? {cls:'found',label:'확인'} : {cls:'missing',label:'없음'};
   }
 
   function updateToolNameValidation(input) {
@@ -2812,7 +2811,7 @@
       const runtime=toolRuntimeState(t.toolName);
       return `<tr><td><input type="checkbox" data-sim-tool-index="${i}" data-sim-tool-field="selected" ${t.selected?'checked':''}></td><td><div class="vq43-tool-name-editor"><input class="tool-${runtime.cls}" data-sim-tool-index="${i}" data-sim-tool-field="toolName" value="${escapeHtml(t.toolName)}" placeholder="Green ToolName"><span class="vq43-tool-runtime-badge ${runtime.cls}">${runtime.label}</span></div></td><td><input type="number" step="0.01" min="0" max="1" data-sim-tool-index="${i}" data-sim-tool-field="threshold" value="${escapeHtml(t.threshold)}"></td><td><select data-sim-tool-index="${i}" data-sim-tool-field="judgement">${judgements.map(j=>`<option ${j===t.judgement?'selected':''}>${escapeHtml(j)}</option>`).join('')}</select></td></tr>`;
     }).join('');
-    return `<section class="vq43-sim-option-section"><div class="vq43-sim-option-titlebar"><h3>Tool Settings</h3><div><button type="button" data-vq-action="simulation-tool-add">추가</button><button type="button" data-vq-action="simulation-tool-remove">선택 제거</button><button type="button" data-vq-action="simulation-tool-reset">원본 기본값</button></div></div><p class="vq43-sim-option-note">Tool은 현재 Simulation에서 활성화된 모든 Position에 동일하게 적용됩니다. Workspace 구조에서 확인된 Green Tool은 초록색, 없는 이름은 빨간색으로 표시합니다.</p><div class="vq43-sim-table-wrap"><table class="vq43-sim-table tools"><thead><tr><th>선택</th><th>ToolName</th><th>Threshold</th><th>Judgement</th></tr></thead><tbody>${rows}</tbody></table></div></section>`;
+    return `<section class="vq43-sim-option-section"><div class="vq43-sim-option-titlebar"><h3>Tool Settings</h3><div><button type="button" data-vq-action="simulation-tool-add">추가</button><button type="button" data-vq-action="simulation-tool-remove">선택 제거</button><button type="button" data-vq-action="simulation-tool-reset">원본 기본값</button></div></div><p class="vq43-sim-option-note">Tool은 현재 Simulation에서 활성화된 모든 Position에 동일하게 적용됩니다. Workspace 구조에서 확인된 Green Tool은 초록색, 없는 이름은 빨간색으로 표시합니다.</p><div class="vq43-sim-table-wrap vq43-sim-tools-wrap"><table class="vq43-sim-table tools"><colgroup><col class="vq43-tool-col-select"><col class="vq43-tool-col-name"><col class="vq43-tool-col-threshold"><col class="vq43-tool-col-judgement"></colgroup><thead><tr><th>선택</th><th>ToolName</th><th>Threshold</th><th>Judgement</th></tr></thead><tbody>${rows}</tbody></table></div></section>`;
   }
 
   function judgementOptions() {
@@ -2850,7 +2849,7 @@
     if (mode === 'green') body = greenFilterOptions(false) + greenRuntimeOptions() + toolSettingsOptions() + judgementOptions();
     else if (mode === 'blue') body = blueRuntimeOptions() + blueCropOptions() + fallbackOptions();
     else body = greenFilterOptions(true) + greenRuntimeOptions() + toolSettingsOptions() + judgementOptions() + blueRuntimeOptions() + blueCropOptions() + fallbackOptions();
-    return `<aside class="vq43-sim-options"><div class="vq43-sim-options-head"><div><strong>Simulation Options</strong><span>DL_Simulation v1.13 상세 설정</span></div><div><button data-vq-action="simulation-save-defaults">기본값 저장</button><button data-vq-action="simulation-restore-defaults">기본값 복원</button></div></div>${body}</aside>`;
+    return `<aside class="vq43-sim-options"><div class="vq43-sim-options-head"><div><strong>Simulation Options</strong><span>DL_Simulation v1.13 상세 설정</span></div><div><button data-vq-action="simulation-save-defaults">기본값 저장</button><button data-vq-action="simulation-restore-defaults">기본값 복원</button></div></div><div class="vq43-sim-options-scroll">${body}</div></aside>`;
   }
 
   function simulationOutputPanel() {

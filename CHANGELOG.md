@@ -1,3 +1,33 @@
+# VisionQC v4.4.24
+
+## FHD 메뉴 / 레이아웃
+- 기준 화면을 FHD 1920×1080, 브라우저 배율 100%로 명시했습니다.
+- 메뉴가 72px icon rail에서 272px drawer로 열릴 때 Classification 및 VisionQC 본문도 함께 이동합니다.
+- 작은 화면은 1100px 이하에서 overlay, Simulation은 1439px 이하에서 1열 fallback을 사용합니다.
+
+## Simulation Options scroll
+- sticky panel 자체를 scroll container로 사용하던 구조를 제거했습니다.
+- 고정 header와 `.vq43-sim-options-scroll` 전용 내부 scroller를 분리했습니다.
+- 외부 클릭에서 DOM 변경 없이 scrollTop이 0으로 돌아가는 Chrome 동작을 구조적으로 차단했습니다.
+- Agent 연결 확인, 제거, Runtime 확인의 전체 렌더도 scroll-preserving 경로로 통일했습니다.
+
+## Tool Settings
+- Tool table의 620px 강제 최소폭과 max-content 폭을 제거했습니다.
+- Select / ToolName / Threshold / Judgement 4열을 panel 폭에 맞춘 fixed table layout으로 변경했습니다.
+- Runtime 상태 badge 문구를 축약해 ToolName 입력 폭을 확보했습니다.
+
+## Local Agent v0.2.3 build hotfix
+- Workspace Inspect fallback이 GPU 장치 번호를 `OptimizedGPUMemory(ulong)`의 메모리 byte 수로 잘못 전달하던 호출을 제거했습니다.
+- GPU 장치 선택은 `InitializeComputeDevices(mode, gpuList)`가 담당하고 최적화 메모리는 VPDL Runtime 기본값을 유지합니다.
+- Windows CMD가 첫 줄을 `癤?echo off`로 오인하지 않도록 배치 스크립트 9개의 UTF-8 BOM을 제거했습니다.
+
+## 검증
+- extension / React bundle `node --check`
+- FHD drawer, Options scroller, Tool fixed table, responsive fallback, asset version 회귀검사 추가
+- Local Agent source/CMD/project 정적 회귀검사 6종 추가
+
+---
+
 # VisionQC v4.4.23
 
 ## 안정화 / 정합성
