@@ -2681,14 +2681,15 @@
     }
     try {
       const data = await requestSimulationPicker(kind === 'file' ? '/api/pick/file' : '/api/pick/folder', { initialPath:current, fileType });
-      if (!data.ok || !data.path) {
+      const selectedPaths = Array.isArray(data?.paths) ? data.paths.filter(Boolean) : (data?.path ? [data.path] : []);
+      if (!data.ok || selectedPaths.length === 0) {
         if (workspaceKind) clearWorkspaceInspectStatus(key, workspaceKind, true);
         if (data.error) showToast(`선택 실패: ${data.error}`, true);
         return;
       }
       const currentTarget = simulationScopeObject(scope, key);
       if (!currentTarget) return;
-      currentTarget[field] = data.path;
+      currentTarget[field] = selectedPaths[0];
       if (workspaceKind === 'green') currentTarget.greenWorkspaceInfo = null;
       else if (workspaceKind === 'blue') currentTarget.blueWorkspaceInfo = null;
       persistSimulationForm();
@@ -2698,7 +2699,8 @@
       } else {
         const selector = `input[data-sim-scope="${CSS.escape(scope)}"][data-sim-field="${CSS.escape(field)}"]${key?`[data-sim-key="${CSS.escape(key)}"]`:''}`;
         const input = $(selector, $('#vq43-page'));
-        if (input) input.value = data.path;
+        if (input) input.value = selectedPaths[0];
+        if (selectedPaths.length > 1) showToast(`${selectedPaths.length}개 폴더가 선택되었습니다. 현재 입력에는 첫 번째 경로를 사용합니다.`);
       }
     } catch (error) {
       if (workspaceKind) clearWorkspaceInspectStatus(key, workspaceKind, true);

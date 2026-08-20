@@ -9,14 +9,14 @@ const root = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const read = (path) => readFileSync(resolve(root, path), 'utf8');
 const html = read('index.html');
 const js = read('visionqc-extension.js');
-const css = read('visionqc-v4430-clean.css');
+const css = read('visionqc-v4433-clean.css');
 
-test('v4.4.30 assets and the supplied TOPTEC logo are exact', () => {
-  assert.match(html, /VisionQC DirectExport v4\.4\.30/);
-  assert.match(html, /assets\/index-v4\.4\.30\.js/);
-  assert.match(html, /visionqc-v4430-clean\.css\?v=4\.4\.30/);
-  assert.match(html, /visionqc-extension\.js\?v=4\.4\.30/);
-  assert.ok(existsSync(resolve(root, 'assets/index-v4.4.30.js')));
+test('v4.4.33 assets and the supplied TOPTEC logo are exact', () => {
+  assert.match(html, /VisionQC DirectExport v4\.4\.33/);
+  assert.match(html, /assets\/index-v4\.4\.33\.js/);
+  assert.match(html, /visionqc-v4433-clean\.css\?v=4\.4\.33/);
+  assert.match(html, /visionqc-extension\.js\?v=4\.4\.33/);
+  assert.ok(existsSync(resolve(root, 'assets/index-v4.4.33.js')));
   const logo = readFileSync(resolve(root, 'assets/toptec-logo.png'));
   assert.equal(createHash('sha256').update(logo).digest('hex'), 'ab35afda21bd2d40052b79ca46b75613096f60a7b8a84d6112ccd25daa5aa4a4');
 });
@@ -141,7 +141,7 @@ test('picker requests are single-flight in Web and never queue silently', () => 
   const picker = js.slice(js.indexOf('async function requestSimulationPicker'), js.indexOf('function createPositionKey'));
   assert.match(picker, /if \(state\.simulationPickerPending\)/);
   assert.match(picker, /state\.simulationPickerPending = true/);
-  assert.match(picker, /state\.simulationPickerPending = false/);
+  assert.match(picker, /resetSimulationPickerState\(\)/);
   assert.match(picker, /이미 파일 또는 폴더 선택 창이 열려 있습니다/);
   assert.match(picker, /clientId:PICKER_CLIENT_ID/);
   assert.match(picker, /data\?\.busy && data\?\.recoverable/);
@@ -169,7 +169,7 @@ test('Agent disconnect clears loaded Workspace memory and UI data but keeps chos
   assert.doesNotMatch(clear, /greenWorkspacePath\s*=/);
   assert.doesNotMatch(clear, /blueWorkspacePath\s*=/);
   assert.match(poll, /clearSimulationLoadedWorkspaces\(\{ render:true \}\)/);
-  assert.match(stop, /clearSimulationLoadedWorkspaces\(\{ render:true \}\)/);
+  assert.match(stop, /markSimulationAgentOffline\(/);
 });
 
 test('Simulation Start is single-flight and verifies the live preload identity', () => {
@@ -214,10 +214,11 @@ test('notification rail, unread badge, large toast, and tooltips are present', (
   assert.match(js, /classification:'<rect/);
 });
 
-test('picker gets a long user-controlled window without the former 120 second abort', () => {
-  assert.match(js, /PICKER_TIMEOUT_MS = 10 \* 60 \* 1000/);
+test('picker stays open until the user completes or cancels it', () => {
+  assert.match(js, /PICKER_POLL_INTERVAL_MS = 600/);
   const picker = js.slice(js.indexOf('async function requestSimulationPicker'), js.indexOf('async function browseSimulationPath'));
-  assert.match(picker, /timeout:PICKER_TIMEOUT_MS/);
+  assert.match(picker, /while \(true\)/);
+  assert.match(picker, /timeout:4000/);
   assert.doesNotMatch(picker, /timeout:120000/);
 });
 

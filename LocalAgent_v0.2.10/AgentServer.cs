@@ -52,6 +52,7 @@ namespace VisionQC.LocalAgent
         private bool _inspectionControlDeferred;
         private bool _vpdlReservedForSimulation;
         private LocalRuntime.Control _preloadedRuntimeControl;
+        private List<RuntimePreloadItem> _preloadedRuntimeItems = new List<RuntimePreloadItem>();
         private string _preloadedRuntimeSignature = "";
         private string _preloadedRuntimeToken = "";
         private string _preloadedRuntimeMode = "";
@@ -282,6 +283,23 @@ namespace VisionQC.LocalAgent
                 if (_vpdlReservedForSimulation)
                     return new RuntimePreloadResponse { ok = false, error = "Simulation이 실행 중입니다. 완료 또는 중지 후 Runtime File Load를 실행하세요." };
 
+                if (_preloadedRuntimeControl != null &&
+                    string.Equals(_preloadedRuntimeSignature, signature, StringComparison.Ordinal))
+                {
+                    return new RuntimePreloadResponse
+                    {
+                        ok = true,
+                        mode = _preloadedRuntimeMode,
+                        installedVpdlVersion = _vpdlVersion,
+                        vpdlVersion = _vpdlVersion,
+                        token = _preloadedRuntimeToken,
+                        signature = _preloadedRuntimeSignature,
+                        items = new List<RuntimePreloadItem>(_preloadedRuntimeItems),
+                        workspaceCount = _preloadedRuntimeItems.Count,
+                        elapsedMs = 0
+                    };
+                }
+
                 DisposeInspectionControlLocked();
                 DisposePreloadedRuntimeLocked();
 
@@ -332,6 +350,7 @@ namespace VisionQC.LocalAgent
 
                     _preloadedRuntimeControl = control;
                     control = null;
+                    _preloadedRuntimeItems = new List<RuntimePreloadItem>(response.items);
                     _preloadedRuntimeSignature = signature;
                     _preloadedRuntimeToken = Guid.NewGuid().ToString("N");
                     _preloadedRuntimeMode = mode;
@@ -443,6 +462,7 @@ namespace VisionQC.LocalAgent
             }
             catch { }
             _preloadedRuntimeControl = null;
+            _preloadedRuntimeItems = new List<RuntimePreloadItem>();
             _preloadedRuntimeSignature = "";
             _preloadedRuntimeToken = "";
             _preloadedRuntimeMode = "";
@@ -801,6 +821,7 @@ namespace VisionQC.LocalAgent
         private void RunPickerJob(PickerJob job)
         {
             string selected = null;
+            var selectedPaths = new List<string>();
             string error = "";
             try
             {
@@ -816,9 +837,16 @@ namespace VisionQC.LocalAgent
                 }
 
                 AppendAgentLog("INFO", job.Kind == "file" ? "파일 선택 창 열림: " + job.FileType : "폴더 선택 창 열림");
-                selected = job.Kind == "file"
-                    ? NativeShellPicker.PickFile(job.InitialPath, job.FileType)
-                    : NativeShellPicker.PickFolder(job.InitialPath);
+                if (job.Kind == "file")
+                {
+                    selected = NativeShellPicker.PickFile(job.InitialPath, job.FileType);
+                    if (!string.IsNullOrWhiteSpace(selected)) selectedPaths.Add(selected);
+                }
+                else
+                {
+                    selectedPaths.AddRange(NativeShellPicker.PickFolder(job.InitialPath) ?? new string[0]);
+                    selected = selectedPaths.FirstOrDefault() ?? "";
+                }
                 AppendAgentLog("INFO", string.IsNullOrWhiteSpace(selected)
                     ? (job.Kind == "file" ? "파일 선택 취소" : "폴더 선택 취소")
                     : (job.Kind == "file" ? "파일 선택 완료: " : "폴더 선택 완료: ") + selected);
@@ -833,6 +861,7 @@ namespace VisionQC.LocalAgent
                 lock (_pickerStateSync)
                 {
                     job.Path = selected ?? "";
+                    job.Paths = selectedPaths.Distinct(StringComparer.OrdinalIgnoreCase).ToList();
                     job.Error = error;
                     job.Cancelled = string.IsNullOrWhiteSpace(selected) && string.IsNullOrWhiteSpace(error);
                     job.Completed = true;
@@ -851,6 +880,7 @@ namespace VisionQC.LocalAgent
                 pending = false,
                 requestId = job.RequestId,
                 path = job.Path ?? "",
+                paths = job.Paths ?? new List<string>(),
                 cancelled = job.Cancelled,
                 error = job.Error ?? ""
             };
@@ -868,9 +898,10 @@ namespace VisionQC.LocalAgent
             {
                 AppendAgentLog("INFO", "폴더 선택 창 열림");
                 NativeShellPicker.PrepareDialogRequest();
-                string selected = NativeShellPicker.PickFolder(initial);
-                AppendAgentLog("INFO", string.IsNullOrWhiteSpace(selected) ? "폴더 선택 취소" : "폴더 선택 완료: " + selected);
-                return new { ok = !string.IsNullOrWhiteSpace(selected), path = selected ?? "" };
+                string[] selected = NativeShellPicker.PickFolder(initial) ?? new string[0];
+                string path = selected.FirstOrDefault() ?? "";
+                AppendAgentLog("INFO", string.IsNullOrWhiteSpace(path) ? "폴더 선택 취소" : "폴더 선택 완료: " + string.Join(" | ", selected));
+                return new { ok = selected.Length > 0, path = path, paths = selected };
             }
             catch (SysException ex)
             {
@@ -1933,6 +1964,7 @@ namespace VisionQC.LocalAgent
             public string FileType = "folder";
             public string InitialPath = "";
             public string Path = "";
+            public List<string> Paths = new List<string>();
             public string Error = "";
             public bool Completed;
             public bool Cancelled;

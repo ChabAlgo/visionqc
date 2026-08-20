@@ -2,7 +2,7 @@
 setlocal EnableExtensions
 cd /d "%~dp0"
 echo ============================================================
-echo  VisionQC Local Agent v0.2.10 - Build x64 Release
+echo  VisionQC Local Agent v0.2.11 - Build x64 Release
 echo ============================================================
 set "COGNEX=%COGNEX_VPDL_DLL_DIR%"
 if not "%~1"=="" set "COGNEX=%~1"

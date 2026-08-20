@@ -88,6 +88,7 @@ namespace VisionQC.LocalAgent
             void SetOkButtonLabel([MarshalAs(UnmanagedType.LPWStr)] string pszText);
             void SetFileNameLabel([MarshalAs(UnmanagedType.LPWStr)] string pszLabel);
             void GetResult(out IShellItem ppsi);
+            void GetResults(out IShellItemArray ppsi);
             void AddPlace(IShellItem psi, Fdap fdap);
             void SetDefaultExtension([MarshalAs(UnmanagedType.LPWStr)] string pszDefaultExtension);
             void Close(int hr);
@@ -106,6 +107,19 @@ namespace VisionQC.LocalAgent
             void GetDisplayName(Sigdn sigdnName, out IntPtr ppszName);
             void GetAttributes(uint sfgaoMask, out uint psfgaoAttribs);
             void Compare(IShellItem psi, uint hint, out int piOrder);
+        }
+
+        [ComImport]
+        [Guid("b63ea76d-1f85-456f-a19c-48159efa858b")]
+        [InterfaceType(ComInterfaceType.InterfaceIsIUnknown)]
+        private interface IShellItemArray
+        {
+            void BindToHandler(IntPtr pbc, ref Guid bhid, ref Guid riid, out IntPtr ppv);
+            void GetPropertyStore(int flags, ref Guid riid, out IntPtr ppv);
+            void GetPropertyDescriptionList(ref Guid keyType, ref Guid riid, out IntPtr ppv);
+            void GetAttributes(uint attribFlags, uint sfgaoMask, out uint psfgaoAttribs);
+            void GetCount(out uint pdwNumItems);
+            void GetItemAt(uint dwIndex, out IShellItem ppsi);
         }
 
         [ComImport]
@@ -183,13 +197,13 @@ namespace VisionQC.LocalAgent
             }
         }
 
-        internal static string PickFolder(string initialPath)
+        internal static string[] PickFolder(string initialPath)
         {
             return RunOwnedDialog("폴더 선택", ownerHandle =>
             {
                 IFileDialog dialog = null;
                 IShellItem initialItem = null;
-                IShellItem resultItem = null;
+                IShellItemArray resultItems = null;
                 try
                 {
                     dialog = (IFileDialog)new FileOpenDialogCom();
@@ -204,9 +218,7 @@ namespace VisionQC.LocalAgent
                                       FileOpenOptions.FOS_FORCEFILESYSTEM |
                                       FileOpenOptions.FOS_PATHMUSTEXIST |
                                       FileOpenOptions.FOS_NOCHANGEDIR |
-                                      FileOpenOptions.FOS_HIDEMRUPLACES |
-                                      FileOpenOptions.FOS_HIDEPINNEDPLACES |
-                                      FileOpenOptions.FOS_DONTADDTORECENT);
+                                      FileOpenOptions.FOS_ALLOWMULTISELECT);
 
                     string initialFolder = FastLocalInitialFolder(initialPath, false) ?? SafeLocalInitialFolder();
                     if (!string.IsNullOrWhiteSpace(initialFolder))
@@ -223,16 +235,16 @@ namespace VisionQC.LocalAgent
                     SetActiveDialog(dialog);
                     SetForegroundWindow(ownerHandle);
                     int hr = dialog.Show(ownerHandle);
-                    if (hr == ERROR_CANCELLED_HRESULT) return null;
+                    if (hr == ERROR_CANCELLED_HRESULT) return Array.Empty<string>();
                     if (hr != S_OK) Marshal.ThrowExceptionForHR(hr);
 
-                    dialog.GetResult(out resultItem);
-                    return ShellItemPath(resultItem);
+                    dialog.GetResults(out resultItems);
+                    return ShellItemPaths(resultItems);
                 }
                 finally
                 {
                     ClearActiveDialog(dialog);
-                    if (resultItem != null) Marshal.FinalReleaseComObject(resultItem);
+                    if (resultItems != null) Marshal.FinalReleaseComObject(resultItems);
                     if (initialItem != null) Marshal.FinalReleaseComObject(initialItem);
                     if (dialog != null) Marshal.FinalReleaseComObject(dialog);
                 }
@@ -258,10 +270,7 @@ namespace VisionQC.LocalAgent
                     dialog.SetOptions(FileOpenOptions.FOS_FORCEFILESYSTEM |
                                       FileOpenOptions.FOS_PATHMUSTEXIST |
                                       FileOpenOptions.FOS_FILEMUSTEXIST |
-                                      FileOpenOptions.FOS_NOCHANGEDIR |
-                                      FileOpenOptions.FOS_HIDEMRUPLACES |
-                                      FileOpenOptions.FOS_HIDEPINNEDPLACES |
-                                      FileOpenOptions.FOS_DONTADDTORECENT);
+                                      FileOpenOptions.FOS_NOCHANGEDIR);
 
                     ComDlgFilterSpec[] filters;
                     if (kind == "csv")
@@ -335,6 +344,29 @@ namespace VisionQC.LocalAgent
             return PickFile(initialPath, "workspace");
         }
 
+        private static string[] ShellItemPaths(IShellItemArray items)
+        {
+            var paths = new System.Collections.Generic.List<string>();
+            if (items == null) return paths.ToArray();
+            uint count = 0;
+            items.GetCount(out count);
+            for (uint i = 0; i < count; i++)
+            {
+                IShellItem item = null;
+                try
+                {
+                    items.GetItemAt(i, out item);
+                    string path = ShellItemPath(item);
+                    if (!string.IsNullOrWhiteSpace(path)) paths.Add(path);
+                }
+                finally
+                {
+                    if (item != null) Marshal.FinalReleaseComObject(item);
+                }
+            }
+            return paths.ToArray();
+        }
+
         private static string ShellItemPath(IShellItem item)
         {
             if (item == null) return null;
@@ -383,9 +415,9 @@ namespace VisionQC.LocalAgent
             return null;
         }
 
-        private static string RunOwnedDialog(string caption, Func<IntPtr, string> showDialog)
+        private static T RunOwnedDialog<T>(string caption, Func<IntPtr, T> showDialog)
         {
-            string result = null;
+            T result = default(T);
             Exception error = null;
             var thread = new Thread(() =>
             {

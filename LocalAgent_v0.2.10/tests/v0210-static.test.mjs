@@ -10,10 +10,10 @@ const server = read('AgentServer.cs');
 const picker = read('NativeShellPicker.cs');
 const program = read('Program.cs');
 
-test('Agent v0.2.10 version is consistent', () => {
-  assert.match(program, /AgentVersion = "0\.2\.10"/);
-  assert.match(read('Properties/AssemblyInfo.cs'), /AssemblyVersion\("0\.2\.10\.0"\)/);
-  assert.match(read('BUILD_RELEASE_x64.cmd'), /v0\.2\.10/);
+test('Agent v0.2.11 version is consistent', () => {
+  assert.match(program, /AgentVersion = "0\.2\.11"/);
+  assert.match(read('Properties/AssemblyInfo.cs'), /AssemblyVersion\("0\.2\.11\.0"\)/);
+  assert.match(read('BUILD_RELEASE_x64.cmd'), /v0\.2\.11/);
 });
 
 test('picker HTTP calls return immediately and use idempotent start/status jobs', () => {
@@ -42,9 +42,9 @@ test('remote and virtual initial paths cannot block picker startup', () => {
   assert.match(picker, /GetDriveType\(root\) != DRIVE_FIXED/);
   assert.match(picker, /SetClientGuid/);
   assert.match(picker, /ClearClientData\(\)/);
-  assert.match(picker, /FOS_HIDEMRUPLACES/);
-  assert.match(picker, /FOS_HIDEPINNEDPLACES/);
-  assert.match(picker, /FOS_DONTADDTORECENT/);
+  assert.match(picker, /FOS_ALLOWMULTISELECT/);
+  assert.match(picker, /GetResults\(out IShellItemArray/);
+  assert.doesNotMatch(picker, /SetOptions\([\s\S]*FOS_HIDEMRUPLACES/);
   assert.match(picker, /SafeLocalInitialFolder\(\)/);
   assert.doesNotMatch(picker, /File\.Exists\(initialPath\)/);
   assert.doesNotMatch(picker, /Directory\.Exists\(initialPath\)/);
@@ -58,6 +58,8 @@ test('installed VPDL and active Simulation Runtime are separate states', () => {
   assert.match(runtimeCheck, /DisposeInspectionControlLocked\(\)/);
   assert.match(runtimeCheck, /vpdlVersion = "-"/);
   assert.match(server, /new RuntimePreloadResponse \{ ok = true, mode = mode, installedVpdlVersion = _vpdlVersion, vpdlVersion = _vpdlVersion \}/);
+  assert.match(server, /_preloadedRuntimeControl != null &&[\s\S]*_preloadedRuntimeSignature/);
+  assert.match(server, /_preloadedRuntimeItems = new List<RuntimePreloadItem>/);
 });
 
 test('Agent returns a concrete JSON error instead of silently closing the socket', () => {

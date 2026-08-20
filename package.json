@@ -1,7 +1,7 @@
 {
   "name": "visionqc-browser-regression",
   "private": true,
-  "version": "4.4.30",
+  "version": "4.4.33",
   "type": "module",
   "scripts": {
     "test": "node --test tests/v4430-regression.test.mjs",

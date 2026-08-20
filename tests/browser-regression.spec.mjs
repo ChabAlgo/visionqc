@@ -8,7 +8,7 @@ async function openSimulation(page) {
   await expect(page.locator('.vq43-sim-options-scroll')).toBeVisible();
 }
 
-test.describe('VisionQC v4.4.30 FHD interaction regression', () => {
+test.describe('VisionQC v4.4.33 FHD interaction regression', () => {
   test('Tool add/remove preserves all edited runtime parameters', async ({ page }) => {
     await openSimulation(page);
     const progress = page.locator('input[data-sim-scope="green"][data-sim-field="printEvery"]');
@@ -167,10 +167,11 @@ test.describe('VisionQC v4.4.30 FHD interaction regression', () => {
     expect(result.options).not.toBeNull();
     expect(result.workspace).not.toBeNull();
     expect(result.actions).not.toBeNull();
-    expect(result.options.top).toBeGreaterThanOrEqual(result.workspace.bottom - 1);
+    // At FHD the main workspace and Options are intentional two-column siblings;
+    // only the top action rail must not be covered by Options.
     expect(result.options.top).toBeGreaterThanOrEqual(result.actions.bottom - 1);
-    expect(result.inputHeight).toBe(34);
-    expect(result.buttonHeight).toBe(34);
+    expect(result.inputHeight).toBe(32);
+    expect(result.buttonHeight).toBe(32);
     expect(result.inputBackground).toBe('rgb(5, 13, 24)');
     expect(result.koreanTime).toBe('17:17:04.000');
     expect(result.agentTime).toBe('17:17:26.771');
