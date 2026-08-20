@@ -1,3 +1,29 @@
+# VisionQC v4.4.28
+
+## 실제 Runtime 사전 로드
+- `Runtime File Load`가 `/api/runtime/preload` 한 번으로 선택 Workspace를 실제 VPDL Control에 로드합니다.
+- Agent는 로드된 Control을 유지하고 Simulation Start에 그대로 인계해 Workspace 재로딩을 제거합니다.
+- Green / Blue / Integrated 모드가 같은 재사용 경로를 사용합니다.
+
+## Picker / Progress / Tool
+- 파일·폴더 선택 창에 Agent 소유 TopMost STA 부모 창을 적용했습니다.
+- `선택 제거`가 클릭 직전 체크박스 DOM 상태를 동기화합니다.
+- Progress Update가 Batch 표시와 요청 JSON에 즉시 반영됩니다.
+- Batch 경계 진행 로그를 PROGRESS 한 줄로 통합하고 중복 INFO를 제거했습니다.
+
+## 알림 / 도움말
+- 좌측 알림 메뉴, unread badge, 오류·경고 로그 패널을 추가했습니다.
+- 실패 toast를 확대하고 표시 시간을 늘렸습니다.
+- Simulation 파라미터 hover 툴팁을 추가하고 `구조 안내` 버튼을 제거했습니다.
+- Runtime File Load 버튼을 Workspace Runtime Structure 패널로 이동했습니다.
+
+## 검증
+- Web 정적/구조 회귀검사 19종 통과
+- Agent v0.2.6 정적/구조 회귀검사 5종 통과
+- JavaScript syntax 및 CSS brace 검사 통과
+
+---
+
 # VisionQC v4.4.27
 
 ## Runtime 선로딩 / 상태 정합성

@@ -1,7 +1,7 @@
 (() => {
   'use strict';
 
-  const VERSION = '4.4.27';
+  const VERSION = '4.4.28';
   const DEFAULT_POSITION_DEFS = [
     { key:'CA_TOP', name:'CA(TOP)' },
     { key:'AN_TOP', name:'AN(TOP)' },
@@ -23,7 +23,10 @@
   const NG_POSITION_PREFIX = 'ng-position:';
   const IMG_RE = /\.(png|jpe?g|bmp|gif|webp|tif?f)$/i;
   const LOCAL_AGENT_URL = 'http://127.0.0.1:17891';
-  const EXPECTED_AGENT_VERSION = '0.2.5';
+  const EXPECTED_AGENT_VERSION = '0.2.6';
+  const PICKER_TIMEOUT_MS = 10 * 60 * 1000;
+  const RUNTIME_PRELOAD_TIMEOUT_MS = 15 * 60 * 1000;
+  const NOTIFICATION_KEY = 'visionqc-v4428-notifications';
   const WORKSPACE_INSPECT_TIMEOUT_MS = 180000;
   const WORKSPACE_INSPECT_CACHE_MS = 10 * 60 * 1000;
   const workspaceInspectCache = new Map();
@@ -83,6 +86,8 @@
     simulationLiveActive: false,
     simulationLiveRows: 0,
     simulationLogs: [],
+    notifications: safeJsonParse(safeStorageGet(NOTIFICATION_KEY), []),
+    notificationPanelOpen: false,
     simulationAutoScroll: true,
     simulationOptionsScrollTop: 0,
     thresholds: safeJsonParse(safeStorageGet(THRESHOLD_KEY), {}),
@@ -177,14 +182,68 @@
     persistThresholds();
   };
 
+  function notificationItems() {
+    if (!Array.isArray(state.notifications)) state.notifications = [];
+    return state.notifications;
+  }
+
+  function persistNotifications() {
+    safeStorageSet(NOTIFICATION_KEY, JSON.stringify(notificationItems().slice(-300)));
+  }
+
+  function addNotification(message, level = 'ERROR') {
+    const text = String(message || '').trim();
+    if (!text) return;
+    const normalizedLevel = String(level || 'ERROR').toUpperCase();
+    const items = notificationItems();
+    const previous = items[items.length - 1];
+    if (previous && previous.message === text && previous.level === normalizedLevel && Date.now() - Number(previous.createdAt || 0) < 2000) return;
+    items.push({ id:`n${Date.now()}_${Math.random().toString(36).slice(2,8)}`, createdAt:Date.now(), time:formatSimulationLogTime(new Date()), level:normalizedLevel, message:text, read:false });
+    if (items.length > 300) items.splice(0, items.length - 300);
+    persistNotifications();
+    renderNotificationCenter();
+  }
+
+  function renderNotificationCenter() {
+    const items = notificationItems();
+    const unread = items.filter(item => !item.read).length;
+    const badge = $('#vq43-notification-count');
+    if (badge) {
+      badge.textContent = unread > 99 ? '99+' : String(unread);
+      badge.hidden = unread === 0;
+    }
+    const list = $('#vq43-notification-list');
+    if (list) list.innerHTML = items.length ? [...items].reverse().map(item => `<article class="vq43-notification-row ${escapeHtml(String(item.level || 'info').toLowerCase())}"><header><time>${escapeHtml(item.time || '')}</time><b>[${escapeHtml(item.level || 'INFO')}]</b></header><p>${escapeHtml(item.message || '')}</p></article>`).join('') : '<div class="vq43-notification-empty">기록된 오류·경고가 없습니다.</div>';
+  }
+
+  function openNotificationCenter() {
+    state.notificationPanelOpen = true;
+    notificationItems().forEach(item => { item.read = true; });
+    persistNotifications();
+    $('#vq43-notification-panel')?.classList.add('open');
+    renderNotificationCenter();
+  }
+
+  function closeNotificationCenter() {
+    state.notificationPanelOpen = false;
+    $('#vq43-notification-panel')?.classList.remove('open');
+  }
+
+  function clearNotifications() {
+    state.notifications = [];
+    persistNotifications();
+    renderNotificationCenter();
+  }
+
   function showToast(message, error = false) {
     const toast = $('#vq43-toast');
     if (!toast) return;
+    if (error) addNotification(message, 'ERROR');
     toast.textContent = message;
     toast.classList.toggle('error', error);
     toast.classList.add('show');
     clearTimeout(showToast.timer);
-    showToast.timer = setTimeout(() => toast.classList.remove('show'), 3600);
+    showToast.timer = setTimeout(() => toast.classList.remove('show'), error ? 6500 : 4200);
   }
 
   function menuIconSvg() {
@@ -205,6 +264,7 @@
             ${navItem('classification', '▤', '분류', '이미지 분류')}
             ${navItem('simulation', '▶', '시뮬레이션', 'VPDL Local Runtime · GPU')}
             ${navItem('settings', '⚙', '설정', 'Input · 실제 NG 경로')}
+            <button type="button" class="vq43-nav-item vq43-notification-item" data-vq-action="notifications-open" title="오류·경고 알림"><span class="vq43-nav-icon">🔔<i id="vq43-notification-count" class="vq43-notification-count" hidden>0</i></span><span class="vq43-nav-copy"><strong>알림</strong><small>오류·경고 로그</small></span><span class="vq43-arrow">›</span></button>
           </nav>
           <div class="vq43-rail-bottom" aria-label="향후 기능">
             <button type="button" class="vq43-rail-placeholder" title="Dark / Light Mode (추후 지원)"><span>◐</span><b>Light / Dark Mode</b></button>
@@ -216,6 +276,8 @@
         <div id="vq43-chart-modal"></div>
         <div id="vq43-modal"></div>
         <div id="vq43-toast"></div>
+        <aside id="vq43-notification-panel" aria-label="알림 로그"><header><div><strong>알림 로그</strong><small>오류·경고 기록 · 열면 읽음 처리</small></div><div><button type="button" data-vq-notification-action="clear">전체 삭제</button><button type="button" data-vq-notification-action="close">×</button></div></header><div id="vq43-notification-list"></div></aside>
+        <div id="vq43-param-tooltip" role="tooltip"></div>
       `);
     }
 
@@ -230,9 +292,12 @@
     $$('.vq43-nav-item', drawer || document).forEach((button) => {
       button.onclick = (event) => {
         event.preventDefault(); event.stopPropagation();
-        setPage(button.dataset.vqPage || 'classification');
+        if (button.dataset.vqAction === 'notifications-open') openNotificationCenter();
+        else setPage(button.dataset.vqPage || 'classification');
       };
     });
+    $('[data-vq-notification-action="close"]')?.addEventListener('click', closeNotificationCenter);
+    $('[data-vq-notification-action="clear"]')?.addEventListener('click', clearNotifications);
     $$('.vq43-rail-placeholder', drawer || document).forEach((button) => {
       button.onclick = (event) => { event.preventDefault(); event.stopPropagation(); };
     });
@@ -243,7 +308,8 @@
       document.addEventListener('click', () => closeAnalysisDropdowns());
       window.addEventListener('keydown', (event) => {
         if (event.key === 'Escape') {
-          if ($('#vq43-modal')?.classList.contains('open')) closeModal();
+          if (state.notificationPanelOpen) closeNotificationCenter();
+          else if ($('#vq43-modal')?.classList.contains('open')) closeModal();
           else if ($('#vq43-chart-modal')?.classList.contains('open')) closeChartModal();
           else if (state.menuOpen) toggleMenu(false);
         }
@@ -261,6 +327,7 @@
       window.addEventListener('visionqc:navigate', (event) => setPage(event.detail?.page || 'classification'));
     }
     toggleMenu(state.menuOpen);
+    renderNotificationCenter();
   }
 
   function installInteractionGuards() {
@@ -669,7 +736,88 @@
       };
     });
     bindSimulationComplexControls();
+    applySimulationTooltips(shell);
     applySimulationLockDom();
+  }
+
+  const SIMULATION_TOOLTIPS = {
+    outputRoot:'Simulation 결과와 CSV를 저장할 로컬 폴더입니다.',
+    greenWorkspacePath:'Green Tool이 포함된 VPDL Runtime Workspace 파일입니다.',
+    blueWorkspacePath:'Locate Blue Tool이 포함된 VPDL Runtime Workspace 파일입니다.',
+    greenImageRoot:'Green 검사에 사용할 원본 이미지 폴더입니다.',
+    blueImageRoot:'Blue Crop에 사용할 원본 이미지 폴더입니다.',
+    greenStreamName:'Green Tool을 실행할 Workspace Stream입니다.',
+    blueStreamName:'Blue Tool을 실행할 Workspace Stream입니다.',
+    blueToolName:'Crop 기준점을 찾는 Blue Tool 이름입니다.',
+    cellIdCsvPath:'비워두면 전체 이미지를 검사하며, 지정하면 CSV의 Cell ID만 검사합니다.',
+    keywordMode:'공통 입력 폴더에서 파일명 키워드로 Position 이미지를 구분합니다.',
+    keywordInputRoot:'Keyword 모드가 공통으로 검색할 이미지 루트 폴더입니다.',
+    useGpu:'켜면 지정한 NVIDIA GPU로 VPDL Tool을 실행합니다.',
+    gpuDevices:'사용할 GPU 장치 번호입니다. 여러 장치는 쉼표로 구분합니다.',
+    jpegQuality:'저장 JPEG 품질입니다. 1~100 범위입니다.',
+    printEvery:'이 수만큼 처리할 때마다 상세 결과와 진행률을 Web으로 전송합니다.',
+    keepSubfolders:'입력 폴더의 하위 디렉터리 구조를 출력에도 유지합니다.',
+    heatmapImageSave:'Green HeatMap 합성 이미지를 결과 폴더에 저장합니다.',
+    forceJet:'회색 HeatMap을 Jet 컬러맵으로 변환해 표시합니다.',
+    heatmapAlpha:'원본 이미지 위 HeatMap의 투명도 비율입니다.',
+    heatmapAlphaCut:'이 밝기보다 낮은 HeatMap 픽셀을 투명하게 처리합니다.',
+    cropWidth:'Blue 기준점을 중심으로 자를 이미지 너비입니다.',
+    cropHeight:'Blue 기준점을 중심으로 자를 이미지 높이입니다.',
+    expectedXMin:'정상으로 인정할 p1-p2 X 거리의 최솟값입니다.',
+    expectedXMax:'정상으로 인정할 p1-p2 X 거리의 최댓값입니다.',
+    maxYDiff:'정상으로 인정할 p1-p2 Y 거리 차이의 최댓값입니다.',
+    fallbackShiftX:'Blue 기준점 검출 실패 시 사용할 X 이동값입니다.',
+    fallbackShiftY:'Blue 기준점 검출 실패 시 사용할 Y 이동값입니다.',
+    previewRoiX:'미리보기 ROI의 시작 X 좌표입니다.',
+    previewRoiY:'미리보기 ROI의 시작 Y 좌표입니다.',
+    previewRoiW:'미리보기 ROI 너비입니다.',
+    previewRoiH:'미리보기 ROI 높이입니다.',
+    sampleImagePath:'Fallback Crop과 ROI를 확인할 샘플 이미지입니다.',
+    selected:'제거할 Tool 행을 선택합니다.',
+    toolName:'Workspace Stream 안의 실제 Green Tool 이름입니다.',
+    threshold:'이 점수 기준으로 Tool의 OK/NG를 판정합니다.',
+    judgement:'이 Tool이 NG일 때 적용할 최종 판정 이름입니다.',
+    priority:'여러 Tool이 NG일 때 우선 적용할 판정 순서입니다.',
+    name:'결과 CSV와 화면에 표시할 판정 이름입니다.'
+  };
+
+  function applySimulationTooltips(root = document) {
+    if (state.page !== 'simulation') return;
+    $$('input,select,textarea,button', root).forEach((element) => {
+      if (!element.closest('.vq43-sim-page')) return;
+      const field = element.dataset.simFallbackField || element.dataset.simToolField || element.dataset.simJudgementField || element.dataset.simField;
+      const action = element.dataset.vqAction;
+      const actionText = action === 'simulation-runtime-load' ? '선택한 Workspace를 VPDL Runtime에 실제로 로드해 Simulation 시작 시 재사용합니다.'
+        : action === 'simulation-start' ? '사전 로드된 Runtime으로 즉시 Simulation을 시작합니다.'
+        : action === 'simulation-tool-remove' ? '선택 열에 체크된 Tool 행을 설정에서 삭제합니다.'
+        : action === 'simulation-browse' ? 'Windows 파일 또는 폴더 선택 창을 엽니다.' : '';
+      const text = SIMULATION_TOOLTIPS[field] || actionText;
+      if (!text) return;
+      element.dataset.vqTooltip = text;
+      if (element.dataset.vqTooltipBound === '1') return;
+      element.dataset.vqTooltipBound = '1';
+      element.addEventListener('pointerenter', () => showSimulationTooltip(element));
+      element.addEventListener('pointerleave', hideSimulationTooltip);
+      element.addEventListener('focus', () => showSimulationTooltip(element));
+      element.addEventListener('blur', hideSimulationTooltip);
+    });
+  }
+
+  function showSimulationTooltip(element) {
+    const tooltip = $('#vq43-param-tooltip');
+    const text = element?.dataset?.vqTooltip;
+    if (!tooltip || !text) return;
+    tooltip.textContent = text;
+    tooltip.classList.add('show');
+    const rect = element.getBoundingClientRect();
+    const maxLeft = Math.max(12, window.innerWidth - tooltip.offsetWidth - 12);
+    tooltip.style.left = `${Math.max(12, Math.min(maxLeft, rect.left))}px`;
+    const above = rect.top - tooltip.offsetHeight - 9;
+    tooltip.style.top = `${above >= 8 ? above : Math.min(window.innerHeight - tooltip.offsetHeight - 8, rect.bottom + 9)}px`;
+  }
+
+  function hideSimulationTooltip() {
+    $('#vq43-param-tooltip')?.classList.remove('show');
   }
 
   function handleDelegatedClick(event) {
@@ -2030,6 +2178,11 @@
     if (!target) return;
     const value = input.type === 'checkbox' ? input.checked : input.type === 'number' ? Number(input.value) : input.value;
     target[field] = value;
+    if (field === 'printEvery') {
+      if (!state.simulationProgress?.running) state.simulationProgress.batchSize = Math.max(1, Number(value) || 1);
+      const batch = $('#vq43-sim-batch');
+      if (batch) batch.textContent = numberText(Math.max(1, Number(value) || 1));
+    }
     if (scope === 'position' && field === 'blueToolName') syncSimulationFallbackRows(false);
     persistSimulationForm();
     const keywordStructure = (scope === 'green' || scope === 'integrated') && field === 'keywordMode';
@@ -2290,7 +2443,17 @@
         try { applySimulationAnalysisBatch(JSON.parse(event.data)); } catch (error) { console.error('VisionQC live analysis error', error); }
       });
       events.addEventListener('log', (event) => {
-        try { appendSimulationLog(JSON.parse(event.data)); } catch (_) { }
+        try {
+          const item = JSON.parse(event.data);
+          appendSimulationLog(item);
+          const level = String(item?.level || '').toUpperCase();
+          if (level === 'ERROR' || level === 'WARN') addNotification(item.message, level);
+          const preloadProgress = String(item?.message || '').match(/Runtime File Load 진행\s+(\d+)\/(\d+)/i);
+          if (preloadProgress && state.simulationWorkspaceLoading) {
+            state.simulationWorkspaceLoadProgress = { completed:Number(preloadProgress[1]), total:Number(preloadProgress[2]) };
+            updateRuntimeLoadButtonDom();
+          }
+        } catch (_) { }
       });
       events.onerror = () => { /* explicit connect button handles reconnect */ };
       state.simulationEvents = events;
@@ -2324,8 +2487,8 @@
     }
     try {
       const data = await agentFetch(kind === 'file' ? '/api/pick/file' : '/api/pick/folder', {
-        method:'POST', body:{ initialPath:current, fileType }, timeout:120000,
-        timeoutMessage:'파일 선택 창 응답 제한 시간 초과 (120초)'
+        method:'POST', body:{ initialPath:current, fileType }, timeout:PICKER_TIMEOUT_MS,
+        timeoutMessage:'파일 선택 창 응답 제한 시간 초과 (10분)'
       });
       if (!data.ok || !data.path) {
         if (workspaceKind) clearWorkspaceInspectStatus(key, workspaceKind, true);
@@ -2504,7 +2667,9 @@
 
   function removeSelectedSimulationTools() {
     const form = ensureSimulationForm();
-    const next = form.green.tools.filter(x => !x.selected);
+    flushSimulationControls();
+    const selectedIndexes = new Set($$('input[data-sim-tool-field="selected"]:checked', $('#vq43-shell')).map(input => Number(input.dataset.simToolIndex)));
+    const next = form.green.tools.filter((tool, index) => !tool.selected && !selectedIndexes.has(index));
     if (next.length === form.green.tools.length) { showToast('제거할 Tool의 선택 체크박스를 먼저 체크하세요.', true); return; }
     form.green.tools = next.length ? next : simulationDefaultTools();
     persistSimulationForm(); refreshSimulationOptionsOnly();
@@ -2572,7 +2737,7 @@
     const originalText = button?.textContent || '선택';
     if (button) { button.disabled = true; button.textContent = '선택 중...'; }
     try {
-      const data = await agentFetch('/api/pick/file', { method:'POST', body:{initialPath:row.sampleImagePath || '',fileType:'image'}, timeout:120000 });
+      const data = await agentFetch('/api/pick/file', { method:'POST', body:{initialPath:row.sampleImagePath || '',fileType:'image'}, timeout:PICKER_TIMEOUT_MS, timeoutMessage:'이미지 선택 창 응답 제한 시간 초과 (10분)' });
       if (data.ok && data.path) {
         const current = ensureSimulationForm().blue.fallbacks.find((item) => item.slotKey === slotKey);
         if (!current) return;
@@ -2701,7 +2866,6 @@
       const runtime = await checkSimulationRuntime({ silent:true, reason:'simulation-start' });
       if (!runtime?.ok) throw new Error(runtime?.error || 'Simulation 시작 전 Runtime/License 확인 실패');
       prepareLiveSimulationData(request);
-      state.simulationLogs = [];
       appendSimulationLog({level:'START',message:`Simulation 시작 요청 · Mode=${request.mode} · Position=${request.positions.map(p=>p.displayName).join(', ')} · Batch=${request.mode==='blue'?request.blue.printEvery:request.green.printEvery}`});
       state.simulationProgress = { ...state.simulationProgress, running:true, message:'Simulation 시작 요청 중...', error:'' };
       updateSimulationStatusDom();
@@ -2846,28 +3010,54 @@
       if (target.kind === 'green') current.greenWorkspaceInfo = null;
       else current.blueWorkspaceInfo = null;
       clearWorkspaceInspectStatus(target.positionKey, target.kind, false);
-      const opt = target.kind === 'blue' ? form.blue : form.green;
-      workspaceInspectCache.delete(workspaceInspectRequestKey(target.path, opt));
+      setWorkspaceInspectStatus(target.positionKey, target.kind, target.path, 'reading', 'VPDL Runtime 객체를 메모리에 선로딩 중', false);
     });
     persistSimulationForm();
     renderSimulationPreserveScroll();
-    appendSimulationLog({level:'INFO', message:`Runtime File Load 시작 · ${targets.length}개 Workspace 순차 선로딩`});
+    appendSimulationLog({level:'INFO', message:`Runtime File Load 시작 · ${targets.length}개 Workspace 실제 Runtime 선로딩`});
 
     try {
-      const results = await Promise.all(targets.map(async (target) => {
-        const result = await inspectSimulationWorkspace(target.positionKey, target.kind, target.path, true);
-        state.simulationWorkspaceLoadProgress.completed += 1;
-        updateRuntimeLoadButtonDom();
-        return result;
-      }));
-      const failed = results.filter((result) => !result?.ok).length;
-      if (failed) {
-        appendSimulationLog({level:'ERROR', message:`Runtime File Load 완료 · 성공 ${targets.length - failed} / 실패 ${failed}`});
-        showToast(`Runtime File Load 실패 ${failed}건을 확인하세요.`, true);
-      } else {
-        appendSimulationLog({level:'INFO', message:`Runtime File Load 완료 · ${targets.length}개 Workspace가 Simulation 준비됨`});
-        showToast('모든 Runtime Workspace 선로딩이 완료되었습니다.');
-      }
+      const request = buildSimulationRequest();
+      const data = await agentFetch('/api/runtime/preload', {
+        method:'POST', body:request, timeout:RUNTIME_PRELOAD_TIMEOUT_MS,
+        timeoutMessage:'Runtime File Load 응답 제한 시간 초과 (15분)'
+      });
+      if (!data?.ok) throw new Error(data?.error || 'Runtime File Load 실패');
+      const items = Array.isArray(data.items) ? data.items : [];
+      items.forEach((item) => {
+        const current = ensureSimulationForm().positions?.[item.positionKey];
+        const info = item.info;
+        if (!current || !info?.ok) return;
+        if (item.kind === 'green') {
+          current.greenWorkspaceInfo = info;
+          current.greenStreamName = preferredWorkspaceStream(info, 'Green', current.greenStreamName);
+        } else {
+          current.blueWorkspaceInfo = info;
+          current.blueStreamName = preferredWorkspaceStream(info, 'Blue', current.blueStreamName);
+          const blueTools = workspaceTools(info, current.blueStreamName, 'Blue');
+          if (!blueTools.some(tool => tool.name === current.blueToolName)) current.blueToolName = blueTools.find(tool => tool.name === 'Locate')?.name || blueTools[0]?.name || current.blueToolName || 'Locate';
+        }
+        setWorkspaceInspectStatus(item.positionKey, item.kind, info.path, 'success', '', false);
+      });
+      syncSimulationFallbackRows(false, ensureSimulationForm());
+      state.simulationWorkspaceLoadProgress = { completed:items.length, total:targets.length };
+      persistSimulationForm();
+      if (state.page === 'simulation') renderSimulationPreserveScroll();
+      const elapsed = Number(data.elapsedMs || 0) / 1000;
+      appendSimulationLog({level:'INFO', message:`Runtime File Load 완료 · ${items.length}개 Workspace가 실제 Simulation Runtime으로 준비됨 · ${elapsed.toFixed(1)}초`});
+      showToast('Runtime 사전 로드가 완료되었습니다. Simulation Start는 Workspace를 다시 열지 않습니다.');
+    } catch (error) {
+      targets.forEach((target) => {
+        const current = ensureSimulationForm().positions?.[target.positionKey];
+        if (!current) return;
+        const info = { ok:false, path:target.path, workspaceName:target.path.split(/[\\/]/).pop() || target.path, error:error.message || String(error), streams:[] };
+        if (target.kind === 'green') current.greenWorkspaceInfo = info; else current.blueWorkspaceInfo = info;
+        setWorkspaceInspectStatus(target.positionKey, target.kind, target.path, 'error', info.error, false);
+      });
+      persistSimulationForm();
+      appendSimulationLog({level:'ERROR', message:`Runtime File Load 실패 · ${error.message || error}`});
+      if (state.page === 'simulation') renderSimulationPreserveScroll();
+      showToast(`Runtime File Load 실패: ${error.message || error}`, true);
     } finally {
       state.simulationWorkspaceLoading = false;
       updateRuntimeLoadButtonDom();
@@ -3128,7 +3318,9 @@
       const badge = status === 'error' ? 'READ ERROR' : status === 'loading' ? 'LOADING' : status === 'ok' ? 'READY' : 'LOAD WAIT';
       return `<article class="vq43-workspace-position-card ${status}"><header><strong>${escapeHtml(label)}</strong><span>${badge}</span></header><div class="vq43-workspace-kind-grid">${sections.map((section) => section.html).join('')}</div></article>`;
     }).filter(Boolean);
-    return `<section class="vq43-sim-panel vq43-workspace-panel"><div class="vq43-sim-panel-head"><div><strong>Workspace Runtime Structure</strong><span>Position별 Green · Blue Runtime 구조 · Stream · Tool Type · Tag/Class/Feature</span></div></div><div class="vq43-workspace-card-grid">${cards.join('') || '<div class="vq43-workspace-empty">Workspace 경로를 선택한 뒤 Runtime File Load를 누르세요.</div>'}</div></section>`;
+    const progress = state.simulationWorkspaceLoadProgress || {completed:0,total:0};
+    const buttonText = state.simulationWorkspaceLoading ? `Runtime 로드 중 ${progress.completed}/${progress.total}` : 'Runtime File Load';
+    return `<section class="vq43-sim-panel vq43-workspace-panel"><div class="vq43-sim-panel-head"><div><strong>Workspace Runtime Structure</strong><span>Position별 Green · Blue 구조 · 실제 Simulation Runtime 선로딩</span></div><button id="vq43-runtime-file-load" class="vq43-btn vq43-btn-blue" data-vq-action="simulation-runtime-load" ${state.simulationWorkspaceLoading || state.simulationAgent.status !== 'connected' ? 'disabled' : ''}>${buttonText}</button></div><div class="vq43-workspace-card-grid">${cards.join('') || '<div class="vq43-workspace-empty">Workspace 경로를 선택한 뒤 Runtime File Load를 누르세요.</div>'}</div></section>`;
   }
 
   function simPathField(scope, key, field, title, placeholder, kind='file', fileType='workspace', disabled=false) {
@@ -3287,9 +3479,7 @@
 
   function simulationOutputPanel() {
     const form = ensureSimulationForm();
-    const progress = state.simulationWorkspaceLoadProgress || {completed:0,total:0};
-    const buttonText = state.simulationWorkspaceLoading ? `Runtime 로드 중 ${progress.completed}/${progress.total}` : 'Runtime File Load';
-    return `<section class="vq43-sim-panel vq43-sim-output-main"><div class="vq43-sim-panel-head"><div><strong>Output</strong><span>모든 Simulation 결과의 로컬 저장 위치 · Runtime 파일은 Simulation 전에 선로딩</span></div><button id="vq43-runtime-file-load" class="vq43-btn vq43-btn-blue" data-vq-action="simulation-runtime-load" ${state.simulationWorkspaceLoading || state.simulationAgent.status !== 'connected' ? 'disabled' : ''}>${buttonText}</button></div><div class="vq43-sim-output-row"><input data-sim-scope="root" data-sim-field="outputRoot" value="${escapeHtml(form.outputRoot)}" placeholder="결과 저장 폴더"><button data-vq-action="simulation-browse" data-sim-scope="root" data-sim-kind="folder" data-sim-field="outputRoot">선택</button></div><p class="vq43-runtime-load-note">Workspace 경로를 모두 선택한 뒤 Runtime File Load를 누르면 구조와 License를 미리 준비합니다.</p></section>`;
+    return `<section class="vq43-sim-panel vq43-sim-output-main"><div class="vq43-sim-panel-head"><div><strong>Output</strong><span>모든 Simulation 결과의 로컬 저장 위치</span></div></div><div class="vq43-sim-output-row"><input data-sim-scope="root" data-sim-field="outputRoot" value="${escapeHtml(form.outputRoot)}" placeholder="결과 저장 폴더"><button data-vq-action="simulation-browse" data-sim-scope="root" data-sim-kind="folder" data-sim-field="outputRoot">선택</button></div></section>`;
   }
 
   function formatDuration(seconds) {
@@ -3313,6 +3503,7 @@
     const item=typeof entry==='string'?{message:entry}:entry||{};
     const line={ time:formatSimulationLogTime(item.time), level:String(item.level||'INFO').toUpperCase(), message:String(item.message||'') };
     if(!line.message) return;
+    if (line.level === 'ERROR' || line.level === 'WARN') addNotification(line.message, line.level);
     state.simulationLogs.push(line); if(state.simulationLogs.length>1500) state.simulationLogs.splice(0,state.simulationLogs.length-1500);
     const box=$('#vq43-sim-detail-log');
     if(box){ box.insertAdjacentHTML('beforeend',simulationLogLineHtml(line)); if(box.children.length>1500) box.firstElementChild?.remove(); if(state.simulationAutoScroll!==false) scrollSimulationLogToBottom(); }
@@ -3339,7 +3530,7 @@
 
   function simulationTopActionsHtml() {
     const connected = state.simulationAgent?.status === 'connected';
-    return `<button class="vq43-btn" data-vq-action="simulation-agent-info">구조 안내</button><button class="vq43-btn" data-vq-action="simulation-agent-launch">Agent 실행</button><button class="vq43-btn vq43-btn-red" data-vq-action="simulation-agent-stop" ${connected?'':'disabled'}>Agent 종료</button>`;
+    return `<button class="vq43-btn" data-vq-action="simulation-agent-launch">Agent 실행</button><button class="vq43-btn vq43-btn-red" data-vq-action="simulation-agent-stop" ${connected?'':'disabled'}>Agent 종료</button>`;
   }
 
   function simulationAgentCardHtml() {

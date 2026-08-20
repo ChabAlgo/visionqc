@@ -1,6 +1,17 @@
-# VisionQC GitHub Pages v4.4.27
+# VisionQC GitHub Pages v4.4.28
 
-GitHub Pages 정적 배포용 VisionQC Web입니다. 실제 VPDL Runtime/GPU 작업은 사용자 PC의 VisionQC Local Agent v0.2.5에서 실행합니다.
+GitHub Pages 정적 배포용 VisionQC Web입니다. 실제 VPDL Runtime/GPU 작업은 사용자 PC의 VisionQC Local Agent v0.2.6에서 실행합니다.
+
+## v4.4.28 핵심
+- Runtime File Load를 `Workspace Runtime Structure` 제목 영역으로 이동
+- 구조 Inspect가 아닌 실제 VPDL Control/Workspace 사전 로드 API를 사용하고 Simulation Start에서 동일 객체 재사용
+- Windows 파일·폴더 선택 창에 Agent 소유 TopMost 부모 창을 적용하고 Web 제한시간을 10분으로 조정
+- Tool `선택 제거`가 현재 체크박스 상태를 즉시 읽어 실제 배열에서 삭제
+- Progress Update 변경 시 Batch 표시와 Agent 요청값을 즉시 동기화
+- 중복 INFO 진행 로그를 제거하고 Batch 경계마다 PROGRESS 한 줄만 기록
+- 좌측 알림 메뉴, 읽지 않은 개수 badge, 오류·경고 기록 패널, 확대된 실패 toast 추가
+- Simulation 체크박스·텍스트박스·선택 항목에 hover 툴팁 추가
+- 상단 `구조 안내` 버튼 제거
 
 ## v4.4.27 핵심
 - 첨부된 TOPTEC 원본 로고를 Web 자산으로 교체
@@ -68,4 +79,4 @@ Repository root에 이 ZIP의 내용물을 그대로 놓고 GitHub Pages를 `mai
 - `npx playwright install --with-deps chromium`
 - `npm run test:browser` — Chromium FHD 실제 interaction 검사
 
-권장 Local Agent: **v0.2.5**
+권장 Local Agent: **v0.2.6**
