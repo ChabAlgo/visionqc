@@ -1,0 +1,19 @@
+VisionQC Local Agent v0.2.5 정적 검증
+=====================================
+
+결과
+- tests/agent-v025-static.test.mjs: 9 PASS / 0 FAIL
+
+검증 항목
+1) Program / Assembly version 0.2.5 정합성
+2) IdleLoop와 5분 종료 조건 제거
+3) /api/agent/exit 명시적 종료 유지
+4) 시작 직후 Runtime/License 자동 확인
+5) instanceId / cached license / lightweight status
+6) 단일 VPDL Control lock과 GPU API 안전성
+7) Workspace file-state cache와 Simulation 소유권
+8) image picker / Fallback Preview endpoint
+9) x64 .NET Framework 4.8 / C# 7.3 / CMD BOM·ASCII 검사
+
+제한
+- 이 Linux 검증 환경에는 Cognex VPDL 4.0과 Windows MSBuild가 없으므로 실제 EXE 빌드 및 .vrws 통합 실행은 대상 Windows PC에서 BUILD_RELEASE_x64.cmd로 최종 확인합니다.

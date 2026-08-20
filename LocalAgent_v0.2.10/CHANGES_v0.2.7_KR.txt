@@ -1,0 +1,22 @@
+VisionQC Local Agent v0.2.7
+
+1. Runtime preload Workspace 객체 직접 재사용
+- 원인: Workspaces.Add(name, path)의 반환 객체를 버리고 Simulation에서 Workspaces[name]으로 다시 조회함
+- VPDL 4.0 Workspaces 컬렉션의 문자열 indexer가 Add 시 반환한 객체를 찾지 못해 ws_CA_TOP 오류 발생
+- 변경: Add 반환 객체를 Control별 Registry에 저장하고 Green/Blue/Integrated가 직접 조회
+- Control Dispose 전에 Registry도 함께 제거
+
+2. 파일/폴더 Picker 교착 제거
+- 원인: 투명 8x8 TopMost Form은 Windows 전경 활성화가 거부되면 Shell Dialog가 뒤에 숨음
+- 첫 요청이 Thread.Join과 picker lock을 잡은 채 대기해 다음 파일/폴더 요청도 함께 멈춤
+- 변경: 보이는 420x120 소유창 + Application.Run STA 메시지 루프 사용
+- 두 번째 요청은 Monitor.TryEnter로 즉시 BUSY 반환
+
+3. Runtime 세션 정합성
+- status와 preload 응답에 token/signature 제공
+- Web이 현재 Mode/GPU/Position/Workspace 경로와 실제 Agent preload 세션의 일치 여부 확인 가능
+- 정상 완료와 사용자 중지 후 동일 Control/Workspace 재사용 유지
+
+4. 정리
+- 사용되지 않는 analysisBoundary 제거
+- v0.2.7 정적/구조 회귀검사 7종 추가

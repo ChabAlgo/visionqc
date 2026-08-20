@@ -1,0 +1,12 @@
+VisionQC Local Agent v0.2.6
+
+- /api/runtime/preload가 선택된 Workspace를 실제 VPDL Control에 로드하고 유지합니다.
+- Simulation Start는 사전 로드된 동일 Control과 Workspace 객체를 인계받아 재로딩하지 않습니다.
+- 정상 완료 또는 사용자 중지 후에도 Runtime 세션을 다시 보관해 다음 실행에서 재사용합니다.
+- Green / Blue / Integrated 모드 모두 사전 로드 Runtime 재사용 경로를 사용합니다.
+- Windows 파일·폴더 선택 창은 Agent 소유의 TopMost STA 창을 부모로 사용해 뒤에 숨는 현상을 방지합니다.
+- 처리 진행 로그는 Batch 경계마다 PROGRESS 한 줄만 남기며 동일 INFO 중복을 제거했습니다.
+- WARN / ERROR 접두사를 실제 로그 레벨로 분리했습니다.
+- Agent는 사용자가 Agent 종료를 누를 때까지 계속 실행됩니다.
+
+주의: 최초 Runtime File Load 시간은 VPDL Workspace 크기와 장비 성능에 좌우됩니다. 이 비용은 최초 1회 필요하지만 Simulation Start에서는 반복되지 않습니다.

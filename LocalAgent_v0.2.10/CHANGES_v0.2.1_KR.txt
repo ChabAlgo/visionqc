@@ -1,0 +1,10 @@
+﻿VisionQC Local Agent v0.2.1
+
+- Custom Position Tool applicability: positionKeys 지원
+- 기존 4 Position boolean은 하위 호환용으로 유지
+- Green cell_position_summary CSV column을 실제 실행 Position 기준 동적 생성
+- /api/agent/unregister 추가
+- REGISTER_PROTOCOL.cmd가 기존 17891 Agent를 먼저 종료하고 현재 EXE 경로로 등록
+- Registry path / running Agent version 확인용 CHECK_PROTOCOL.cmd 추가
+- REMOVE_AGENT.cmd 추가
+- AssemblyVersion/FileVersion 0.2.1.0

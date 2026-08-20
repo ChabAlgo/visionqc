@@ -1,0 +1,17 @@
+VisionQC Local Agent v0.2.7 정적/구조 회귀검사
+
+실행: node --test tests/v027-static.test.mjs
+결과: 7 PASS / 0 FAIL
+
+검사 항목
+1. Program / Assembly / Build script v0.2.7 일치
+2. Workspaces.Add 반환 객체 Registry 직접 등록 및 조회
+3. preload token/signature Web 전달과 정상 실행 후 Runtime 복구
+4. Control Dispose 경로의 Registry 제거
+5. 실제 STA 메시지 루프와 보이는 Picker 소유창
+6. Picker 두 번째 요청 즉시 BUSY 반환
+7. Progress 중복 및 미사용 analysisBoundary 제거
+
+제한
+- 이 환경에는 Windows MSBuild와 Cognex VPDL 4.0 Runtime이 없어 실제 EXE 컴파일 및 VPDL Workspace 실행은 수행할 수 없습니다.
+- Windows에서 BUILD_RELEASE_x64.cmd 실행 후 오류 0개/경고 0개와 TEST_CHECKLIST_KR.txt를 확인해야 합니다.

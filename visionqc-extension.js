@@ -1,7 +1,7 @@
 (() => {
   'use strict';
 
-  const VERSION = '4.4.31';
+  const VERSION = '4.4.32';
   const DEFAULT_POSITION_DEFS = [
     { key:'CA_TOP', name:'CA(TOP)' },
     { key:'AN_TOP', name:'AN(TOP)' },
@@ -23,7 +23,7 @@
   const NG_POSITION_PREFIX = 'ng-position:';
   const IMG_RE = /\.(png|jpe?g|bmp|gif|webp|tif?f)$/i;
   const LOCAL_AGENT_URL = 'http://127.0.0.1:17891';
-  const EXPECTED_AGENT_VERSION = '0.2.9';
+  const EXPECTED_AGENT_VERSION = '0.2.10';
   const PICKER_TIMEOUT_MS = 5 * 60 * 1000;
   const PICKER_POLL_INTERVAL_MS = 400;
   const RUNTIME_PRELOAD_TIMEOUT_MS = 15 * 60 * 1000;
@@ -96,7 +96,6 @@
     simulationRuntimeAgentInstance: '',
     simulationPickerPending: false,
     simulationPickerRequestId: '',
-    simulationPickerCancelRequested: false,
     simulationStartPending: false,
     simulationWorkspaceLoading: false,
     simulationWorkspaceLoadProgress: { completed:0, total:0 },
@@ -549,7 +548,7 @@
     if (!control) return;
     const action = control.dataset.vqAction;
     if (!action) return;
-    const simulationConfigAction = action.startsWith('simulation-') && !['simulation-stop','simulation-agent-stop','simulation-agent-info','simulation-log-clear','simulation-picker-cancel'].includes(action);
+    const simulationConfigAction = action.startsWith('simulation-') && !['simulation-stop','simulation-agent-stop','simulation-agent-info','simulation-log-clear'].includes(action);
     if (state.simulationProgress?.running && simulationConfigAction && action !== 'simulation-start') {
       showToast('Simulation 실행 중에는 옵션/Position/Workspace를 변경할 수 없습니다.', true);
       return;
@@ -563,7 +562,6 @@
     }
     else if (action === 'simulation-agent-launch') launchSimulationAgent();
     else if (action === 'simulation-agent-stop') stopSimulationAgent();
-    else if (action === 'simulation-picker-cancel') cancelSimulationPicker();
     else if (action === 'simulation-agent-info') showToast('VisionQC Web은 GUI만 담당하고 VPDL Runtime · GPU · Workspace 처리는 사용자 PC의 Local Agent가 수행합니다.');
     else if (action === 'simulation-browse') browseSimulationPath(control);
     else if (action === 'simulation-runtime-load') loadSelectedRuntimeFiles();
@@ -2352,12 +2350,6 @@
     const load = $('#vq43-runtime-file-load'); if (load) load.disabled = running || loading || state.simulationAgent.status !== 'connected';
     const start = $('#vq43-sim-start'); if (start) start.disabled = running || loading || state.simulationAgent.status !== 'connected';
     const stop = $('#vq43-sim-stop'); if (stop) stop.disabled = !running;
-    const pickerCancel = $('#vq43-picker-cancel');
-    if (pickerCancel) {
-      pickerCancel.hidden = !state.simulationPickerPending;
-      pickerCancel.disabled = !!state.simulationPickerCancelRequested;
-      pickerCancel.textContent = state.simulationPickerCancelRequested ? '선택 창 취소 중...' : '선택 창 취소';
-    }
   }
 
   async function agentFetch(path, options = {}) {
@@ -2395,7 +2387,7 @@
         throw timeoutError;
       }
       if (error?.name === 'TypeError' || /Failed to fetch|NetworkError|Load failed/i.test(String(error?.message || error))) {
-        const networkError = new Error('Local Agent 통신이 끊겼습니다. Agent v0.2.9 실행 상태와 Chrome 사이트 설정의 로컬 네트워크 접근 권한을 확인하세요.');
+        const networkError = new Error(`Local Agent 통신이 끊겼습니다. Agent v${EXPECTED_AGENT_VERSION} 실행 상태와 Chrome 사이트 설정의 로컬 네트워크 접근 권한을 확인하세요.`);
         networkError.code = 'AGENT_NETWORK';
         networkError.originalMessage = String(error?.message || error);
         throw networkError;
@@ -2407,7 +2399,6 @@
   function resetSimulationPickerState() {
     state.simulationPickerPending = false;
     state.simulationPickerRequestId = '';
-    state.simulationPickerCancelRequested = false;
   }
 
   function markSimulationAgentOffline(message = 'Local Agent가 중지되었거나 통신할 수 없습니다.') {
@@ -2431,10 +2422,15 @@
       state.simulationAgentPollFailures = 0;
       const detectedVersion = data.agentVersion || '-';
       const versionMismatch = detectedVersion !== EXPECTED_AGENT_VERSION;
+      const runtimePreloaded = !!data.runtimePreloaded;
+      const runtimeActive = runtimePreloaded || !!data.running || !!data.state?.running;
+      const installedVpdl = data.installedVpdlVersion || data.vpdlVersion || '-';
       state.simulationAgent = {
-        status:'connected', version:detectedVersion, vpdl:data.vpdlVersion || '-',
+        status:'connected', version:detectedVersion,
+        installedVpdl,
+        vpdl:runtimeActive ? (data.vpdlVersion || installedVpdl) : '미로드',
         license:data.license || '확인 중', gpu:data.gpu || '-', instanceId:data.instanceId || '',
-        runtimePreloaded:!!data.runtimePreloaded,
+        runtimePreloaded,
         runtimePreloadMode:String(data.runtimePreloadMode || ''),
         runtimePreloadToken:String(data.runtimePreloadToken || ''),
         runtimePreloadSignature:String(data.runtimePreloadSignature || ''),
@@ -2522,7 +2518,9 @@
       try {
         const data = await agentFetch('/api/runtime/check', { method:'POST', body:{ useGpu:!!opt.useGpu, gpuDevices:String(opt.gpuDevices || '0') }, timeout:12000 });
         state.simulationAgent.license = data.license || (data.ok ? 'Runtime OK' : 'Runtime Error');
-        state.simulationAgent.vpdl = data.vpdlVersion || state.simulationAgent.vpdl;
+        state.simulationAgent.installedVpdl = data.installedVpdlVersion || data.vpdlVersion || state.simulationAgent.installedVpdl || '-';
+        if (state.simulationAgent.runtimePreloaded)
+          state.simulationAgent.vpdl = data.vpdlVersion || state.simulationAgent.installedVpdl;
         state.simulationAgent.gpu = data.gpu || state.simulationAgent.gpu;
         state.simulationAgent.message = data.ok ? (reason === 'simulation-start' ? 'Simulation 시작 전 License 재확인 완료' : 'Agent 실행 감지 · Runtime/License 자동 확인 완료') : (data.error || 'Runtime 확인 실패');
         updateSimulationAgentDom();
@@ -2597,7 +2595,6 @@
     const wait = (milliseconds) => new Promise((resolve) => setTimeout(resolve, milliseconds));
     state.simulationPickerPending = true;
     state.simulationPickerRequestId = requestId;
-    state.simulationPickerCancelRequested = false;
     applySimulationLockDom();
     try {
       let data = null;
@@ -2664,31 +2661,6 @@
     } finally {
       if (state.simulationPickerRequestId === requestId || !state.simulationPickerRequestId) resetSimulationPickerState();
       applySimulationLockDom();
-    }
-  }
-
-  async function cancelSimulationPicker() {
-    if (!state.simulationPickerPending || !state.simulationPickerRequestId) {
-      showToast('열려 있는 파일/폴더 선택 창이 없습니다.');
-      return;
-    }
-    if (state.simulationPickerCancelRequested) return;
-    state.simulationPickerCancelRequested = true;
-    applySimulationLockDom();
-    try {
-      const data = await agentFetch('/api/pick/cancel', {
-        method:'POST',
-        body:{ clientId:PICKER_CLIENT_ID, requestId:state.simulationPickerRequestId },
-        timeout:4000,
-        timeoutMessage:'선택 창 취소 요청에 Agent가 응답하지 않았습니다.'
-      });
-      if (!data?.ok) throw new Error(data?.error || '선택 창을 취소하지 못했습니다.');
-      showToast('파일/폴더 선택 창에 취소 요청을 보냈습니다.');
-    } catch (error) {
-      state.simulationPickerCancelRequested = false;
-      applySimulationLockDom();
-      if (error.code === 'AGENT_NETWORK') markSimulationAgentOffline(error.message);
-      showToast(`선택 창 취소 실패: ${error.message}`, true);
     }
   }
 
@@ -3073,6 +3045,7 @@
       state.simulationAgent.runtimePreloadMode = '';
       state.simulationAgent.runtimePreloadToken = '';
       state.simulationAgent.runtimePreloadSignature = '';
+      if (state.simulationAgent.status === 'connected') state.simulationAgent.vpdl = '미로드';
     }
     workspaceInspectCache.clear();
     workspaceInspectInflight.clear();
@@ -3353,6 +3326,8 @@
       state.simulationAgent.runtimePreloadMode = String(data.mode || state.simulationMode || '');
       state.simulationAgent.runtimePreloadToken = state.simulationRuntimeToken;
       state.simulationAgent.runtimePreloadSignature = state.simulationRuntimeSignature;
+      state.simulationAgent.installedVpdl = data.installedVpdlVersion || data.vpdlVersion || state.simulationAgent.installedVpdl || '-';
+      state.simulationAgent.vpdl = data.vpdlVersion || state.simulationAgent.installedVpdl;
       persistSimulationForm();
       if (state.page === 'simulation') renderSimulationPreserveScroll();
       const elapsed = Number(data.elapsedMs || 0) / 1000;
@@ -3361,6 +3336,7 @@
     } catch (error) {
       clearSimulationRuntimeReadiness();
       state.simulationAgent.runtimePreloaded = false;
+      state.simulationAgent.vpdl = '미로드';
       targets.forEach((target) => {
         const current = ensureSimulationForm().positions?.[target.positionKey];
         if (!current) return;
@@ -3374,6 +3350,7 @@
       showToast(`Runtime File Load 실패: ${error.message || error}`, true);
     } finally {
       state.simulationWorkspaceLoading = false;
+      if (state.page === 'simulation') renderSimulationPreserveScroll();
       updateRuntimeLoadButtonDom();
       applySimulationLockDom();
     }
@@ -3598,6 +3575,14 @@
 
   function simulationWorkspaceInspectorPanel() {
     const form = ensureSimulationForm();
+    const revealStructure = !!state.simulationWorkspaceLoading ||
+      (!!state.simulationRuntimeToken && (!!state.simulationAgent.runtimePreloaded || !!state.simulationProgress?.running));
+    const progress = state.simulationWorkspaceLoadProgress || {completed:0,total:0};
+    const buttonText = state.simulationWorkspaceLoading ? `Runtime 로드 중 ${progress.completed}/${progress.total}` : 'Runtime File Load';
+    const loadButton = `<button id="vq43-runtime-file-load" class="vq43-btn vq43-btn-blue" data-vq-action="simulation-runtime-load" ${state.simulationWorkspaceLoading || state.simulationAgent.status !== 'connected' ? 'disabled' : ''}>${buttonText}</button>`;
+    if (!revealStructure) {
+      return `<section class="vq43-sim-panel vq43-workspace-panel collapsed"><div class="vq43-sim-panel-head"><div><strong>Workspace Runtime Structure</strong><span>Runtime File Load 완료 후 Position별 구조를 표시합니다.</span></div>${loadButton}</div></section>`;
+    }
     const cards = simulationPositionDefs().map(({key,label}) => {
       const position = form.positions[key];
       if (!position) return '';
@@ -3632,9 +3617,7 @@
       const badge = status === 'error' ? 'READ ERROR' : status === 'loading' ? 'LOADING' : status === 'ok' ? 'READY' : 'LOAD WAIT';
       return `<article class="vq43-workspace-position-card ${status}"><header><strong>${escapeHtml(label)}</strong><span>${badge}</span></header><div class="vq43-workspace-kind-grid">${sections.map((section) => section.html).join('')}</div></article>`;
     }).filter(Boolean);
-    const progress = state.simulationWorkspaceLoadProgress || {completed:0,total:0};
-    const buttonText = state.simulationWorkspaceLoading ? `Runtime 로드 중 ${progress.completed}/${progress.total}` : 'Runtime File Load';
-    return `<section class="vq43-sim-panel vq43-workspace-panel"><div class="vq43-sim-panel-head"><div><strong>Workspace Runtime Structure</strong><span>Position별 Green · Blue 구조 · 실제 Simulation Runtime 선로딩</span></div><button id="vq43-runtime-file-load" class="vq43-btn vq43-btn-blue" data-vq-action="simulation-runtime-load" ${state.simulationWorkspaceLoading || state.simulationAgent.status !== 'connected' ? 'disabled' : ''}>${buttonText}</button></div><div class="vq43-workspace-card-grid">${cards.join('') || '<div class="vq43-workspace-empty">Workspace 경로를 선택한 뒤 Runtime File Load를 누르세요.</div>'}</div></section>`;
+    return `<section class="vq43-sim-panel vq43-workspace-panel"><div class="vq43-sim-panel-head"><div><strong>Workspace Runtime Structure</strong><span>Position별 Green · Blue 구조 · 실제 Simulation Runtime 선로딩</span></div>${loadButton}</div><div class="vq43-workspace-card-grid">${cards.join('') || '<div class="vq43-workspace-empty">Runtime File Load 결과가 없습니다.</div>'}</div></section>`;
   }
 
   function simPathField(scope, key, field, title, placeholder, kind='file', fileType='workspace', disabled=false) {
@@ -3844,7 +3827,7 @@
 
   function simulationTopActionsHtml() {
     const connected = state.simulationAgent?.status === 'connected';
-    return `<button id="vq43-picker-cancel" class="vq43-btn vq43-btn-amber" data-vq-action="simulation-picker-cancel" ${state.simulationPickerPending?'':'hidden'}>${state.simulationPickerCancelRequested?'선택 창 취소 중...':'선택 창 취소'}</button><button class="vq43-btn" data-vq-action="simulation-agent-launch">Agent 실행</button><button class="vq43-btn vq43-btn-red" data-vq-action="simulation-agent-stop" ${connected?'':'disabled'}>Agent 종료</button>`;
+    return `<button class="vq43-btn" data-vq-action="simulation-agent-launch">Agent 실행</button><button class="vq43-btn vq43-btn-red" data-vq-action="simulation-agent-stop" ${connected?'':'disabled'}>Agent 종료</button>`;
   }
 
   function simulationAgentCardHtml() {
@@ -3853,7 +3836,10 @@
     const checking = agent.status === 'checking';
     const statusClass = connected ? 'ready' : checking ? 'checking' : 'offline';
     const statusText = connected ? 'Connected' : checking ? 'Checking...' : 'Stopped';
-    return `<section class="vq43-sim-agent-card ${statusClass}"><div class="vq43-sim-agent-title"><div><span class="vq43-sim-dot"></span><strong>Local Engine</strong></div><b>${statusText}</b></div><div class="vq43-sim-agent-grid"><div><span>Agent</span><strong>${escapeHtml(agent.version||'-')}</strong></div><div><span>VPDL Runtime</span><strong>${escapeHtml(agent.vpdl||'-')}</strong></div><div><span>License</span><strong>${escapeHtml(agent.license||'-')}</strong></div><div><span>GPU</span><strong>${escapeHtml(agent.gpu||'-')}</strong></div></div><p>${escapeHtml(agent.message||'Local Agent 상태를 2초마다 자동 확인합니다.')}</p></section>`;
+    const runtimeTitle = agent.runtimePreloaded || state.simulationProgress?.running
+      ? `Workspace가 Simulation Runtime에 선로딩되었습니다. VPDL ${agent.vpdl || '-'}`
+      : `설치 감지 ${agent.installedVpdl || '-'} · Runtime File Load 전에는 실제 Simulation Runtime으로 표시하지 않습니다.`;
+    return `<section class="vq43-sim-agent-card ${statusClass}"><div class="vq43-sim-agent-title"><div><span class="vq43-sim-dot"></span><strong>Local Engine</strong></div><b>${statusText}</b></div><div class="vq43-sim-agent-grid"><div><span>Agent</span><strong>${escapeHtml(agent.version||'-')}</strong></div><div title="${escapeHtml(runtimeTitle)}"><span>VPDL Runtime</span><strong>${escapeHtml(agent.vpdl||'-')}</strong></div><div><span>License</span><strong>${escapeHtml(agent.license||'-')}</strong></div><div><span>GPU</span><strong>${escapeHtml(agent.gpu||'-')}</strong></div></div><p>${escapeHtml(agent.message||'Local Agent 상태를 2초마다 자동 확인합니다.')}</p></section>`;
   }
 
   function updateSimulationAgentDom() {

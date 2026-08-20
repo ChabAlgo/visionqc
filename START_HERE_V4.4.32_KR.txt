@@ -1,0 +1,22 @@
+VisionQC v4.4.32 + Local Agent v0.2.10 시작 안내
+
+업데이트
+1. 실행 중인 구버전 Agent를 `Agent 종료` 또는 STOP_AGENT.cmd로 종료합니다.
+2. LocalAgent_v0.2.10에서 BUILD_RELEASE_x64.cmd를 실행해 오류 0개를 확인합니다.
+3. 같은 폴더의 REGISTER_PROTOCOL.cmd를 반드시 다시 실행합니다.
+4. Web v4.4.32 파일을 GitHub Pages에 배포하고 Ctrl+F5로 새로고침합니다.
+5. 좌측 메뉴 또는 Simulation 상단에서 Web v4.4.32 · Agent v0.2.10을 확인합니다.
+
+정상 상태 의미
+- Agent 연결 직후: Agent Connected, License 확인, VPDL Runtime `미로드`
+- Runtime File Load 중: Workspace Runtime Structure 카드가 나타나며 진행 표시
+- Runtime File Load 성공: VPDL Runtime에 실제 버전(예: 4.0), Position별 구조 표시
+- Agent 종료/Load 실패: Runtime은 미로드, Structure 카드는 다시 접힘
+
+파일·폴더 선택
+- Web 상단에 별도 취소 버튼은 없습니다. Windows 선택창의 취소 버튼을 사용합니다.
+- 선택창은 끊긴 H:/UNC 경로를 자동 복원하지 않고 내 문서 등 빠른 로컬 위치에서 시작합니다.
+- H: 경로가 필요하면 Windows 선택창 왼쪽 탐색 영역에서 H:로 이동하십시오.
+- 선택창 자체가 나타나지 않으면 Agent 0.2.10 실행/등록과 Chrome 로컬 네트워크 권한을 확인하십시오.
+
+Web v4.4.32와 Agent v0.2.10을 반드시 함께 사용하십시오.

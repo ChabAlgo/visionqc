@@ -1,0 +1,18 @@
+VisionQC Local Agent v0.2.6 정적/구조 회귀검사
+
+실행일: 2026-08-20
+
+통과 5/5
+1. Program / Assembly v0.2.6 일치
+2. /api/runtime/preload와 preloaded Control 소유권
+3. Green / Blue / Integrated Simulation 재사용 경로
+4. Batch PROGRESS 단일 로그 및 INFO 중복 제거
+5. Native Picker의 same-thread TopMost owner handle
+
+추가 검사
+- AgentServer.cs / GreenOverlayProcessor.cs / BlueCropCore.cs brace 정합성
+- CMD 파일 ASCII 형식
+
+환경 제한
+- 현재 Linux 컨테이너에는 Windows MSBuild와 Cognex VPDL 4.0 DLL/License가 없어 exe 빌드 및 실제 Workspace 실행은 수행하지 못했습니다.
+- Windows PC에서 BUILD_RELEASE_x64.cmd와 TEST_CHECKLIST_KR.txt를 실행하십시오.

@@ -1,3 +1,22 @@
+# VisionQC v4.4.32
+
+## Runtime 상태 의미 정리
+- Agent 연결 시 파일 경로로 감지한 VPDL 설치 버전과 실제 Simulation Runtime preload 상태를 분리했습니다.
+- 시작 직후 License 확인용 Control은 확인 후 즉시 해제합니다.
+- `VPDL Runtime` 카드는 Runtime File Load 전 `미로드`, Workspace preload 성공 후 실제 버전을 표시합니다.
+
+## Workspace Runtime Structure
+- Runtime File Load 전에는 Position별 `LOAD WAIT` 카드를 만들지 않고 compact header와 Load 버튼만 표시합니다.
+- Load를 시작하면 진행 카드가 나타나고, 성공 후에만 Stream / Tool / Tag / Class / Feature 구조를 유지합니다.
+- Load 실패 또는 Agent 연결 해제 시 구조 카드를 다시 접습니다.
+
+## 파일·폴더 선택
+- 상단의 별도 `선택 창 취소` 버튼을 제거했습니다. 취소는 Windows 선택창의 취소 버튼을 사용합니다.
+- Windows Shell에 저장된 H:/UNC/최근 위치를 요청마다 초기화합니다.
+- 최근 위치와 고정 위치 자동 열거를 비활성화하고 안전한 로컬 폴더에서 Dialog를 먼저 띄워, 끊긴 네트워크·가상 드라이브가 선택창 시작을 막지 않게 했습니다.
+
+---
+
 # VisionQC v4.4.31
 
 ## Local Agent 통신 / 파일·폴더 선택

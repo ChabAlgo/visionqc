@@ -1,0 +1,15 @@
+VisionQC Local Agent v0.2.10 변경사항
+
+1. 설치 감지와 Runtime Load 분리
+- status의 installedVpdlVersion은 설치된 DLL 후보를 뜻합니다.
+- vpdlVersion은 Runtime File Load가 성공해 Simulation Runtime이 실제 유지될 때만 반환합니다.
+- Agent 시작 시 License 확인용 Control은 확인 완료 직후 해제합니다.
+
+2. Windows 선택창 시작 지연 제거
+- Shell ClientGuid에 저장된 이전 H:/UNC/네트워크 경로를 매 요청마다 초기화합니다.
+- Recent/Quick Access 고정 위치 자동 열거를 비활성화합니다.
+- 입력 경로가 고정 로컬 드라이브가 아니면 내 문서/바탕화면/사용자 폴더 순으로 빠른 시작 위치를 사용합니다.
+
+3. Web 호환
+- VisionQC Web v4.4.32와 함께 사용하십시오.
+- Web 상단 VPDL Runtime은 preload 전 `미로드`, 성공 후 실제 설치 버전을 표시합니다.
