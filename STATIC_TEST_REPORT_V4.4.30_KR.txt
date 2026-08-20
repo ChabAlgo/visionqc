@@ -1,0 +1,22 @@
+VisionQC v4.4.30 정적 회귀검사 결과
+=================================
+
+PASS 26 / FAIL 0
+
+검사 범위
+- JavaScript syntax
+- v4.4.30 asset/version/TOPTEC logo hash
+- FHD rail/Simulation layout
+- Keyword Input Root 문맥 disabled 상태
+- Web picker single-flight, clientId, stale picker cancel/retry
+- Agent disconnect Workspace cache/UI cleanup 및 경로 보존
+- Tool add/remove와 Progress Update 파라미터 보존
+- Runtime preload identity/Simulation Start
+- 알림 위치/단색 SVG/tooltip/toast
+- Fallback/Preview/Tool Settings horizontal overflow 규칙
+- text selection/Options scroll 회귀
+- CSS brace balance
+
+실행 명령
+node --check visionqc-extension.js
+node --test tests/v4430-regression.test.mjs

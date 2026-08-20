@@ -1,7 +1,7 @@
 (() => {
   'use strict';
 
-  const VERSION = '4.4.29';
+  const VERSION = '4.4.30';
   const DEFAULT_POSITION_DEFS = [
     { key:'CA_TOP', name:'CA(TOP)' },
     { key:'AN_TOP', name:'AN(TOP)' },
@@ -23,7 +23,7 @@
   const NG_POSITION_PREFIX = 'ng-position:';
   const IMG_RE = /\.(png|jpe?g|bmp|gif|webp|tif?f)$/i;
   const LOCAL_AGENT_URL = 'http://127.0.0.1:17891';
-  const EXPECTED_AGENT_VERSION = '0.2.7';
+  const EXPECTED_AGENT_VERSION = '0.2.8';
   const PICKER_TIMEOUT_MS = 10 * 60 * 1000;
   const RUNTIME_PRELOAD_TIMEOUT_MS = 15 * 60 * 1000;
   const NOTIFICATION_KEY = 'visionqc-v4428-notifications';
@@ -36,6 +36,17 @@
   let workspaceInspectQueueTail = Promise.resolve();
   const safeStorageGet = (key) => { try { return localStorage.getItem(key); } catch (_) { return null; } };
   const safeStorageSet = (key, value) => { try { localStorage.setItem(key, value); } catch (_) { /* unavailable origin */ } };
+  const safeSessionGet = (key) => { try { return sessionStorage.getItem(key); } catch (_) { return null; } };
+  const safeSessionSet = (key, value) => { try { sessionStorage.setItem(key, value); } catch (_) { /* unavailable origin */ } };
+  const PICKER_CLIENT_KEY = 'visionqc-picker-client-id';
+  const createPickerClientId = () => {
+    const saved = safeSessionGet(PICKER_CLIENT_KEY);
+    if (saved) return saved;
+    const id = globalThis.crypto?.randomUUID?.() || `vq-${Date.now().toString(36)}-${Math.random().toString(36).slice(2)}`;
+    safeSessionSet(PICKER_CLIENT_KEY, id);
+    return id;
+  };
+  const PICKER_CLIENT_ID = createPickerClientId();
   const safeJsonParse = (value, fallback = {}) => { try { return value ? JSON.parse(value) : fallback; } catch (_) { return fallback; } };
   const sanitizePositionDefs = (value) => {
     const source = Array.isArray(value) ? value : [];
@@ -256,6 +267,21 @@
     return '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="7" height="7" rx="1.5"/><rect x="14" y="3" width="7" height="7" rx="1.5"/><rect x="3" y="14" width="7" height="7" rx="1.5"/><rect x="14" y="14" width="7" height="7" rx="1.5"/></svg>';
   }
 
+  function railIconSvg(name) {
+    const paths = {
+      main:'<rect x="3" y="3" width="7" height="7" rx="1.4"/><rect x="14" y="3" width="7" height="4" rx="1.4"/><rect x="14" y="11" width="7" height="10" rx="1.4"/><rect x="3" y="14" width="7" height="7" rx="1.4"/>',
+      analysis:'<path d="M4 19V5"/><path d="M4 19h16"/><path d="m7 15 4-4 3 2 5-6"/><circle cx="7" cy="15" r="1"/><circle cx="11" cy="11" r="1"/><circle cx="14" cy="13" r="1"/><circle cx="19" cy="7" r="1"/>',
+      classification:'<rect x="3" y="4" width="18" height="16" rx="2"/><circle cx="8" cy="9" r="1.5"/><path d="m5 17 4-4 3 3 2-2 5 4"/><path d="m15 7 1.5 1.5L19 6"/>',
+      simulation:'<circle cx="12" cy="12" r="9"/><path d="m10 8 6 4-6 4z"/>',
+      settings:'<path d="M4 7h10"/><path d="M18 7h2"/><circle cx="16" cy="7" r="2"/><path d="M4 17h2"/><path d="M10 17h10"/><circle cx="8" cy="17" r="2"/><path d="M4 12h4"/><path d="M12 12h8"/><circle cx="10" cy="12" r="2"/>',
+      bell:'<path d="M18 8a6 6 0 0 0-12 0c0 7-3 7-3 9h18c0-2-3-2-3-9"/><path d="M10 21h4"/>',
+      theme:'<circle cx="12" cy="12" r="9"/><path d="M12 3a9 9 0 0 0 0 18z"/>',
+      language:'<circle cx="12" cy="12" r="9"/><path d="M3 12h18"/><path d="M12 3c3 3 4 6 4 9s-1 6-4 9c-3-3-4-6-4-9s1-6 4-9"/>',
+      login:'<circle cx="12" cy="8" r="4"/><path d="M4 21a8 8 0 0 1 16 0"/>'
+    };
+    return `<svg class="vq43-icon-svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${paths[name] || paths.main}</svg>`;
+  }
+
   function createExtensionDom() {
     if (!$('#vq43-drawer')) {
       document.body.insertAdjacentHTML('beforeend', `
@@ -265,17 +291,17 @@
             <div class="vq43-rail-brand"><strong>VisionQC</strong><img src="./assets/toptec-logo.png" alt="TOPTEC"><small>SIMULATION ANALYSIS</small></div>
           </div>
           <nav class="vq43-nav">
-            ${navItem('main', '▦', '메인', 'Cell · Position · Tool NG율')}
-            ${navItem('analysis', '⌁', '분석', 'Tool별 Score 세부 분석')}
-            ${navItem('classification', '▤', '분류', '이미지 분류')}
-            ${navItem('simulation', '▶', '시뮬레이션', 'VPDL Local Runtime · GPU')}
-            ${navItem('settings', '⚙', '설정', 'Input · 실제 NG 경로')}
-            <button type="button" class="vq43-nav-item vq43-notification-item" data-vq-action="notifications-open" title="오류·경고 알림"><span class="vq43-nav-icon">🔔<i id="vq43-notification-count" class="vq43-notification-count" hidden>0</i></span><span class="vq43-nav-copy"><strong>알림</strong><small>오류·경고 로그</small></span><span class="vq43-arrow">›</span></button>
+            ${navItem('main', 'main', '메인', 'Cell · Position · Tool NG율')}
+            ${navItem('analysis', 'analysis', '분석', 'Tool별 Score 세부 분석')}
+            ${navItem('classification', 'classification', '분류', '이미지 분류')}
+            ${navItem('simulation', 'simulation', '시뮬레이션', 'VPDL Local Runtime · GPU')}
+            ${navItem('settings', 'settings', '설정', 'Input · 실제 NG 경로')}
           </nav>
           <div class="vq43-rail-bottom" aria-label="향후 기능">
-            <button type="button" class="vq43-rail-placeholder" title="Dark / Light Mode (추후 지원)"><span>◐</span><b>Light / Dark Mode</b></button>
-            <button type="button" class="vq43-rail-placeholder" title="Language (추후 지원)"><span>◎</span><b>Language</b></button>
-            <button type="button" class="vq43-rail-placeholder" title="Login (추후 지원)"><span>♙</span><b>Login</b></button>
+            <button type="button" class="vq43-rail-placeholder vq43-notification-item" data-vq-action="notifications-open" title="오류·경고 알림"><span class="vq43-rail-icon">${railIconSvg('bell')}<i id="vq43-notification-count" class="vq43-notification-count" hidden>0</i></span><b>알림</b></button>
+            <button type="button" class="vq43-rail-placeholder" title="Dark / Light Mode (추후 지원)"><span class="vq43-rail-icon">${railIconSvg('theme')}</span><b>Light / Dark Mode</b></button>
+            <button type="button" class="vq43-rail-placeholder" title="Language (추후 지원)"><span class="vq43-rail-icon">${railIconSvg('language')}</span><b>Language</b></button>
+            <button type="button" class="vq43-rail-placeholder" title="Login (추후 지원)"><span class="vq43-rail-icon">${railIconSvg('login')}</span><b>Login</b></button>
           </div>
         </aside>
         <section id="vq43-shell"><div id="vq43-page" class="vq43-page"></div></section>
@@ -302,9 +328,11 @@
         else setPage(button.dataset.vqPage || 'classification');
       };
     });
+    const notificationButton = $('[data-vq-action="notifications-open"]', drawer || document);
+    if (notificationButton) notificationButton.onclick = (event) => { event.preventDefault(); event.stopPropagation(); openNotificationCenter(); };
     $('[data-vq-notification-action="close"]')?.addEventListener('click', closeNotificationCenter);
     $('[data-vq-notification-action="clear"]')?.addEventListener('click', clearNotifications);
-    $$('.vq43-rail-placeholder', drawer || document).forEach((button) => {
+    $$('.vq43-rail-placeholder:not([data-vq-action])', drawer || document).forEach((button) => {
       button.onclick = (event) => { event.preventDefault(); event.stopPropagation(); };
     });
 
@@ -366,7 +394,7 @@
   }
 
   function navItem(page, icon, title, subtitle) {
-    return `<button class="vq43-nav-item" data-vq-page="${page}" title="${escapeHtml(title)}"><span class="vq43-nav-icon">${icon}</span><span class="vq43-nav-copy"><strong>${title}</strong><small>${subtitle}</small></span><span class="vq43-arrow">›</span></button>`;
+    return `<button class="vq43-nav-item" data-vq-page="${page}" title="${escapeHtml(title)}"><span class="vq43-nav-icon">${railIconSvg(icon)}</span><span class="vq43-nav-copy"><strong>${title}</strong><small>${subtitle}</small></span><span class="vq43-arrow">›</span></button>`;
   }
 
   function toggleMenu(open) {
@@ -2203,8 +2231,10 @@
     persistSimulationForm();
     const keywordStructure = (scope === 'green' || scope === 'integrated') && field === 'keywordMode';
     const streamStructure = scope === 'position' && (field === 'greenStreamName' || field === 'blueStreamName');
-    if (allowStructuralRender && keywordStructure) refreshSimulationPositionListOnly();
-    else if (allowStructuralRender && streamStructure) refreshAllToolNameValidation();
+    if (allowStructuralRender && keywordStructure) {
+      refreshSimulationOptionsOnly();
+      refreshSimulationPositionListOnly();
+    } else if (allowStructuralRender && streamStructure) refreshAllToolNameValidation();
   }
 
   function syncSimulationActiveCheckbox(input) {
@@ -2311,7 +2341,8 @@
       '[data-vq-action="simulation-mode"]','#vq43-sim-new-position-name'
     ];
     $$(selectors.join(','), page).forEach((el) => {
-      el.disabled = running || loading || el.dataset.vqWorkspaceBusy === '1';
+      const contextDisabled = el.dataset.vqBaseDisabled === '1';
+      el.disabled = contextDisabled || running || loading || el.dataset.vqWorkspaceBusy === '1';
     });
     const load = $('#vq43-runtime-file-load'); if (load) load.disabled = running || loading || state.simulationAgent.status !== 'connected';
     const start = $('#vq43-sim-start'); if (start) start.disabled = running || loading || state.simulationAgent.status !== 'connected';
@@ -2372,7 +2403,10 @@
       if (data.state) state.simulationProgress = { ...state.simulationProgress, ...data.state };
       const newInstance = state.simulationAgent.instanceId || '';
       const restarted = !!previousInstance && !!newInstance && previousInstance !== newInstance;
-      if (restarted) clearSimulationRuntimeReadiness();
+      if (restarted) {
+        state.simulationPickerPending = false;
+        clearSimulationLoadedWorkspaces({ render:true });
+      }
       const nowRunning = !!data.state?.running;
       if (!nowRunning && data.runtimePreloaded && data.runtimePreloadToken) {
         const currentSignature = simulationRuntimeSignature(buildSimulationRequest());
@@ -2384,7 +2418,8 @@
           clearSimulationRuntimeReadiness();
         }
       } else if (!nowRunning && !data.runtimePreloaded && !wasRunning) {
-        clearSimulationRuntimeReadiness();
+        if (!wasConnected) clearSimulationLoadedWorkspaces({ render:true });
+        else clearSimulationRuntimeReadiness();
       }
       if (!wasConnected || restarted) {
         connectSimulationEvents();
@@ -2394,7 +2429,8 @@
       state.simulationAgentPollFailures += 1;
       if (!wasConnected || state.simulationAgentPollFailures >= 2) {
         state.simulationAgent = { status:'offline', version:'-', vpdl:'-', license:'-', gpu:'-', instanceId:'', message:'Local Agent가 중지되었습니다.' };
-        clearSimulationRuntimeReadiness();
+        state.simulationPickerPending = false;
+        clearSimulationLoadedWorkspaces({ render:true });
         closeSimulationEvents();
       }
     } finally {
@@ -2431,7 +2467,8 @@
       closeSimulationEvents();
       state.simulationAgentPollFailures = 2;
       state.simulationAgent = { status:'offline', version:'-', vpdl:'-', license:'-', gpu:'-', instanceId:'', message:'사용자가 Agent를 종료했습니다.' };
-      clearSimulationRuntimeReadiness();
+      state.simulationPickerPending = false;
+      clearSimulationLoadedWorkspaces({ render:true });
       state.simulationProgress = { running:false, processed:0, total:0, ok:0, ng:0, current:'-', message:'Ready', error:'' };
       updateSimulationAgentDom();
       showToast('Local Agent를 종료했습니다.');
@@ -2518,10 +2555,22 @@
     state.simulationPickerPending = true;
     applySimulationLockDom();
     try {
-      return await agentFetch(path, {
-        method:'POST', body, timeout:PICKER_TIMEOUT_MS,
-        timeoutMessage:'Windows 파일 선택 창이 10분 동안 응답하지 않았습니다. Agent를 종료한 뒤 v0.2.7로 다시 실행하세요.'
+      const requestBody = { ...(body || {}), clientId:PICKER_CLIENT_ID };
+      const openPicker = () => agentFetch(path, {
+        method:'POST', body:requestBody, timeout:PICKER_TIMEOUT_MS,
+        timeoutMessage:'Windows 파일 선택 창이 10분 동안 응답하지 않았습니다. Agent를 종료한 뒤 v0.2.8로 다시 실행하세요.'
       });
+      let data = await openPicker();
+      if (data?.busy && data?.recoverable) {
+        showToast('이전 선택 창이 Agent에 남아 있어 자동으로 닫고 다시 엽니다.');
+        await agentFetch('/api/pick/cancel', { method:'POST', body:{ clientId:PICKER_CLIENT_ID }, timeout:3000 });
+        for (let attempt = 0; attempt < 5; attempt += 1) {
+          await new Promise((resolve) => setTimeout(resolve, 250));
+          data = await openPicker();
+          if (!data?.busy) break;
+        }
+      }
+      return data;
     } finally {
       state.simulationPickerPending = false;
       applySimulationLockDom();
@@ -2896,6 +2945,33 @@
     state.simulationRuntimeToken = '';
     state.simulationRuntimeSignature = '';
     state.simulationRuntimeAgentInstance = '';
+  }
+
+  function clearSimulationLoadedWorkspaces({ render=false } = {}) {
+    let changed = !!state.simulationRuntimeToken || !!state.simulationRuntimeSignature || !!state.simulationWorkspaceLoading ||
+      workspaceInspectStatus.size > 0 || workspaceInspectCache.size > 0;
+    clearSimulationRuntimeReadiness();
+    state.simulationWorkspaceLoading = false;
+    state.simulationWorkspaceLoadProgress = { completed:0, total:0 };
+    if (state.simulationAgent) {
+      state.simulationAgent.runtimePreloaded = false;
+      state.simulationAgent.runtimePreloadMode = '';
+      state.simulationAgent.runtimePreloadToken = '';
+      state.simulationAgent.runtimePreloadSignature = '';
+    }
+    workspaceInspectCache.clear();
+    workspaceInspectInflight.clear();
+    workspaceInspectStatus.clear();
+    workspaceInspectGeneration.clear();
+    const form = ensureSimulationForm();
+    Object.values(form.positions || {}).forEach((position) => {
+      if (position.greenWorkspaceInfo || position.blueWorkspaceInfo) changed = true;
+      position.greenWorkspaceInfo = null;
+      position.blueWorkspaceInfo = null;
+    });
+    if (changed) persistSimulationForm();
+    if (render && changed && state.page === 'simulation') renderSimulationPreserveScroll();
+    return changed;
   }
 
   function prepareLiveSimulationData(request) {
@@ -3453,7 +3529,7 @@
     const status = workspaceKind ? workspaceInspectStatusFor(key, workspaceKind, value) : null;
     const busy = !!status && ['picking','queued','reading'].includes(status.phase);
     const buttonText = status?.phase === 'picking' ? '선택 중' : status?.phase === 'queued' ? '대기 중' : status?.phase === 'reading' ? '읽는 중' : value ? '변경' : '선택';
-    return `<div class="vq43-sim-path ${disabled?'disabled':''}"><span>${escapeHtml(title)}</span><div><input data-sim-scope="${scope}" data-sim-field="${field}" ${key?`data-sim-key="${key}"`:''} value="${escapeHtml(value)}" placeholder="${escapeHtml(placeholder)}" ${disabled?'disabled':''}><button type="button" data-vq-action="simulation-browse" data-sim-scope="${scope}" data-sim-kind="${kind}" data-sim-file-type="${fileType}" data-sim-field="${field}" ${key?`data-sim-key="${key}"`:''} data-vq-workspace-busy="${busy?'1':'0'}" ${disabled||busy?'disabled':''} aria-busy="${busy?'true':'false'}">${escapeHtml(buttonText)}</button></div></div>`;
+    return `<div class="vq43-sim-path ${disabled?'disabled':''}"><span>${escapeHtml(title)}</span><div><input data-sim-scope="${scope}" data-sim-field="${field}" data-vq-base-disabled="${disabled?'1':'0'}" ${key?`data-sim-key="${key}"`:''} value="${escapeHtml(value)}" placeholder="${escapeHtml(placeholder)}" ${disabled?'disabled':''}><button type="button" data-vq-action="simulation-browse" data-sim-scope="${scope}" data-sim-kind="${kind}" data-sim-file-type="${fileType}" data-sim-field="${field}" data-vq-base-disabled="${disabled?'1':'0'}" ${key?`data-sim-key="${key}"`:''} data-vq-workspace-busy="${busy?'1':'0'}" ${disabled||busy?'disabled':''} aria-busy="${busy?'true':'false'}">${escapeHtml(buttonText)}</button></div></div>`;
   }
 
   function simulationPositionRows() {
@@ -4095,6 +4171,30 @@
         return result;
       },
       formatLogTime(value) { return formatSimulationLogTime(value); },
+      testDisconnectWorkspaceClear() {
+        state.simulationMode = 'integrated';
+        const form = ensureSimulationForm();
+        const key = Object.keys(form.positions || {})[0];
+        const position = form.positions?.[key];
+        if (!position) return { changed:false, error:'Position missing' };
+        const greenPath = position.greenWorkspacePath || 'H:\\Runtime\\Green.vrws';
+        const bluePath = position.blueWorkspacePath || 'H:\\Runtime\\Blue.vrws';
+        position.greenWorkspacePath = greenPath;
+        position.blueWorkspacePath = bluePath;
+        position.greenWorkspaceInfo = { ok:true, path:greenPath, workspaceName:'Green.vrws', streams:[{name:'Default',tools:[]}] };
+        position.blueWorkspaceInfo = { ok:true, path:bluePath, workspaceName:'Blue.vrws', streams:[{name:'Default',tools:[]}] };
+        state.simulationRuntimeToken = 'debug-token';
+        state.simulationRuntimeSignature = 'debug-signature';
+        const changed = clearSimulationLoadedWorkspaces({ render:true });
+        const current = ensureSimulationForm().positions?.[key];
+        return {
+          changed,
+          greenInfoCleared:current?.greenWorkspaceInfo == null,
+          blueInfoCleared:current?.blueWorkspaceInfo == null,
+          pathsPreserved:current?.greenWorkspacePath === greenPath && current?.blueWorkspacePath === bluePath,
+          loadedCards:$$('.vq43-workspace-kind-card.ok').length
+        };
+      },
       snapshot() { return { page: state.page, menuOpen: state.menuOpen, modalOpen: $('#vq43-modal')?.classList.contains('open'), chartModalOpen: $('#vq43-chart-modal')?.classList.contains('open'), openDropdowns: $$('.vq43-dropdown.open').length, analysisScope: state.analysisScope, analysisPointCount: state.analysisPoints.length }; },
       getThreshold(position, tool) { return getThreshold(position, tool); },
       buildReportHtml() { return buildSummaryReportHtml(state.model, new Date('2026-07-31T08:37:00')); }

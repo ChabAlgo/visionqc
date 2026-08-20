@@ -8,7 +8,7 @@ async function openSimulation(page) {
   await expect(page.locator('.vq43-sim-options-scroll')).toBeVisible();
 }
 
-test.describe('VisionQC v4.4.29 FHD interaction regression', () => {
+test.describe('VisionQC v4.4.30 FHD interaction regression', () => {
   test('Tool add/remove preserves all edited runtime parameters', async ({ page }) => {
     await openSimulation(page);
     const progress = page.locator('input[data-sim-scope="green"][data-sim-field="printEvery"]');
@@ -31,6 +31,35 @@ test.describe('VisionQC v4.4.29 FHD interaction regression', () => {
     await expect(toolRows.first().locator('[data-sim-tool-field="toolName"]')).not.toHaveValue(firstName);
     await expect(progress).toHaveValue('3');
     await expect(quality).toHaveValue('93');
+  });
+
+  test('Keyword Input Root is disabled only while Keyword mode is off', async ({ page }) => {
+    await openSimulation(page);
+    const keywordMode = page.locator('input[data-sim-scope="integrated"][data-sim-field="keywordMode"]');
+    const keywordRoot = page.locator('input[data-sim-scope="integrated"][data-sim-field="keywordInputRoot"]');
+    const keywordBrowse = page.locator('button[data-sim-scope="integrated"][data-sim-field="keywordInputRoot"]');
+
+    await keywordMode.uncheck();
+    await expect(keywordRoot).toBeDisabled();
+    await expect(keywordBrowse).toBeDisabled();
+    await keywordMode.check();
+    await expect(keywordRoot).toBeEnabled();
+    await expect(keywordBrowse).toBeEnabled();
+    await keywordMode.uncheck();
+    await expect(keywordRoot).toBeDisabled();
+    await expect(keywordBrowse).toBeDisabled();
+  });
+
+  test('disconnect cleanup removes loaded Workspace cards and preserves selected paths', async ({ page }) => {
+    await openSimulation(page);
+    const result = await page.evaluate(() => window.__VISIONQC_DEBUG__.testDisconnectWorkspaceClear());
+    expect(result).toMatchObject({
+      changed: true,
+      greenInfoCleared: true,
+      blueInfoCleared: true,
+      pathsPreserved: true,
+      loadedCards: 0
+    });
   });
 
   test('debug regression covers scroll, selection, fallback and preview overflow', async ({ page }) => {

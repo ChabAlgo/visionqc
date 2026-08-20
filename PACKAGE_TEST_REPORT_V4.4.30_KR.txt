@@ -1,0 +1,26 @@
+VisionQC v4.4.30 + Local Agent v0.2.8 패키지 검증 결과
+===================================================
+
+자동 검증 완료
+- Web JavaScript syntax: PASS
+- Web 정적/상태 회귀: 26 PASS / 0 FAIL
+- Agent 소스 구조 회귀: 6 PASS / 0 FAIL
+- Git whitespace/conflict 검사: PASS
+- TOPTEC logo SHA-256: ab35afda21bd2d40052b79ca46b75613096f60a7b8a84d6112ccd25daa5aa4a4
+
+이번에 추가한 Agent 검증
+- v0.2.8 버전 및 VPDL 4.2 탐지
+- 실제 Add 반환 Workspace 객체 재사용
+- preload token/signature 유지
+- 현재 마우스 모니터의 보이는 STA picker owner
+- browser clientId 소유권과 /api/pick/cancel
+- COM IFileDialog active tracking/close
+- 진행 로그 중복 방지
+
+이 Linux 작업 환경에서 실행할 수 없었던 항목
+- Windows .NET Framework MSBuild + Cognex VPDL DLL을 사용한 EXE 컴파일
+- 실제 CodeMeter License/GPU/.vrws Runtime load
+- Chromium 실행 바이너리를 사용한 Playwright FHD interaction
+
+위 세 항목은 UPDATE_AND_TEST_V4.4.30_KR.txt 순서로 대상 Windows PC에서 최종 확인해야 합니다.
+통과하지 않은 항목을 통과한 것으로 표기하지 않았습니다.

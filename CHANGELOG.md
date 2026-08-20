@@ -1,3 +1,21 @@
+# VisionQC v4.4.30
+
+## Keyword / Picker
+- Keyword 모드가 꺼져 있을 때 `Keyword Input Root`의 input과 선택 버튼을 공통 잠금 갱신이 다시 활성화하던 문제를 수정했습니다.
+- 모드 변경 시 Options와 Position 목록을 함께 갱신해 공통 폴더와 Position별 폴더의 상호 배타 상태를 즉시 반영합니다.
+- 브라우저 탭 ID와 Agent Picker 소유자를 연결해, 동일 탭에 남은 선택 창만 안전하게 취소하고 다시 열 수 있게 했습니다.
+- Picker 소유창을 현재 마우스가 있는 모니터 중앙에 표시하고 작업 표시줄 알림을 강화했습니다.
+
+## Runtime 상태 / Navigation
+- Agent 종료, 실제 연결 끊김, Agent instance 교체 시 Runtime token·WorkspaceInfo·Inspect cache/status를 함께 제거합니다. 선택한 경로 자체는 재설정을 줄이기 위해 보존합니다.
+- 알림 버튼을 Light/Dark 위로 이동하고 Main/Analysis/Classification/Simulation/Settings/Utility 아이콘을 단색 SVG로 통일했습니다.
+- Local Agent가 VPDL 4.2 설치 DLL을 탐지하고 로드할 수 있게 했습니다.
+
+## 검증
+- Keyword 비활성 문맥, Picker 복구, Agent disconnect cleanup, sidebar icon 회귀검사를 추가했습니다.
+
+---
+
 # VisionQC v4.4.29
 
 ## 설정 상태 보존 / Tool 조작

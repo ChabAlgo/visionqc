@@ -1,6 +1,14 @@
-# VisionQC GitHub Pages v4.4.29
+# VisionQC GitHub Pages v4.4.30
 
-GitHub Pages 정적 배포용 VisionQC Web입니다. 실제 VPDL Runtime/GPU 작업은 사용자 PC의 VisionQC Local Agent v0.2.7에서 실행합니다.
+GitHub Pages 정적 배포용 VisionQC Web입니다. 실제 VPDL Runtime/GPU 작업은 사용자 PC의 VisionQC Local Agent v0.2.8에서 실행합니다.
+
+## v4.4.30 핵심
+- Keyword 모드가 꺼진 동안 공통 입력 폴더를 입력·선택할 수 없도록 문맥 비활성 상태를 공통 잠금과 분리
+- Keyword 모드 변경 즉시 공통 입력 폴더와 Position별 이미지 폴더의 활성 상태를 함께 갱신
+- 동일 브라우저 탭에 남은 Windows Picker를 Agent에서 취소하고 새 선택 창으로 한 번 자동 복구
+- Agent 종료·연결 끊김·인스턴스 교체 시 Runtime token과 Workspace 구조 표시를 함께 초기화
+- 알림을 하단 유틸리티 영역으로 이동하고 전체 사이드바 아이콘을 단색 SVG 테마로 통일
+- Local Agent의 VPDL 4.2 설치 경로 탐지 지원
 
 ## v4.4.29 핵심
 - Simulation 설정 보정 시 현재 객체를 기본값으로 덮던 잘못된 `Object.assign` 순서를 수정
@@ -89,4 +97,4 @@ Repository root에 이 ZIP의 내용물을 그대로 놓고 GitHub Pages를 `mai
 - `npx playwright install --with-deps chromium`
 - `npm run test:browser` — Chromium FHD 실제 interaction 검사
 
-권장 Local Agent: **v0.2.7**
+권장 Local Agent: **v0.2.8**
