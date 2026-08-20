@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width,initial-scale=1">
-  <title>VisionQC v4.4.26 Browser Regression</title>
+  <title>VisionQC v4.4.27 Browser Regression</title>
   <style>
     body{margin:0;padding:24px;background:#020617;color:#dbeafe;font:14px/1.5 system-ui,sans-serif}
     h1{font-size:20px}#status{padding:14px;border:1px solid #334155;border-radius:10px;background:#071323;white-space:pre-wrap}
@@ -13,7 +13,7 @@
   </style>
 </head>
 <body>
-  <h1>VisionQC v4.4.26 · FHD Browser Regression</h1>
+  <h1>VisionQC v4.4.27 · FHD Browser Regression</h1>
   <div id="status">테스트 준비 중...</div>
   <div class="viewport"><iframe id="app" src="../index.html?vqDebug=1&amp;browserRegression=1"></iframe></div>
   <script>
@@ -32,11 +32,11 @@
         const result = await debug.runSimulationUiRegression();
         status.className = result.ok ? 'pass' : 'fail';
         status.textContent = `${result.ok ? 'PASS' : 'FAIL'}\n${JSON.stringify(result, null, 2)}`;
-        document.title = `${result.ok ? 'PASS' : 'FAIL'} · VisionQC v4.4.26 Browser Regression`;
+        document.title = `${result.ok ? 'PASS' : 'FAIL'} · VisionQC v4.4.27 Browser Regression`;
       } catch (error) {
         status.className = 'fail';
         status.textContent = `FAIL\n${error.stack || error.message || error}`;
-        document.title = 'FAIL · VisionQC v4.4.26 Browser Regression';
+        document.title = 'FAIL · VisionQC v4.4.27 Browser Regression';
       }
     });
   </script>

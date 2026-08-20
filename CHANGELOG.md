@@ -1,3 +1,32 @@
+# VisionQC v4.4.27
+
+## Runtime 선로딩 / 상태 정합성
+- Workspace 선택 시 자동 Inspect를 제거하고 Output 패널에 `Runtime File Load`를 추가했습니다.
+- 현재 모드의 활성 Position에 필요한 Green/Blue Runtime을 버튼 한 번으로 순차 선로딩합니다.
+- Position 객체를 정규화할 때 새 객체로 교체하던 동작을 in-place 갱신으로 변경했습니다.
+- Workspace 응답 후 현재 Position을 다시 찾아 저장하므로 Log 성공과 화면 READ ERROR/WAIT가 엇갈리지 않습니다.
+- Simulation Start는 선택 경로와 일치하는 READ OK 선로딩 결과를 요구하며 시작 직전 Runtime/License를 다시 확인합니다.
+
+## Agent v0.2.5
+- 5분 유휴 종료 `IdleLoop`를 제거해 `/api/agent/exit` 전까지 Agent가 유지됩니다.
+- Web이 2초마다 상태를 자동 감시하므로 별도 연결 확인 버튼이 없습니다.
+- Agent 시작 직후 Runtime/License를 자동 검사하고 status에 instanceId와 검사 결과를 제공합니다.
+- `Agent 제거`를 `Agent 종료`로 바꾸고 종료 시 protocol unregister를 수행하지 않습니다.
+
+## UI / Fallback
+- 사용자가 제공한 TOPTEC 로고 원본으로 교체했습니다.
+- Runtime Structure는 Position당 하나의 카드로 표시하고 Green/Blue를 카드 내부에 묶었습니다.
+- Structure 패널을 Output 바로 아래로 이동했습니다.
+- Fallback 파일 선택/Preview가 await 후 고정 slotKey로 현재 행을 다시 찾아 갱신합니다.
+- Sample Image의 label/button 중첩을 제거하고 다른 Options와 동일한 label/font/control 크기로 통일했습니다.
+
+## 검증
+- Web v4.4.27 정적/구조 회귀검사 15종 통과
+- Agent v0.2.5 정적/구조 회귀검사 9종 통과
+- JavaScript syntax, CSS brace, 패키지 ZIP 무결성 검사
+
+---
+
 # VisionQC v4.4.26
 
 ## Workspace 요청/상태 정합성

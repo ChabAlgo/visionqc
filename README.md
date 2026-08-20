@@ -1,6 +1,19 @@
-# VisionQC GitHub Pages v4.4.26
+# VisionQC GitHub Pages v4.4.27
 
-GitHub Pages 정적 배포용 VisionQC Web입니다. 실제 VPDL Runtime/GPU 작업은 사용자 PC의 VisionQC Local Agent v0.2.4에서 실행합니다.
+GitHub Pages 정적 배포용 VisionQC Web입니다. 실제 VPDL Runtime/GPU 작업은 사용자 PC의 VisionQC Local Agent v0.2.5에서 실행합니다.
+
+## v4.4.27 핵심
+- 첨부된 TOPTEC 원본 로고를 Web 자산으로 교체
+- Workspace 경로 선택 시 자동 읽기를 제거하고 Output 아래 `Runtime File Load`로 활성 Position의 Runtime을 선로딩
+- 비동기 응답이 교체된 Position 객체에 유실되던 문제를 수정해 Progress Log와 Runtime Structure 화면 상태를 일치
+- Workspace Runtime Structure를 Position별 카드로 합치고 같은 카드 안에 Green/Blue 구조를 함께 표시
+- Simulation Start는 현재 경로와 일치하는 선로딩 성공 결과가 있어야 실행되며, 시작 직전에 Runtime/License를 재확인
+- Agent 상태를 2초 간격으로 자동 감시하고 `연결 확인` 버튼 제거
+- `Agent 제거`를 `Agent 종료`로 변경하고 프로토콜 등록은 유지
+- Agent의 5분 유휴 자동 종료를 제거해 종료 버튼을 누를 때까지 상시 실행
+- Agent 시작 직후 Runtime/License를 자동 확인하고 상태 API에 결과를 표시
+- Fallback 이미지 선택/Preview가 비동기 후 현재 Position 행을 다시 찾아 값을 반영하도록 수정
+- Fallback의 잘못된 label/button 중첩을 제거하고 12px label·14px text·32px control로 다른 옵션과 통일
 
 ## v4.4.26 핵심
 - Web에서 여러 Workspace 구조 읽기를 Agent로 동시에 보내지 않고 한 건씩 순차 처리
@@ -55,4 +68,4 @@ Repository root에 이 ZIP의 내용물을 그대로 놓고 GitHub Pages를 `mai
 - `npx playwright install --with-deps chromium`
 - `npm run test:browser` — Chromium FHD 실제 interaction 검사
 
-권장 Local Agent: **v0.2.4**
+권장 Local Agent: **v0.2.5**

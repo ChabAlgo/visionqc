@@ -8,7 +8,7 @@ async function openSimulation(page) {
   await expect(page.locator('.vq43-sim-options-scroll')).toBeVisible();
 }
 
-test.describe('VisionQC v4.4.26 FHD interaction regression', () => {
+test.describe('VisionQC v4.4.27 FHD interaction regression', () => {
   test('debug regression covers scroll, selection, fallback and preview overflow', async ({ page }) => {
     await openSimulation(page);
     const result = await page.evaluate(() => window.__VISIONQC_DEBUG__.runSimulationUiRegression());
