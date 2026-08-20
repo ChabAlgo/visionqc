@@ -8,7 +8,31 @@ async function openSimulation(page) {
   await expect(page.locator('.vq43-sim-options-scroll')).toBeVisible();
 }
 
-test.describe('VisionQC v4.4.27 FHD interaction regression', () => {
+test.describe('VisionQC v4.4.29 FHD interaction regression', () => {
+  test('Tool add/remove preserves all edited runtime parameters', async ({ page }) => {
+    await openSimulation(page);
+    const progress = page.locator('input[data-sim-scope="green"][data-sim-field="printEvery"]');
+    const quality = page.locator('input[data-sim-scope="green"][data-sim-field="jpegQuality"]');
+    await progress.fill('3');
+    await quality.fill('93');
+
+    const toolRows = page.locator('.vq43-sim-table.tools tbody tr');
+    const before = await toolRows.count();
+    await page.locator('[data-vq-action="simulation-tool-add"]').click();
+    await expect(toolRows).toHaveCount(before + 1);
+    await expect(progress).toHaveValue('3');
+    await expect(quality).toHaveValue('93');
+
+    const firstTool = toolRows.first();
+    const firstName = await firstTool.locator('[data-sim-tool-field="toolName"]').inputValue();
+    await firstTool.locator('[data-sim-tool-field="selected"]').check();
+    await page.locator('[data-vq-action="simulation-tool-remove"]').click();
+    await expect(toolRows).toHaveCount(before);
+    await expect(toolRows.first().locator('[data-sim-tool-field="toolName"]')).not.toHaveValue(firstName);
+    await expect(progress).toHaveValue('3');
+    await expect(quality).toHaveValue('93');
+  });
+
   test('debug regression covers scroll, selection, fallback and preview overflow', async ({ page }) => {
     await openSimulation(page);
     const result = await page.evaluate(() => window.__VISIONQC_DEBUG__.runSimulationUiRegression());

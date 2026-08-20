@@ -1,3 +1,28 @@
+# VisionQC v4.4.29
+
+## 설정 상태 보존 / Tool 조작
+- `ensureSimulationForm()`의 동일 target/source `Object.assign`으로 Tool 및 파라미터가 매번 기본값으로 초기화되던 근본 원인을 제거했습니다.
+- Tool 추가·선택 제거 전에 현재 DOM 값을 한 번 동기화하고, 전체 Tool 제거 시 기본 목록으로 되돌리던 숨은 fallback을 제거했습니다.
+- Progress Update, JPEG, GPU, HeatMap, Fallback 등 다른 옵션은 Tool 목록 변경 후에도 그대로 유지됩니다.
+
+## Picker / 요청 교착
+- Web과 Agent 모두 파일·폴더 선택을 single-flight로 처리합니다.
+- 투명 8×8 소유창 대신 실제 STA 메시지 루프와 보이는 소유창을 사용해 Shell Dialog가 브라우저 뒤에 숨는 경우를 방지했습니다.
+- 이미 선택창이 열려 있으면 다음 요청을 lock 뒤에 대기시키지 않고 즉시 안내합니다.
+
+## Runtime preload / Simulation
+- VPDL 4.0 Workspaces 문자열 indexer 의존을 제거하고 `Workspaces.Add()`가 반환한 실제 객체를 직접 보관합니다.
+- preload token/signature/Agent instance를 Web과 대조해 저장된 READ OK 화면과 실제 Runtime 메모리 상태가 다르면 Start 전에 차단합니다.
+- Simulation Start 중복 클릭과 Runtime/License 자동 확인 요청 중복을 합쳤습니다.
+- 정상 완료·사용자 중지 후 동일 Runtime 객체를 다시 preload 상태로 복구합니다.
+
+## 검증
+- Web 정적/상태 회귀검사 24종 통과
+- Agent v0.2.7 정적/구조 회귀검사 7종 통과
+- Chromium FHD workflow에 Tool 추가/선택 제거/파라미터 보존 실제 클릭 테스트 추가
+
+---
+
 # VisionQC v4.4.28
 
 ## 실제 Runtime 사전 로드

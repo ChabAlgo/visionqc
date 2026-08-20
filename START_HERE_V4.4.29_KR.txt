@@ -1,0 +1,19 @@
+VisionQC v4.4.29 + Local Agent v0.2.7 시작 순서
+
+1. LocalAgent_v0.2.7 폴더에서 BUILD_RELEASE_x64.cmd 실행
+   - 반드시 오류 0개 / 경고 0개 확인
+2. REGISTER_PROTOCOL.cmd 실행
+3. CHECK_PROTOCOL.cmd에서 현재 v0.2.7 EXE 경로 확인
+4. RUN_AGENT.cmd 실행
+5. Web v4.4.29 파일을 GitHub Pages root에 배포하고 Ctrl+F5
+6. 상단 Agent가 0.2.7인지 확인
+7. Workspace / Image Folder / Output을 선택
+8. Workspace Runtime Structure의 Runtime File Load 실행
+9. 모든 활성 Position이 READY인지 확인
+10. Simulation Start 실행
+
+중요
+- Web 4.4.29와 Agent 0.2.7을 반드시 같이 사용합니다.
+- 이전 Agent가 계속 뜨면 새 폴더에서 REGISTER_PROTOCOL.cmd를 다시 실행합니다.
+- 파일/폴더 선택창이 보이지 않으면 작업 표시줄의 VisionQC Local Agent 창을 선택합니다.
+- Workspace/Mode/GPU/활성 Position을 바꾸면 Runtime File Load를 다시 실행합니다.

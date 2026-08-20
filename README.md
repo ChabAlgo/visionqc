@@ -1,6 +1,16 @@
-# VisionQC GitHub Pages v4.4.28
+# VisionQC GitHub Pages v4.4.29
 
-GitHub Pages 정적 배포용 VisionQC Web입니다. 실제 VPDL Runtime/GPU 작업은 사용자 PC의 VisionQC Local Agent v0.2.6에서 실행합니다.
+GitHub Pages 정적 배포용 VisionQC Web입니다. 실제 VPDL Runtime/GPU 작업은 사용자 PC의 VisionQC Local Agent v0.2.7에서 실행합니다.
+
+## v4.4.29 핵심
+- Simulation 설정 보정 시 현재 객체를 기본값으로 덮던 잘못된 `Object.assign` 순서를 수정
+- Tool 추가/선택 제거 시 현재 checkbox·Tool·Judgement·모든 Green/Blue 파라미터를 먼저 단일 동기화
+- Tool을 전부 제거해도 기본 15개 Tool로 몰래 복원하지 않으며, 추가 버튼으로 빈 행부터 다시 구성 가능
+- 파일/폴더 Picker를 Web과 Agent 모두 single-flight로 변경해 두 번째 요청이 뒤에서 무한 대기하지 않음
+- Runtime preload token/signature와 Agent instance를 비교해 화면의 READ OK와 실제 메모리 세션 불일치 차단
+- Simulation Start를 single-flight로 변경해 License 확인 중 연속 클릭 요청 차단
+- VPDL Workspace 이름 indexer 대신 preload 때 반환된 실제 Workspace 객체를 재사용
+- Progress Update 값이 설정 보정 과정에서 100으로 되돌아가던 원인 제거
 
 ## v4.4.28 핵심
 - Runtime File Load를 `Workspace Runtime Structure` 제목 영역으로 이동
@@ -79,4 +89,4 @@ Repository root에 이 ZIP의 내용물을 그대로 놓고 GitHub Pages를 `mai
 - `npx playwright install --with-deps chromium`
 - `npm run test:browser` — Chromium FHD 실제 interaction 검사
 
-권장 Local Agent: **v0.2.6**
+권장 Local Agent: **v0.2.7**

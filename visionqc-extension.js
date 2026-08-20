@@ -1,7 +1,7 @@
 (() => {
   'use strict';
 
-  const VERSION = '4.4.28';
+  const VERSION = '4.4.29';
   const DEFAULT_POSITION_DEFS = [
     { key:'CA_TOP', name:'CA(TOP)' },
     { key:'AN_TOP', name:'AN(TOP)' },
@@ -23,7 +23,7 @@
   const NG_POSITION_PREFIX = 'ng-position:';
   const IMG_RE = /\.(png|jpe?g|bmp|gif|webp|tif?f)$/i;
   const LOCAL_AGENT_URL = 'http://127.0.0.1:17891';
-  const EXPECTED_AGENT_VERSION = '0.2.6';
+  const EXPECTED_AGENT_VERSION = '0.2.7';
   const PICKER_TIMEOUT_MS = 10 * 60 * 1000;
   const RUNTIME_PRELOAD_TIMEOUT_MS = 15 * 60 * 1000;
   const NOTIFICATION_KEY = 'visionqc-v4428-notifications';
@@ -78,6 +78,12 @@
     simulationAgentPollFailures: 0,
     simulationAgentPollTimer: null,
     simulationRuntimeChecking: false,
+    simulationRuntimeCheckPromise: null,
+    simulationRuntimeToken: '',
+    simulationRuntimeSignature: '',
+    simulationRuntimeAgentInstance: '',
+    simulationPickerPending: false,
+    simulationStartPending: false,
     simulationWorkspaceLoading: false,
     simulationWorkspaceLoadProgress: { completed:0, total:0 },
     simulationEvents: null,
@@ -1961,6 +1967,12 @@
     return JSON.parse(JSON.stringify(value));
   }
 
+  function mergeSimulationSection(defaults, legacy, current) {
+    const legacyValues = Object.fromEntries(Object.entries(legacy || {}).filter(([, value]) => value !== undefined));
+    const currentValues = current && typeof current === 'object' ? { ...current } : {};
+    return Object.assign({}, defaults || {}, legacyValues, currentValues);
+  }
+
   function ensureSimulationForm() {
     const defaults = simulationDefaults();
     const old = state.simulationForm && typeof state.simulationForm === 'object' ? state.simulationForm : {};
@@ -2017,11 +2029,15 @@
       keepCropImages:typeof old.keepCropImages === 'boolean' ? old.keepCropImages : undefined,
       heatmapImageSave:typeof old.heatmapImageSave === 'boolean' ? old.heatmapImageSave : undefined
     };
-    form.green = Object.assign(form.green && typeof form.green === 'object' ? form.green : {}, defaults.green, Object.fromEntries(Object.entries(legacyGreen).filter(([,v]) => v !== undefined)), form.green || {});
-    form.blue = Object.assign(form.blue && typeof form.blue === 'object' ? form.blue : {}, defaults.blue, Object.fromEntries(Object.entries(legacyBlue).filter(([,v]) => v !== undefined)), form.blue || {});
-    form.integrated = Object.assign(form.integrated && typeof form.integrated === 'object' ? form.integrated : {}, defaults.integrated, Object.fromEntries(Object.entries(legacyIntegrated).filter(([,v]) => v !== undefined)), form.integrated || {});
+    // 기존에는 target과 마지막 source가 같은 객체였습니다.
+    // Object.assign(target, defaults, ..., target)은 defaults가 target을 먼저 덮기 때문에
+    // ensureSimulationForm()을 호출할 때마다 사용자가 편집한 Tool/파라미터가 초기화됩니다.
+    // 현재 값을 먼저 복사한 뒤 새 객체로 병합해야 기존 설정이 항상 마지막에 남습니다.
+    form.green = mergeSimulationSection(defaults.green, legacyGreen, form.green);
+    form.blue = mergeSimulationSection(defaults.blue, legacyBlue, form.blue);
+    form.integrated = mergeSimulationSection(defaults.integrated, legacyIntegrated, form.integrated);
 
-    if (!Array.isArray(form.green.tools) || !form.green.tools.length) form.green.tools = simulationDefaultTools();
+    if (!Array.isArray(form.green.tools)) form.green.tools = simulationDefaultTools();
     else form.green.tools = form.green.tools.map(t => {
       const tool = Object.assign({toolName:'',threshold:0.5,judgement:'Scrap',selected:false}, t || {});
       delete tool.positionEnabled; delete tool.positionKeys;
@@ -2280,7 +2296,7 @@
   function applySimulationLockDom() {
     if (state.page !== 'simulation') return;
     const running = !!state.simulationProgress?.running;
-    const loading = !!state.simulationWorkspaceLoading;
+    const loading = !!state.simulationWorkspaceLoading || !!state.simulationPickerPending || !!state.simulationStartPending;
     const page = $('#vq43-page');
     if (!page) return;
     page.classList.toggle('vq43-sim-running-lock', running);
@@ -2334,6 +2350,7 @@
     if (state.simulationAgentPollInFlight) return;
     state.simulationAgentPollInFlight = true;
     const wasConnected = state.simulationAgent?.status === 'connected';
+    const wasRunning = !!state.simulationProgress?.running;
     const previousInstance = state.simulationAgent?.instanceId || '';
     const previousSignature = JSON.stringify(state.simulationAgent || {});
     try {
@@ -2344,6 +2361,10 @@
       state.simulationAgent = {
         status:'connected', version:detectedVersion, vpdl:data.vpdlVersion || '-',
         license:data.license || '확인 중', gpu:data.gpu || '-', instanceId:data.instanceId || '',
+        runtimePreloaded:!!data.runtimePreloaded,
+        runtimePreloadMode:String(data.runtimePreloadMode || ''),
+        runtimePreloadToken:String(data.runtimePreloadToken || ''),
+        runtimePreloadSignature:String(data.runtimePreloadSignature || ''),
         message:versionMismatch
           ? `Agent ${detectedVersion} 실행 중 · 현재 Web 권장 ${EXPECTED_AGENT_VERSION}. 새 Agent의 REGISTER_PROTOCOL.cmd를 다시 실행하세요.`
           : `${data.runtimeMessage || '실시간 연결됨'} · Engine ${data.engineVersion || '-'}`
@@ -2351,6 +2372,20 @@
       if (data.state) state.simulationProgress = { ...state.simulationProgress, ...data.state };
       const newInstance = state.simulationAgent.instanceId || '';
       const restarted = !!previousInstance && !!newInstance && previousInstance !== newInstance;
+      if (restarted) clearSimulationRuntimeReadiness();
+      const nowRunning = !!data.state?.running;
+      if (!nowRunning && data.runtimePreloaded && data.runtimePreloadToken) {
+        const currentSignature = simulationRuntimeSignature(buildSimulationRequest());
+        if (!data.runtimePreloadSignature || data.runtimePreloadSignature === currentSignature) {
+          state.simulationRuntimeToken = String(data.runtimePreloadToken);
+          state.simulationRuntimeSignature = currentSignature;
+          state.simulationRuntimeAgentInstance = newInstance;
+        } else {
+          clearSimulationRuntimeReadiness();
+        }
+      } else if (!nowRunning && !data.runtimePreloaded && !wasRunning) {
+        clearSimulationRuntimeReadiness();
+      }
       if (!wasConnected || restarted) {
         connectSimulationEvents();
         checkSimulationRuntime({ silent:true, reason:'agent-start' });
@@ -2359,6 +2394,7 @@
       state.simulationAgentPollFailures += 1;
       if (!wasConnected || state.simulationAgentPollFailures >= 2) {
         state.simulationAgent = { status:'offline', version:'-', vpdl:'-', license:'-', gpu:'-', instanceId:'', message:'Local Agent가 중지되었습니다.' };
+        clearSimulationRuntimeReadiness();
         closeSimulationEvents();
       }
     } finally {
@@ -2395,6 +2431,7 @@
       closeSimulationEvents();
       state.simulationAgentPollFailures = 2;
       state.simulationAgent = { status:'offline', version:'-', vpdl:'-', license:'-', gpu:'-', instanceId:'', message:'사용자가 Agent를 종료했습니다.' };
+      clearSimulationRuntimeReadiness();
       state.simulationProgress = { running:false, processed:0, total:0, ok:0, ng:0, current:'-', message:'Ready', error:'' };
       updateSimulationAgentDom();
       showToast('Local Agent를 종료했습니다.');
@@ -2404,28 +2441,33 @@
   }
 
   async function checkSimulationRuntime({ silent=false, reason='automatic' } = {}) {
-    if (state.simulationRuntimeChecking) return null;
+    if (state.simulationRuntimeCheckPromise) return state.simulationRuntimeCheckPromise;
     state.simulationRuntimeChecking = true;
-    const form = ensureSimulationForm();
-    const mode = state.simulationMode || 'integrated';
-    const opt = mode === 'blue' ? form.blue : form.green;
-    try {
-      const data = await agentFetch('/api/runtime/check', { method:'POST', body:{ useGpu:!!opt.useGpu, gpuDevices:String(opt.gpuDevices || '0') }, timeout:12000 });
-      state.simulationAgent.license = data.license || (data.ok ? 'Runtime OK' : 'Runtime Error');
-      state.simulationAgent.vpdl = data.vpdlVersion || state.simulationAgent.vpdl;
-      state.simulationAgent.gpu = data.gpu || state.simulationAgent.gpu;
-      state.simulationAgent.message = data.ok ? (reason === 'simulation-start' ? 'Simulation 시작 전 License 재확인 완료' : 'Agent 실행 감지 · Runtime/License 자동 확인 완료') : (data.error || 'Runtime 확인 실패');
-      updateSimulationAgentDom();
-      return data;
-    } catch (error) {
-      state.simulationAgent.license = 'Runtime Error';
-      state.simulationAgent.message = `Runtime 확인 실패: ${error.message}`;
-      if (state.page === 'simulation') updateSimulationAgentDom();
-      if (!silent) showToast(`Runtime 확인 실패: ${error.message}`, true);
-      return { ok:false, error:error.message || String(error) };
-    } finally {
-      state.simulationRuntimeChecking = false;
-    }
+    const task = (async () => {
+      const form = ensureSimulationForm();
+      const mode = state.simulationMode || 'integrated';
+      const opt = mode === 'blue' ? form.blue : form.green;
+      try {
+        const data = await agentFetch('/api/runtime/check', { method:'POST', body:{ useGpu:!!opt.useGpu, gpuDevices:String(opt.gpuDevices || '0') }, timeout:12000 });
+        state.simulationAgent.license = data.license || (data.ok ? 'Runtime OK' : 'Runtime Error');
+        state.simulationAgent.vpdl = data.vpdlVersion || state.simulationAgent.vpdl;
+        state.simulationAgent.gpu = data.gpu || state.simulationAgent.gpu;
+        state.simulationAgent.message = data.ok ? (reason === 'simulation-start' ? 'Simulation 시작 전 License 재확인 완료' : 'Agent 실행 감지 · Runtime/License 자동 확인 완료') : (data.error || 'Runtime 확인 실패');
+        updateSimulationAgentDom();
+        return data;
+      } catch (error) {
+        state.simulationAgent.license = 'Runtime Error';
+        state.simulationAgent.message = `Runtime 확인 실패: ${error.message}`;
+        if (state.page === 'simulation') updateSimulationAgentDom();
+        if (!silent) showToast(`Runtime 확인 실패: ${error.message}`, true);
+        return { ok:false, error:error.message || String(error) };
+      } finally {
+        state.simulationRuntimeChecking = false;
+        state.simulationRuntimeCheckPromise = null;
+      }
+    })();
+    state.simulationRuntimeCheckPromise = task;
+    return task;
   }
 
   function connectSimulationEvents() {
@@ -2436,6 +2478,8 @@
         try {
           state.simulationProgress = { ...state.simulationProgress, ...JSON.parse(event.data) };
           if (name === 'completed' || name === 'stopped' || name === 'error') state.simulationLiveActive = false;
+          if (name === 'error') clearSimulationRuntimeReadiness();
+          if (name === 'completed' || name === 'stopped') setTimeout(pollSimulationAgentStatus, 100);
           updateSimulationStatusDom();
         } catch (_) { }
       }));
@@ -2465,8 +2509,28 @@
     state.simulationEvents = null;
   }
 
+  async function requestSimulationPicker(path, body) {
+    if (state.simulationPickerPending) {
+      const error = new Error('이미 파일 또는 폴더 선택 창이 열려 있습니다. 먼저 열린 선택 창을 완료하거나 취소하세요.');
+      error.code = 'PICKER_BUSY';
+      throw error;
+    }
+    state.simulationPickerPending = true;
+    applySimulationLockDom();
+    try {
+      return await agentFetch(path, {
+        method:'POST', body, timeout:PICKER_TIMEOUT_MS,
+        timeoutMessage:'Windows 파일 선택 창이 10분 동안 응답하지 않았습니다. Agent를 종료한 뒤 v0.2.7로 다시 실행하세요.'
+      });
+    } finally {
+      state.simulationPickerPending = false;
+      applySimulationLockDom();
+    }
+  }
+
   async function browseSimulationPath(control) {
     if (state.simulationAgent.status !== 'connected') { showToast('먼저 Local Agent를 실행/연결하세요.', true); return; }
+    if (state.simulationPickerPending) { showToast('이미 열린 파일/폴더 선택 창을 먼저 완료하거나 취소하세요.', true); return; }
     const scope = control.dataset.simScope || (control.dataset.simKey ? 'position' : 'root');
     const key = control.dataset.simKey || '';
     const field = control.dataset.simField;
@@ -2486,10 +2550,7 @@
       control.textContent = '여는 중...';
     }
     try {
-      const data = await agentFetch(kind === 'file' ? '/api/pick/file' : '/api/pick/folder', {
-        method:'POST', body:{ initialPath:current, fileType }, timeout:PICKER_TIMEOUT_MS,
-        timeoutMessage:'파일 선택 창 응답 제한 시간 초과 (10분)'
-      });
+      const data = await requestSimulationPicker(kind === 'file' ? '/api/pick/file' : '/api/pick/folder', { initialPath:current, fileType });
       if (!data.ok || !data.path) {
         if (workspaceKind) clearWorkspaceInspectStatus(key, workspaceKind, true);
         if (data.error) showToast(`선택 실패: ${data.error}`, true);
@@ -2660,19 +2721,23 @@
   }
 
   function addSimulationTool() {
+    flushSimulationControls();
     const form = ensureSimulationForm();
     form.green.tools.push({ toolName:'',threshold:0.5,judgement:form.green.judgements[0]?.name || 'Scrap',selected:false });
     persistSimulationForm(); refreshSimulationOptionsOnly();
+    showToast('Tool 행을 추가했습니다.');
   }
 
   function removeSelectedSimulationTools() {
-    const form = ensureSimulationForm();
     flushSimulationControls();
+    const form = ensureSimulationForm();
     const selectedIndexes = new Set($$('input[data-sim-tool-field="selected"]:checked', $('#vq43-shell')).map(input => Number(input.dataset.simToolIndex)));
     const next = form.green.tools.filter((tool, index) => !tool.selected && !selectedIndexes.has(index));
     if (next.length === form.green.tools.length) { showToast('제거할 Tool의 선택 체크박스를 먼저 체크하세요.', true); return; }
-    form.green.tools = next.length ? next : simulationDefaultTools();
+    const removed = form.green.tools.length - next.length;
+    form.green.tools = next;
     persistSimulationForm(); refreshSimulationOptionsOnly();
+    showToast(`${removed}개 Tool을 제거했습니다.`);
   }
 
   function resetSimulationTools() {
@@ -2731,13 +2796,14 @@
 
   async function pickSimulationFallbackSample(index) {
     const form = ensureSimulationForm(); const row = form.blue.fallbacks[index]; if (!row) return;
+    if (state.simulationPickerPending) { showToast('이미 열린 파일/폴더 선택 창을 먼저 완료하거나 취소하세요.', true); return; }
     const slotKey = row.slotKey;
     if (state.simulationAgent.status !== 'connected') { showToast('먼저 Local Agent를 연결하세요.', true); return; }
     const button = $(`[data-vq-action="simulation-fallback-sample"][data-index="${index}"]`);
     const originalText = button?.textContent || '선택';
     if (button) { button.disabled = true; button.textContent = '선택 중...'; }
     try {
-      const data = await agentFetch('/api/pick/file', { method:'POST', body:{initialPath:row.sampleImagePath || '',fileType:'image'}, timeout:PICKER_TIMEOUT_MS, timeoutMessage:'이미지 선택 창 응답 제한 시간 초과 (10분)' });
+      const data = await requestSimulationPicker('/api/pick/file', { initialPath:row.sampleImagePath || '',fileType:'image' });
       if (data.ok && data.path) {
         const current = ensureSimulationForm().blue.fallbacks.find((item) => item.slotKey === slotKey);
         if (!current) return;
@@ -2805,6 +2871,33 @@
     };
   }
 
+  function runtimeSignaturePath(path) {
+    return String(path || '').trim().replace(/\//g, '\\').replace(/[\\/]+$/g, '').toUpperCase();
+  }
+
+  function simulationRuntimeSignature(request) {
+    const mode = String(request?.mode || 'green').trim().toLowerCase();
+    const options = mode === 'green' ? request?.green || {} : request?.blue || {};
+    let signature = `${mode}|${options.useGpu ? 'True' : 'False'}|${String(options.gpuDevices || '')}`;
+    const positions = Array.isArray(request?.positions) ? [...request.positions] : [];
+    positions.sort((left, right) => {
+      const a = String(left?.key || '').toUpperCase(), b = String(right?.key || '').toUpperCase();
+      return a < b ? -1 : a > b ? 1 : 0;
+    });
+    positions.forEach((position) => {
+      signature += `|${String(position?.key || '')}`;
+      if (mode !== 'blue') signature += `|G:${runtimeSignaturePath(position?.greenWorkspacePath)}`;
+      if (mode !== 'green') signature += `|B:${runtimeSignaturePath(position?.blueWorkspacePath)}`;
+    });
+    return signature;
+  }
+
+  function clearSimulationRuntimeReadiness() {
+    state.simulationRuntimeToken = '';
+    state.simulationRuntimeSignature = '';
+    state.simulationRuntimeAgentInstance = '';
+  }
+
   function prepareLiveSimulationData(request) {
     if (!request || request.mode === 'blue') return;
     state.resultInputs = {};
@@ -2850,21 +2943,38 @@
   }
 
   async function startSimulation() {
-    if (state.simulationAgent.status !== 'connected') { launchSimulationAgent(); return; }
-    if (state.simulationWorkspaceLoading) { showToast('Runtime File Load가 끝날 때까지 기다려 주세요.', true); return; }
-    flushSimulationControls();
-    persistSimulationForm();
-    const targets = requiredSimulationWorkspaceTargets();
-    const notReady = targets.filter((target) => !target.path || !target.info?.ok || !workspacePathMatches(target.info.path, target.path));
-    if (notReady.length) {
-      showToast(`Runtime File Load를 먼저 완료하세요: ${notReady.map((target) => `${target.displayName} ${target.kind.toUpperCase()}`).join(', ')}`, true);
+    if (state.simulationStartPending || state.simulationProgress?.running) {
+      showToast('Simulation 시작 요청이 이미 처리 중이거나 실행 중입니다.');
       return;
     }
-    const request = buildSimulationRequest();
-    if (!request.positions.length) { showToast('현재 시뮬레이션 모드에서 사용할 Position을 1개 이상 체크하세요.', true); return; }
+    if (state.simulationAgent.status !== 'connected') { launchSimulationAgent(); return; }
+    if (state.simulationWorkspaceLoading) { showToast('Runtime File Load가 끝날 때까지 기다려 주세요.', true); return; }
+    state.simulationStartPending = true;
+    applySimulationLockDom();
     try {
+      flushSimulationControls();
+      persistSimulationForm();
+      const targets = requiredSimulationWorkspaceTargets();
+      const notReady = targets.filter((target) => !target.path || !target.info?.ok || !workspacePathMatches(target.info.path, target.path));
+      if (notReady.length) throw new Error(`Runtime File Load를 먼저 완료하세요: ${notReady.map((target) => `${target.displayName} ${target.kind.toUpperCase()}`).join(', ')}`);
+      const request = buildSimulationRequest();
+      if (!request.positions.length) throw new Error('현재 시뮬레이션 모드에서 사용할 Position을 1개 이상 체크하세요.');
+      const currentSignature = simulationRuntimeSignature(request);
+      const runtimeReady = !!state.simulationRuntimeToken &&
+        state.simulationRuntimeSignature === currentSignature &&
+        state.simulationRuntimeAgentInstance === String(state.simulationAgent.instanceId || '') &&
+        state.simulationAgent.runtimePreloaded !== false &&
+        (!state.simulationAgent.runtimePreloadToken || state.simulationAgent.runtimePreloadToken === state.simulationRuntimeToken);
+      if (!runtimeReady) {
+        clearSimulationRuntimeReadiness();
+        throw new Error('현재 설정과 일치하는 사전 로드 Runtime이 없습니다. Workspace Runtime Structure의 Runtime File Load를 다시 실행하세요.');
+      }
       const runtime = await checkSimulationRuntime({ silent:true, reason:'simulation-start' });
       if (!runtime?.ok) throw new Error(runtime?.error || 'Simulation 시작 전 Runtime/License 확인 실패');
+      if (runtime.preloaded === false || (runtime.token && runtime.token !== state.simulationRuntimeToken)) {
+        clearSimulationRuntimeReadiness();
+        throw new Error('Agent의 Runtime 세션이 변경되었습니다. Runtime File Load를 다시 실행하세요.');
+      }
       prepareLiveSimulationData(request);
       appendSimulationLog({level:'START',message:`Simulation 시작 요청 · Mode=${request.mode} · Position=${request.positions.map(p=>p.displayName).join(', ')} · Batch=${request.mode==='blue'?request.blue.printEvery:request.green.printEvery}`});
       state.simulationProgress = { ...state.simulationProgress, running:true, message:'Simulation 시작 요청 중...', error:'' };
@@ -2878,6 +2988,9 @@
       state.simulationProgress = { ...state.simulationProgress, running:false, message:'Simulation 시작 실패', error:error.message || String(error) };
       updateSimulationStatusDom();
       showToast(error.message, true);
+    } finally {
+      state.simulationStartPending = false;
+      updateSimulationStatusDom();
     }
   }
 
@@ -3018,6 +3131,7 @@
 
     try {
       const request = buildSimulationRequest();
+      const runtimeSignature = simulationRuntimeSignature(request);
       const data = await agentFetch('/api/runtime/preload', {
         method:'POST', body:request, timeout:RUNTIME_PRELOAD_TIMEOUT_MS,
         timeoutMessage:'Runtime File Load 응답 제한 시간 초과 (15분)'
@@ -3041,12 +3155,21 @@
       });
       syncSimulationFallbackRows(false, ensureSimulationForm());
       state.simulationWorkspaceLoadProgress = { completed:items.length, total:targets.length };
+      state.simulationRuntimeToken = String(data.token || '');
+      state.simulationRuntimeSignature = String(data.signature || runtimeSignature);
+      state.simulationRuntimeAgentInstance = String(state.simulationAgent.instanceId || '');
+      state.simulationAgent.runtimePreloaded = true;
+      state.simulationAgent.runtimePreloadMode = String(data.mode || state.simulationMode || '');
+      state.simulationAgent.runtimePreloadToken = state.simulationRuntimeToken;
+      state.simulationAgent.runtimePreloadSignature = state.simulationRuntimeSignature;
       persistSimulationForm();
       if (state.page === 'simulation') renderSimulationPreserveScroll();
       const elapsed = Number(data.elapsedMs || 0) / 1000;
       appendSimulationLog({level:'INFO', message:`Runtime File Load 완료 · ${items.length}개 Workspace가 실제 Simulation Runtime으로 준비됨 · ${elapsed.toFixed(1)}초`});
       showToast('Runtime 사전 로드가 완료되었습니다. Simulation Start는 Workspace를 다시 열지 않습니다.');
     } catch (error) {
+      clearSimulationRuntimeReadiness();
+      state.simulationAgent.runtimePreloaded = false;
       targets.forEach((target) => {
         const current = ensureSimulationForm().positions?.[target.positionKey];
         if (!current) return;

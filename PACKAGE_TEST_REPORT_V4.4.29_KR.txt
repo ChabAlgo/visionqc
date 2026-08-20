@@ -1,0 +1,16 @@
+VisionQC v4.4.29 + Local Agent v0.2.7 패키지 검사
+
+- Web JavaScript syntax 검사
+- Base bundle JavaScript syntax 검사
+- Web 회귀검사 24 PASS / 0 FAIL
+- Agent 회귀검사 7 PASS / 0 FAIL
+- CSS brace balance 검사
+- ZIP 무결성 검사
+- 배포 ZIP 재압축 해제 후 동일 검사
+- SHA-256 checksum 검사
+
+Windows 실환경 필수 확인
+- BUILD_RELEASE_x64.cmd 오류 0 / 경고 0
+- 파일/폴더/이미지 Picker 표시와 취소
+- Cognex VPDL 4.0 Runtime File Load
+- Green/Blue/Integrated Simulation 1회 및 반복 실행
