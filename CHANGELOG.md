@@ -1,3 +1,23 @@
+# VisionQC v4.4.31
+
+## Local Agent 통신 / 파일·폴더 선택
+- Windows 선택창이 닫힐 때까지 HTTP 요청 하나를 계속 유지하던 구조를 제거했습니다. Web은 짧은 `/api/pick/start` 요청 뒤 `/api/pick/status`로 결과를 확인합니다.
+- Web requestId를 Agent가 멱등 처리해 시작 응답이 유실되어도 선택창이 중복으로 열리지 않습니다.
+- 같은 탭에 남은 선택창 자동 취소, 상단 `선택 창 취소` 버튼, 5분 안전 제한, 완료 작업 만료를 추가했습니다.
+- Agent 내부 예외를 소켓 종료로 숨기지 않고 HTTP 500 JSON과 Agent 로그로 반환합니다.
+- H: 가상 드라이브·UNC·연결이 끊긴 네트워크 경로의 `File.Exists`/`Directory.Exists` 선검사를 제거해 선택창 시작 지연을 차단했습니다.
+- Chrome Local Network Access용 loopback 요청 표기와 `Failed to fetch` 전용 진단 문구를 추가했습니다.
+
+## 상태 / 버전 표시
+- 실제 연결 실패 시 남아 있던 Connected·Runtime·Workspace 화면 상태를 즉시 정리합니다.
+- 좌측 메뉴와 Simulation 상단에 `Web v4.4.31 · Agent v0.2.9`를 항상 확인할 수 있게 표시합니다.
+
+## 검증
+- 배포 v4.4.30의 메뉴 272px, 전 화면 전환, Keyword disable/enable, Tool 추가·선택 제거, Progress Update 보존, Agent 미연결 선택 실패 경로를 실제 브라우저에서 확인했습니다.
+- Web v4.4.31 회귀검사 27종, Agent v0.2.9 구조검사 6종을 통과했습니다.
+
+---
+
 # VisionQC v4.4.30
 
 ## Keyword / Picker

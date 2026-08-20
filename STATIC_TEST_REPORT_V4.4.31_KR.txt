@@ -1,0 +1,26 @@
+VisionQC v4.4.31 정적·브라우저 점검 결과
+
+Web 회귀검사
+- tests/v4431-regression.test.mjs: 27 PASS / 0 FAIL
+- JavaScript syntax: PASS
+- CSS brace/layout assertions: PASS
+
+Agent 회귀검사
+- tests/v029-static.test.mjs: 6 PASS / 0 FAIL
+- async picker start/status/requestId/cancel ownership: PASS
+- remote initial-path blocking avoidance: PASS
+- HTTP 500 JSON diagnostics: PASS
+
+배포 v4.4.30 실제 브라우저 확인
+- 페이지 title/version: v4.4.30
+- 메뉴 확장: 272px, clientWidth=scrollWidth=271px, 가로 잘림 없음
+- Main/Analysis/Classification/Simulation/Settings 전환: PASS
+- Keyword OFF disabled / ON enabled / OFF disabled: PASS
+- Tool 추가: 15 -> 16 PASS
+- 선택 제거: PASS
+- Progress Update 37 유지: PASS
+- Agent 미연결 선택: 약 1.3초 내 명시 오류 PASS
+
+실환경 미검증
+- 클라우드 브라우저는 사용자 PC 127.0.0.1:17891에 접근할 수 없어 Agent v0.2.9 Windows Dialog를 직접 열지 못함
+- 현재 Linux 환경에는 Windows .NET Framework 4.8, Cognex VPDL SDK/Runtime/License/GPU가 없어 EXE build 및 Simulation 통합 실행은 미검증

@@ -1,0 +1,17 @@
+VisionQC v4.4.31 + Local Agent v0.2.9 시작 안내
+
+필수 업데이트 순서
+1. 실행 중인 구버전 Agent를 먼저 `Agent 종료` 또는 STOP_AGENT.cmd로 종료합니다.
+2. LocalAgent_v0.2.9 폴더에서 BUILD_RELEASE_x64.cmd를 실행해 오류 0개를 확인합니다.
+3. 같은 폴더의 REGISTER_PROTOCOL.cmd를 실행합니다.
+4. Web 파일(index.html, visionqc-extension.js, visionqc-extension.css, visionqc-v4431-clean.css, assets/index-v4.4.31.js)을 GitHub Pages에 배포합니다.
+5. Chrome에서 사이트를 새로고침하고 좌측 메뉴 또는 Simulation 상단의 Web v4.4.31 표기를 확인합니다.
+6. Agent 실행 후 Local Engine 카드의 Agent 0.2.9를 확인합니다.
+
+파일·폴더 선택 확인
+- 선택 버튼을 누르면 Web 요청은 즉시 끝나고 Windows 선택창 결과를 짧은 상태 조회로 받습니다.
+- 선택창이 보이지 않으면 상단 `선택 창 취소`를 누른 뒤 다시 선택합니다.
+- H: 가상/네트워크 드라이브는 기존 경로를 미리 검사하지 않으므로 Dialog가 마지막 사용 위치에서 열릴 수 있습니다.
+- Chrome이 로컬 네트워크 접근 권한을 물으면 chabalgo.github.io에 허용해야 Agent와 통신할 수 있습니다.
+
+반드시 Web v4.4.31과 Agent v0.2.9를 함께 사용하세요.

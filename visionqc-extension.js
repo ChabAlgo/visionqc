@@ -1,7 +1,7 @@
 (() => {
   'use strict';
 
-  const VERSION = '4.4.30';
+  const VERSION = '4.4.31';
   const DEFAULT_POSITION_DEFS = [
     { key:'CA_TOP', name:'CA(TOP)' },
     { key:'AN_TOP', name:'AN(TOP)' },
@@ -23,8 +23,9 @@
   const NG_POSITION_PREFIX = 'ng-position:';
   const IMG_RE = /\.(png|jpe?g|bmp|gif|webp|tif?f)$/i;
   const LOCAL_AGENT_URL = 'http://127.0.0.1:17891';
-  const EXPECTED_AGENT_VERSION = '0.2.8';
-  const PICKER_TIMEOUT_MS = 10 * 60 * 1000;
+  const EXPECTED_AGENT_VERSION = '0.2.9';
+  const PICKER_TIMEOUT_MS = 5 * 60 * 1000;
+  const PICKER_POLL_INTERVAL_MS = 400;
   const RUNTIME_PRELOAD_TIMEOUT_MS = 15 * 60 * 1000;
   const NOTIFICATION_KEY = 'visionqc-v4428-notifications';
   const WORKSPACE_INSPECT_TIMEOUT_MS = 180000;
@@ -94,6 +95,8 @@
     simulationRuntimeSignature: '',
     simulationRuntimeAgentInstance: '',
     simulationPickerPending: false,
+    simulationPickerRequestId: '',
+    simulationPickerCancelRequested: false,
     simulationStartPending: false,
     simulationWorkspaceLoading: false,
     simulationWorkspaceLoadProgress: { completed:0, total:0 },
@@ -288,7 +291,7 @@
         <aside id="vq43-drawer" class="vq43-side-rail" aria-hidden="false">
           <div class="vq43-rail-head">
             <button id="vq43-menu-button" type="button" title="메뉴 펼치기" aria-controls="vq43-drawer" aria-expanded="false">${menuIconSvg()}<span>Menu</span></button>
-            <div class="vq43-rail-brand"><strong>VisionQC</strong><img src="./assets/toptec-logo.png" alt="TOPTEC"><small>SIMULATION ANALYSIS</small></div>
+            <div class="vq43-rail-brand"><strong>VisionQC</strong><img src="./assets/toptec-logo.png" alt="TOPTEC"><small>WEB v${VERSION} · AGENT v${EXPECTED_AGENT_VERSION}</small></div>
           </div>
           <nav class="vq43-nav">
             ${navItem('main', 'main', '메인', 'Cell · Position · Tool NG율')}
@@ -302,6 +305,7 @@
             <button type="button" class="vq43-rail-placeholder" title="Dark / Light Mode (추후 지원)"><span class="vq43-rail-icon">${railIconSvg('theme')}</span><b>Light / Dark Mode</b></button>
             <button type="button" class="vq43-rail-placeholder" title="Language (추후 지원)"><span class="vq43-rail-icon">${railIconSvg('language')}</span><b>Language</b></button>
             <button type="button" class="vq43-rail-placeholder" title="Login (추후 지원)"><span class="vq43-rail-icon">${railIconSvg('login')}</span><b>Login</b></button>
+            <div class="vq43-rail-version" title="VisionQC Web ${VERSION} · Local Agent ${EXPECTED_AGENT_VERSION}"><span>v${VERSION}</span><b>Web v${VERSION} · Agent v${EXPECTED_AGENT_VERSION}</b></div>
           </div>
         </aside>
         <section id="vq43-shell"><div id="vq43-page" class="vq43-page"></div></section>
@@ -545,7 +549,7 @@
     if (!control) return;
     const action = control.dataset.vqAction;
     if (!action) return;
-    const simulationConfigAction = action.startsWith('simulation-') && !['simulation-stop','simulation-agent-stop','simulation-agent-info','simulation-log-clear'].includes(action);
+    const simulationConfigAction = action.startsWith('simulation-') && !['simulation-stop','simulation-agent-stop','simulation-agent-info','simulation-log-clear','simulation-picker-cancel'].includes(action);
     if (state.simulationProgress?.running && simulationConfigAction && action !== 'simulation-start') {
       showToast('Simulation 실행 중에는 옵션/Position/Workspace를 변경할 수 없습니다.', true);
       return;
@@ -559,6 +563,7 @@
     }
     else if (action === 'simulation-agent-launch') launchSimulationAgent();
     else if (action === 'simulation-agent-stop') stopSimulationAgent();
+    else if (action === 'simulation-picker-cancel') cancelSimulationPicker();
     else if (action === 'simulation-agent-info') showToast('VisionQC Web은 GUI만 담당하고 VPDL Runtime · GPU · Workspace 처리는 사용자 PC의 Local Agent가 수행합니다.');
     else if (action === 'simulation-browse') browseSimulationPath(control);
     else if (action === 'simulation-runtime-load') loadSelectedRuntimeFiles();
@@ -2347,6 +2352,12 @@
     const load = $('#vq43-runtime-file-load'); if (load) load.disabled = running || loading || state.simulationAgent.status !== 'connected';
     const start = $('#vq43-sim-start'); if (start) start.disabled = running || loading || state.simulationAgent.status !== 'connected';
     const stop = $('#vq43-sim-stop'); if (stop) stop.disabled = !running;
+    const pickerCancel = $('#vq43-picker-cancel');
+    if (pickerCancel) {
+      pickerCancel.hidden = !state.simulationPickerPending;
+      pickerCancel.disabled = !!state.simulationPickerCancelRequested;
+      pickerCancel.textContent = state.simulationPickerCancelRequested ? '선택 창 취소 중...' : '선택 창 취소';
+    }
   }
 
   async function agentFetch(path, options = {}) {
@@ -2358,13 +2369,23 @@
       controller.abort();
     }, timeout);
     try {
-      const response = await fetch(`${LOCAL_AGENT_URL}${path}`, {
+      const requestOptions = {
         method: options.method || 'GET', cache:'no-store',
+        mode:'cors', credentials:'omit',
+        // Chrome Local Network Access에서 공개 HTTPS 페이지가 loopback Agent로
+        // 통신한다는 의도를 명시합니다. 미지원 브라우저는 알 수 없는 옵션을 무시합니다.
+        targetAddressSpace:'loopback',
         headers: options.body ? { 'Content-Type':'text/plain;charset=UTF-8' } : undefined,
         body: options.body ? JSON.stringify(options.body) : undefined,
         signal: controller.signal
-      });
-      const data = await response.json();
+      };
+      const response = await fetch(`${LOCAL_AGENT_URL}${path}`, requestOptions);
+      const raw = await response.text();
+      let data = {};
+      if (raw) {
+        try { data = JSON.parse(raw); }
+        catch (_) { throw new Error(`Agent 응답 형식 오류 (HTTP ${response.status})`); }
+      }
       if (!response.ok) throw new Error(data?.error || `HTTP ${response.status}`);
       return data;
     } catch (error) {
@@ -2373,8 +2394,29 @@
         timeoutError.code = 'REQUEST_TIMEOUT';
         throw timeoutError;
       }
+      if (error?.name === 'TypeError' || /Failed to fetch|NetworkError|Load failed/i.test(String(error?.message || error))) {
+        const networkError = new Error('Local Agent 통신이 끊겼습니다. Agent v0.2.9 실행 상태와 Chrome 사이트 설정의 로컬 네트워크 접근 권한을 확인하세요.');
+        networkError.code = 'AGENT_NETWORK';
+        networkError.originalMessage = String(error?.message || error);
+        throw networkError;
+      }
       throw error;
     } finally { clearTimeout(timer); }
+  }
+
+  function resetSimulationPickerState() {
+    state.simulationPickerPending = false;
+    state.simulationPickerRequestId = '';
+    state.simulationPickerCancelRequested = false;
+  }
+
+  function markSimulationAgentOffline(message = 'Local Agent가 중지되었거나 통신할 수 없습니다.') {
+    state.simulationAgentPollFailures = 2;
+    state.simulationAgent = { status:'offline', version:'-', vpdl:'-', license:'-', gpu:'-', instanceId:'', message };
+    resetSimulationPickerState();
+    clearSimulationLoadedWorkspaces({ render:true });
+    closeSimulationEvents();
+    if (state.page === 'simulation') updateSimulationAgentDom();
   }
 
   async function pollSimulationAgentStatus() {
@@ -2404,7 +2446,7 @@
       const newInstance = state.simulationAgent.instanceId || '';
       const restarted = !!previousInstance && !!newInstance && previousInstance !== newInstance;
       if (restarted) {
-        state.simulationPickerPending = false;
+        resetSimulationPickerState();
         clearSimulationLoadedWorkspaces({ render:true });
       }
       const nowRunning = !!data.state?.running;
@@ -2428,10 +2470,7 @@
     } catch (_) {
       state.simulationAgentPollFailures += 1;
       if (!wasConnected || state.simulationAgentPollFailures >= 2) {
-        state.simulationAgent = { status:'offline', version:'-', vpdl:'-', license:'-', gpu:'-', instanceId:'', message:'Local Agent가 중지되었습니다.' };
-        state.simulationPickerPending = false;
-        clearSimulationLoadedWorkspaces({ render:true });
-        closeSimulationEvents();
+        markSimulationAgentOffline('Local Agent가 중지되었습니다.');
       }
     } finally {
       state.simulationAgentPollInFlight = false;
@@ -2465,12 +2504,8 @@
     try {
       await agentFetch('/api/agent/exit', { method:'POST', body:{}, timeout:4000 });
       closeSimulationEvents();
-      state.simulationAgentPollFailures = 2;
-      state.simulationAgent = { status:'offline', version:'-', vpdl:'-', license:'-', gpu:'-', instanceId:'', message:'사용자가 Agent를 종료했습니다.' };
-      state.simulationPickerPending = false;
-      clearSimulationLoadedWorkspaces({ render:true });
+      markSimulationAgentOffline('사용자가 Agent를 종료했습니다.');
       state.simulationProgress = { running:false, processed:0, total:0, ok:0, ng:0, current:'-', message:'Ready', error:'' };
-      updateSimulationAgentDom();
       showToast('Local Agent를 종료했습니다.');
     } catch (error) {
       showToast(`Agent 종료 실패: ${error.message}`, true);
@@ -2552,28 +2587,108 @@
       error.code = 'PICKER_BUSY';
       throw error;
     }
+    if (state.simulationAgent.version !== EXPECTED_AGENT_VERSION) {
+      throw new Error(`파일 선택 안정화 API는 Agent v${EXPECTED_AGENT_VERSION}가 필요합니다. 현재 Agent ${state.simulationAgent.version || '-'}를 종료하고 새 Agent를 실행하세요.`);
+    }
+    const requestId = globalThis.crypto?.randomUUID?.() || `pick-${Date.now().toString(36)}-${Math.random().toString(36).slice(2)}`;
+    const pickerKind = path.endsWith('/file') ? 'file' : 'folder';
+    const requestBody = { ...(body || {}), kind:pickerKind, clientId:PICKER_CLIENT_ID, requestId };
+    const deadline = Date.now() + PICKER_TIMEOUT_MS;
+    const wait = (milliseconds) => new Promise((resolve) => setTimeout(resolve, milliseconds));
     state.simulationPickerPending = true;
+    state.simulationPickerRequestId = requestId;
+    state.simulationPickerCancelRequested = false;
     applySimulationLockDom();
     try {
-      const requestBody = { ...(body || {}), clientId:PICKER_CLIENT_ID };
-      const openPicker = () => agentFetch(path, {
-        method:'POST', body:requestBody, timeout:PICKER_TIMEOUT_MS,
-        timeoutMessage:'Windows 파일 선택 창이 10분 동안 응답하지 않았습니다. Agent를 종료한 뒤 v0.2.8로 다시 실행하세요.'
-      });
-      let data = await openPicker();
-      if (data?.busy && data?.recoverable) {
-        showToast('이전 선택 창이 Agent에 남아 있어 자동으로 닫고 다시 엽니다.');
-        await agentFetch('/api/pick/cancel', { method:'POST', body:{ clientId:PICKER_CLIENT_ID }, timeout:3000 });
-        for (let attempt = 0; attempt < 5; attempt += 1) {
-          await new Promise((resolve) => setTimeout(resolve, 250));
-          data = await openPicker();
+      let data = null;
+      // 시작 요청은 requestId로 멱등 처리됩니다. 응답만 유실된 경우 한 번 재전송해도
+      // Windows 선택 창이 중복으로 열리지 않습니다.
+      for (let attempt = 0; attempt < 2; attempt += 1) {
+        try {
+          data = await agentFetch('/api/pick/start', {
+            method:'POST', body:requestBody, timeout:6000,
+            timeoutMessage:'파일 선택 시작 요청에 Agent가 응답하지 않았습니다.'
+          });
+          break;
+        } catch (error) {
+          if (error.code !== 'AGENT_NETWORK' || attempt > 0) throw error;
+          await wait(300);
+        }
+      }
+      if (data?.busy && data?.recoverable && data?.requestId) {
+        showToast('이 탭에 남은 이전 선택 창을 취소하고 새 선택 창으로 복구합니다.');
+        await agentFetch('/api/pick/cancel', {
+          method:'POST', body:{ clientId:PICKER_CLIENT_ID, requestId:data.requestId }, timeout:4000
+        });
+        for (let attempt = 0; attempt < 15; attempt += 1) {
+          await wait(200);
+          data = await agentFetch('/api/pick/start', {
+            method:'POST', body:requestBody, timeout:6000,
+            timeoutMessage:'이전 선택 창을 닫은 뒤 새 선택 창을 시작하지 못했습니다.'
+          });
           if (!data?.busy) break;
         }
       }
-      return data;
+      if (data?.busy || (!data?.ok && !data?.pending)) throw new Error(data?.error || '파일 선택 창을 시작하지 못했습니다.');
+      if (!data?.pending) return data || { ok:false, path:'' };
+
+      let consecutiveNetworkFailures = 0;
+      while (Date.now() < deadline) {
+        await wait(PICKER_POLL_INTERVAL_MS);
+        try {
+          data = await agentFetch('/api/pick/status', {
+            method:'POST', body:{ clientId:PICKER_CLIENT_ID, requestId }, timeout:4000,
+            timeoutMessage:'파일 선택 상태 확인에 Agent가 응답하지 않았습니다.'
+          });
+          consecutiveNetworkFailures = 0;
+        } catch (error) {
+          if (error.code === 'AGENT_NETWORK' && consecutiveNetworkFailures < 3) {
+            consecutiveNetworkFailures += 1;
+            continue;
+          }
+          throw error;
+        }
+        if (data?.pending) continue;
+        return data || { ok:false, path:'' };
+      }
+
+      try {
+        await agentFetch('/api/pick/cancel', { method:'POST', body:{ clientId:PICKER_CLIENT_ID, requestId }, timeout:3000 });
+      } catch (_) { }
+      const timeoutError = new Error('Windows 파일 선택 창이 5분 동안 완료되지 않아 취소했습니다. 작업 표시줄에 남은 VisionQC 선택 창이 있는지 확인하세요.');
+      timeoutError.code = 'PICKER_TIMEOUT';
+      throw timeoutError;
+    } catch (error) {
+      if (error.code === 'AGENT_NETWORK') markSimulationAgentOffline(error.message);
+      throw error;
     } finally {
-      state.simulationPickerPending = false;
+      if (state.simulationPickerRequestId === requestId || !state.simulationPickerRequestId) resetSimulationPickerState();
       applySimulationLockDom();
+    }
+  }
+
+  async function cancelSimulationPicker() {
+    if (!state.simulationPickerPending || !state.simulationPickerRequestId) {
+      showToast('열려 있는 파일/폴더 선택 창이 없습니다.');
+      return;
+    }
+    if (state.simulationPickerCancelRequested) return;
+    state.simulationPickerCancelRequested = true;
+    applySimulationLockDom();
+    try {
+      const data = await agentFetch('/api/pick/cancel', {
+        method:'POST',
+        body:{ clientId:PICKER_CLIENT_ID, requestId:state.simulationPickerRequestId },
+        timeout:4000,
+        timeoutMessage:'선택 창 취소 요청에 Agent가 응답하지 않았습니다.'
+      });
+      if (!data?.ok) throw new Error(data?.error || '선택 창을 취소하지 못했습니다.');
+      showToast('파일/폴더 선택 창에 취소 요청을 보냈습니다.');
+    } catch (error) {
+      state.simulationPickerCancelRequested = false;
+      applySimulationLockDom();
+      if (error.code === 'AGENT_NETWORK') markSimulationAgentOffline(error.message);
+      showToast(`선택 창 취소 실패: ${error.message}`, true);
     }
   }
 
@@ -3729,7 +3844,7 @@
 
   function simulationTopActionsHtml() {
     const connected = state.simulationAgent?.status === 'connected';
-    return `<button class="vq43-btn" data-vq-action="simulation-agent-launch">Agent 실행</button><button class="vq43-btn vq43-btn-red" data-vq-action="simulation-agent-stop" ${connected?'':'disabled'}>Agent 종료</button>`;
+    return `<button id="vq43-picker-cancel" class="vq43-btn vq43-btn-amber" data-vq-action="simulation-picker-cancel" ${state.simulationPickerPending?'':'hidden'}>${state.simulationPickerCancelRequested?'선택 창 취소 중...':'선택 창 취소'}</button><button class="vq43-btn" data-vq-action="simulation-agent-launch">Agent 실행</button><button class="vq43-btn vq43-btn-red" data-vq-action="simulation-agent-stop" ${connected?'':'disabled'}>Agent 종료</button>`;
   }
 
   function simulationAgentCardHtml() {
@@ -3768,7 +3883,7 @@
     const modeDescription = mode === 'integrated' ? 'Blue Crop → Green 검사를 사용자 PC VPDL Runtime에서 연속 실행합니다.' : mode === 'green' ? 'Green Tool 단독 시뮬레이션입니다.' : 'Blue Tool Locate 결과 기준 Crop 시뮬레이션입니다.';
 
     page.innerHTML = `<div class="vq43-content vq43-sim-page">
-      <div class="vq43-topline"><div><div class="vq43-eyebrow">VPDL Local Simulation</div><h1 class="vq43-title">VPDL 시뮬레이션</h1><p class="vq43-subtitle">DL_Simulation v1.13의 Runtime/Tool/Filter/Crop/Fallback 설정을 Web GUI에서 제어합니다.</p></div><div class="vq43-top-actions">${simulationTopActionsHtml()}</div></div>
+      <div class="vq43-topline"><div><div class="vq43-eyebrow">VPDL Local Simulation · Web v${VERSION} · Agent v${EXPECTED_AGENT_VERSION}</div><h1 class="vq43-title">VPDL 시뮬레이션</h1><p class="vq43-subtitle">DL_Simulation v1.13의 Runtime/Tool/Filter/Crop/Fallback 설정을 Web GUI에서 제어합니다.</p></div><div class="vq43-top-actions">${simulationTopActionsHtml()}</div></div>
       ${simulationAgentCardHtml()}
       <div class="vq43-sim-tabs"><button class="${mode==='integrated'?'active':''}" data-vq-action="simulation-mode" data-vq-mode="integrated">Integrated Simulation</button><button class="${mode==='green'?'active':''}" data-vq-action="simulation-mode" data-vq-mode="green">Green Simulation</button><button class="${mode==='blue'?'active':''}" data-vq-action="simulation-mode" data-vq-mode="blue">Blue Crop</button></div>
       <div class="vq43-sim-layout"><main class="vq43-sim-maincol"><section class="vq43-sim-panel"><div class="vq43-sim-panel-head"><div><strong>${modeText}</strong><span>${modeDescription}</span></div><span class="vq43-sim-local-badge">LOCAL PC</span></div>${simulationPositionToolbar()}<div class="vq43-sim-position-list">${simulationPositionRows()}</div></section>${simulationOutputPanel()}${simulationWorkspaceInspectorPanel()}${simulationStatusPanel()}<section class="vq43-sim-runbar"><div><strong>Local VPDL 실행</strong><span>Runtime File Load 완료 후 Simulation Start를 누르면 즉시 실행합니다.</span></div><div><button id="vq43-sim-stop" class="vq43-btn vq43-btn-red" data-vq-action="simulation-stop" ${s.running?'':'disabled'}>Stop</button><button id="vq43-sim-start" class="vq43-btn vq43-btn-blue" data-vq-action="simulation-start" ${connected&&!s.running?'':'disabled'}>Simulation Start</button></div></section>${simulationExecutionLogPanel()}</main>${simulationOptionsPanel()}</div>
