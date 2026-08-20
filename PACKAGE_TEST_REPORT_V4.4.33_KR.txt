@@ -1,0 +1,23 @@
+VisionQC v4.4.33 + Local Agent v0.2.11 패키지 검증
+
+원인
+- Web의 5분 deadline이 정상적으로 열린 선택창까지 강제 cancel했습니다.
+- Agent의 FOS_HIDEMRUPLACES/FOS_HIDEPINNEDPLACES 옵션이 왼쪽 탐색 트리를 숨겼습니다.
+- 강제 cancel이 Agent WARN 로그를 만들어 실제 오류처럼 표시됐습니다.
+
+수정
+- Picker deadline과 5분 강제 cancel 제거
+- Windows 선택/취소까지 status polling 유지
+- HIDEMRU/HIDEPINNED Dialog 실행 옵션 제거
+- Quick Access/내 PC/드라이브 탐색 UI 복원
+- stale ClientData 초기화와 로컬 빠른 시작은 유지
+- 자동 정리 로그를 INFO로 변경
+
+검증
+- Web JavaScript syntax: PASS
+- Web 회귀검사: PASS
+- Agent 정적·구조검사: PASS
+- ZIP 무결성: 패키징 후 확인
+
+실환경 제한
+- Windows IFileDialog와 실제 H: 경로는 사용자 PC에서 최종 확인이 필요합니다.

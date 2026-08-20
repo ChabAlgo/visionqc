@@ -1,3 +1,14 @@
+# VisionQC v4.4.33
+
+## Windows 파일·폴더 선택
+- 정상적으로 열린 IFileDialog를 Web이 5분 뒤 강제로 취소하던 제한시간을 제거했습니다.
+- 선택창은 사용자가 파일/폴더를 선택하거나 Windows 취소 버튼을 누를 때까지 유지됩니다.
+- `FOS_HIDEMRUPLACES`, `FOS_HIDEPINNEDPLACES` 때문에 사라졌던 왼쪽 탐색 트리와 드라이브 탐색 UI를 복원했습니다.
+- stale ClientData 초기화와 안전한 로컬 시작 위치는 유지하되, Dialog 외형과 탐색 방식은 일반 Windows 탐색기 형태를 사용합니다.
+- 이전 선택 작업 자동 정리는 WARN 알림이 아니라 INFO 로그로 남깁니다.
+
+---
+
 # VisionQC v4.4.32
 
 ## Runtime 상태 의미 정리

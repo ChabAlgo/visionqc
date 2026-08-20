@@ -1,7 +1,7 @@
 (() => {
   'use strict';
 
-  const VERSION = '4.4.32';
+  const VERSION = '4.4.33';
   const DEFAULT_POSITION_DEFS = [
     { key:'CA_TOP', name:'CA(TOP)' },
     { key:'AN_TOP', name:'AN(TOP)' },
@@ -23,9 +23,8 @@
   const NG_POSITION_PREFIX = 'ng-position:';
   const IMG_RE = /\.(png|jpe?g|bmp|gif|webp|tif?f)$/i;
   const LOCAL_AGENT_URL = 'http://127.0.0.1:17891';
-  const EXPECTED_AGENT_VERSION = '0.2.10';
-  const PICKER_TIMEOUT_MS = 5 * 60 * 1000;
-  const PICKER_POLL_INTERVAL_MS = 400;
+  const EXPECTED_AGENT_VERSION = '0.2.11';
+  const PICKER_POLL_INTERVAL_MS = 600;
   const RUNTIME_PRELOAD_TIMEOUT_MS = 15 * 60 * 1000;
   const NOTIFICATION_KEY = 'visionqc-v4428-notifications';
   const WORKSPACE_INSPECT_TIMEOUT_MS = 180000;
@@ -2591,7 +2590,6 @@
     const requestId = globalThis.crypto?.randomUUID?.() || `pick-${Date.now().toString(36)}-${Math.random().toString(36).slice(2)}`;
     const pickerKind = path.endsWith('/file') ? 'file' : 'folder';
     const requestBody = { ...(body || {}), kind:pickerKind, clientId:PICKER_CLIENT_ID, requestId };
-    const deadline = Date.now() + PICKER_TIMEOUT_MS;
     const wait = (milliseconds) => new Promise((resolve) => setTimeout(resolve, milliseconds));
     state.simulationPickerPending = true;
     state.simulationPickerRequestId = requestId;
@@ -2630,7 +2628,9 @@
       if (!data?.pending) return data || { ok:false, path:'' };
 
       let consecutiveNetworkFailures = 0;
-      while (Date.now() < deadline) {
+      // Windows 선택창은 사용자가 선택하거나 취소할 때까지 유지합니다. Web이 임의로
+      // 5분 뒤 정상 Dialog를 닫지 않으며, Agent 통신 단절만 별도로 감지합니다.
+      while (true) {
         await wait(PICKER_POLL_INTERVAL_MS);
         try {
           data = await agentFetch('/api/pick/status', {
@@ -2649,12 +2649,6 @@
         return data || { ok:false, path:'' };
       }
 
-      try {
-        await agentFetch('/api/pick/cancel', { method:'POST', body:{ clientId:PICKER_CLIENT_ID, requestId }, timeout:3000 });
-      } catch (_) { }
-      const timeoutError = new Error('Windows 파일 선택 창이 5분 동안 완료되지 않아 취소했습니다. 작업 표시줄에 남은 VisionQC 선택 창이 있는지 확인하세요.');
-      timeoutError.code = 'PICKER_TIMEOUT';
-      throw timeoutError;
     } catch (error) {
       if (error.code === 'AGENT_NETWORK') markSimulationAgentOffline(error.message);
       throw error;

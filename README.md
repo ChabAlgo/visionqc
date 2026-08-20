@@ -1,6 +1,13 @@
-# VisionQC GitHub Pages v4.4.32
+# VisionQC GitHub Pages v4.4.33
 
-GitHub Pages 정적 배포용 VisionQC Web입니다. 실제 VPDL Runtime/GPU 작업은 사용자 PC의 VisionQC Local Agent v0.2.10에서 실행합니다.
+GitHub Pages 정적 배포용 VisionQC Web입니다. 실제 VPDL Runtime/GPU 작업은 사용자 PC의 VisionQC Local Agent v0.2.11에서 실행합니다.
+
+## v4.4.33 핵심
+- 정상적으로 열린 Windows 선택창을 5분 뒤 강제로 취소하던 Web timeout 제거
+- 사용자가 파일/폴더를 선택하거나 Windows 창에서 취소할 때까지 비동기 상태 조회 유지
+- 폴더 선택창의 왼쪽 탐색 트리를 숨기던 Shell 옵션 제거
+- 일반 Windows 탐색기 형태의 Quick Access/드라이브 탐색 영역 복원
+- 이전 선택 작업 자동 정리는 오류 알림이 아닌 INFO 로그로 기록
 
 ## v4.4.32 핵심
 - Agent 연결 시 감지한 설치 DLL 버전과 실제 Simulation Runtime preload 상태를 분리
@@ -113,4 +120,4 @@ Repository root에 이 ZIP의 내용물을 그대로 놓고 GitHub Pages를 `mai
 - `npx playwright install --with-deps chromium`
 - `npm run test:browser` — Chromium FHD 실제 interaction 검사
 
-권장 Local Agent: **v0.2.10**
+권장 Local Agent: **v0.2.11**
