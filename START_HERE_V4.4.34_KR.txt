@@ -1,0 +1,21 @@
+VisionQC v4.4.34 + Local Agent v0.2.12 시작 안내
+
+업데이트
+1. 기존 Agent를 종료합니다.
+2. LocalAgent_v0.2.12에서 BUILD_RELEASE_x64.cmd를 실행합니다.
+3. REGISTER_PROTOCOL.cmd를 다시 실행합니다.
+4. Web v4.4.34을 배포하고 Ctrl+F5로 새로고침합니다.
+5. Web v4.4.34 · Agent v0.2.12 표시를 확인합니다.
+
+파일·폴더 선택
+- 선택창은 일반 Windows 탐색기 형식으로 열립니다.
+- 왼쪽 Quick Access/내 PC/드라이브 영역에서 C:, H: 등을 이동할 수 있습니다.
+- Web은 정상 선택창을 5분 뒤 강제로 닫지 않습니다.
+- 사용자가 Windows 창에서 선택 또는 취소할 때까지 기다립니다.
+- 선택 작업 중 Web의 `선택 중` 표시는 오류가 아니라 Windows 결과를 기다리는 상태입니다.
+
+Runtime
+- Agent 연결 직후 VPDL Runtime은 미로드입니다.
+- Runtime File Load 성공 후에만 VPDL 버전과 Workspace Runtime Structure가 표시됩니다.
+
+Web v4.4.34와 Agent v0.2.12를 반드시 함께 사용하십시오.

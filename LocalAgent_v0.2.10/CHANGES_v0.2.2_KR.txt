@@ -1,8 +1,0 @@
-﻿VisionQC Local Agent v0.2.3
-
-- Runtime Workspace 구조 검사 API 추가: POST /api/workspace/inspect
-- Stream 및 재귀 Tool 목록 반환
-- ToolType(Blue/Red/Green) 반환
-- Green KnownTags, Red KnownClasses, Blue KnownFeatures 자동 조회
-- Web v4.4.22의 Workspace/Stream/Tool 드롭다운과 연동
-- Simulation 엔진 자체는 v0.2.1과 동일

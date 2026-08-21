@@ -1,0 +1,32 @@
+import assert from 'node:assert/strict';
+import { readFileSync } from 'node:fs';
+import { dirname, resolve } from 'node:path';
+import { fileURLToPath } from 'node:url';
+import test from 'node:test';
+
+const root = resolve(dirname(fileURLToPath(import.meta.url)), '..');
+const js = readFileSync(resolve(root, 'visionqc-extension.js'), 'utf8');
+
+test('Image Folder fields retain a normalized list of selected folders', () => {
+  const start = js.indexOf('function imageRootListField');
+  const end = js.indexOf('function simulationDefaults', start);
+  assert.ok(start >= 0 && end > start);
+  const helpers = new Function(`${js.slice(start, end)}; return { imageRootListField, normalizeImageRoots, imageRootsForPosition, setImageRootsForPosition };`)();
+  const position = { greenImageRoot:'C:\\old', greenImageRoots:[] };
+  assert.deepEqual(helpers.imageRootsForPosition(position, 'greenImageRoot'), ['C:\\old']);
+  assert.deepEqual(helpers.setImageRootsForPosition(position, 'greenImageRoot', ['C:\\A', 'C:\\B', 'c:\\a']), ['C:\\A', 'C:\\B']);
+  assert.equal(position.greenImageRoot, 'C:\\A');
+  assert.deepEqual(position.greenImageRoots, ['C:\\A', 'C:\\B']);
+});
+
+test('Image Folder browse requests and Simulation payload include all selected folders', () => {
+  const browse = js.slice(js.indexOf('async function browseSimulationPath'), js.indexOf('function createPositionKey'));
+  const request = js.slice(js.indexOf('function buildSimulationRequest'), js.indexOf('function runtimeSignaturePath'));
+  const field = js.slice(js.indexOf('function simPathField'), js.indexOf('function simulationPositionRows'));
+  assert.match(browse, /multiple:imageFolderList/);
+  assert.match(browse, /setImageRootsForPosition\(currentTarget, field, selectedPaths\)/);
+  assert.match(request, /greenImageRoots:imageRootsForPosition/);
+  assert.match(request, /blueImageRoots:imageRootsForPosition/);
+  assert.match(field, /data-sim-multiple/);
+  assert.match(field, /다중 선택/);
+});

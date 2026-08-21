@@ -8,3 +8,5 @@ Desktop.ini
 /node_modules/
 /playwright-report/
 /test-results/
+/LocalAgent_v*/obj/
+/LocalAgent_v*/.cache/

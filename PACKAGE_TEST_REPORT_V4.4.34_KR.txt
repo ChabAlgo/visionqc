@@ -1,0 +1,15 @@
+VisionQC v4.4.34 + Local Agent v0.2.12 패키지 검증
+
+검증 결과
+- Local Agent x64 Release 빌드: 경고 0, 오류 0
+- Web·Agent 회귀 테스트: 38건 PASS
+- Agent 상태 API: agentVersion 0.2.12 확인
+- 폴더 다중 선택 취소: pending=false, cancelled=true, paths=[] 확인
+
+주요 변경
+- Explorer 선택 완료 신호를 사용해 파일·폴더 선택 후 Web 로딩이 남는 문제를 보완했습니다.
+- Image Folder에서 Ctrl/Shift 다중 폴더 선택을 지원합니다.
+- Green/Blue Simulation은 선택한 모든 Image Folder를 처리하며 출력 경로를 입력 폴더별로 분리합니다.
+
+실환경 확인
+- 새 Agent의 BUILD_RELEASE_x64.cmd와 REGISTER_PROTOCOL.cmd를 실행한 뒤 Web에서 v0.2.12 연결을 확인합니다.

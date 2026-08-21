@@ -1,0 +1,16 @@
+VisionQC v4.4.34 / Local Agent v0.2.12 실환경 확인
+
+1. 기존 Local Agent를 종료합니다.
+2. LocalAgent_v0.2.12 폴더에서 BUILD_RELEASE_x64.cmd를 실행합니다.
+3. REGISTER_PROTOCOL.cmd를 실행한 뒤 Web 화면에서 Agent v0.2.12 연결 상태를 확인합니다.
+4. GitHub Pages를 강력 새로고침(Ctrl+F5)합니다.
+5. Image Folder 선택을 누르고 Ctrl 또는 Shift로 여러 폴더를 선택합니다.
+6. 선택 완료 뒤 Image Folder 입력칸에 선택 경로들이 표시되고 Green/Blue Simulation이 시작되는지 확인합니다.
+7. 동일 이름의 이미지가 여러 폴더에 있을 때 출력물이 입력 폴더별 경로로 나뉘는지 확인합니다.
+8. 선택 창에서 취소를 누른 뒤 Web의 로딩 상태가 즉시 해제되는지 확인합니다.
+9. Workspace, CSV, Fallback Image 선택도 한 번씩 열어 정상 종료되는지 확인합니다.
+
+자동 검사 범위
+- Web·Agent 회귀 테스트 38건 PASS
+- Local Agent x64 Release 빌드 경고 0, 오류 0
+- 실제 Windows Explorer 선택 완료와 Cognex VPDL 처리 결과는 위 순서로 최종 확인합니다.

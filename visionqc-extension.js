@@ -1,7 +1,7 @@
 (() => {
   'use strict';
 
-  const VERSION = '4.4.33';
+  const VERSION = '4.4.34';
   const DEFAULT_POSITION_DEFS = [
     { key:'CA_TOP', name:'CA(TOP)' },
     { key:'AN_TOP', name:'AN(TOP)' },
@@ -23,7 +23,7 @@
   const NG_POSITION_PREFIX = 'ng-position:';
   const IMG_RE = /\.(png|jpe?g|bmp|gif|webp|tif?f)$/i;
   const LOCAL_AGENT_URL = 'http://127.0.0.1:17891';
-  const EXPECTED_AGENT_VERSION = '0.2.11';
+  const EXPECTED_AGENT_VERSION = '0.2.12';
   const PICKER_POLL_INTERVAL_MS = 600;
   const RUNTIME_PRELOAD_TIMEOUT_MS = 15 * 60 * 1000;
   const NOTIFICATION_KEY = 'visionqc-v4428-notifications';
@@ -1955,13 +1955,44 @@
     };
   }
 
+  function imageRootListField(field) {
+    if (field === 'greenImageRoot') return 'greenImageRoots';
+    if (field === 'blueImageRoot') return 'blueImageRoots';
+    return '';
+  }
+
+  function normalizeImageRoots(value, legacyValue='') {
+    const source = Array.isArray(value) && value.length ? value : [Array.isArray(value) ? legacyValue : value || legacyValue];
+    const seen = new Set();
+    return source.flatMap(item => String(item || '').split(';')).map(item => item.trim()).filter(item => {
+      const key = item.toLowerCase();
+      if (!item || seen.has(key)) return false;
+      seen.add(key);
+      return true;
+    });
+  }
+
+  function imageRootsForPosition(position, field) {
+    const listField = imageRootListField(field);
+    if (!position || !listField) return [];
+    return normalizeImageRoots(position[listField], position[field] || position.imageRoot || '');
+  }
+
+  function setImageRootsForPosition(position, field, paths) {
+    const listField = imageRootListField(field);
+    const normalized = normalizeImageRoots(paths, '');
+    if (position && listField) position[listField] = normalized;
+    if (position) position[field] = normalized[0] || '';
+    return normalized;
+  }
+
   function simulationDefaults() {
     const positions = {};
     simulationPositionDefs().forEach(({key,label}) => {
       positions[key] = {
         key, displayName:label,
         greenWorkspacePath:'', blueWorkspacePath:'',
-        greenImageRoot:'', blueImageRoot:'',
+        greenImageRoot:'', blueImageRoot:'', greenImageRoots:[], blueImageRoots:[],
         greenStreamName:'기본값', blueStreamName:'기본값', blueToolName:'Locate',
         greenWorkspaceInfo:null, blueWorkspaceInfo:null,
         greenKeyword:'', integratedKeyword:''
@@ -2013,13 +2044,15 @@
     const currentDefs = simulationPositionDefs();
     currentDefs.forEach(({key,label}) => {
       const p = form.positions[key] || {};
+      const greenImageRoots = normalizeImageRoots(p.greenImageRoots, p.greenImageRoot || p.imageRoot || '');
+      const blueImageRoots = normalizeImageRoots(p.blueImageRoots, p.blueImageRoot || p.imageRoot || '');
       Object.assign(p, {
         key,
         displayName:label,
         greenWorkspacePath:String(p.greenWorkspacePath || p.workspacePath || ''),
         blueWorkspacePath:String(p.blueWorkspacePath || p.workspacePath || ''),
-        greenImageRoot:String(p.greenImageRoot || p.imageRoot || ''),
-        blueImageRoot:String(p.blueImageRoot || p.imageRoot || ''),
+        greenImageRoot:greenImageRoots[0] || '', blueImageRoot:blueImageRoots[0] || '',
+        greenImageRoots, blueImageRoots,
         greenStreamName:String(p.greenStreamName || p.streamName || '기본값'),
         blueStreamName:String(p.blueStreamName || p.streamName || '기본값'),
         blueToolName:String(p.blueToolName || 'Locate'),
@@ -2223,7 +2256,8 @@
     const target = simulationScopeObject(scope, key);
     if (!target) return;
     const value = input.type === 'checkbox' ? input.checked : input.type === 'number' ? Number(input.value) : input.value;
-    target[field] = value;
+    if (scope === 'position' && imageRootListField(field)) setImageRootsForPosition(target, field, value);
+    else target[field] = value;
     if (field === 'printEvery') {
       if (!state.simulationProgress?.running) state.simulationProgress.batchSize = Math.max(1, Number(value) || 1);
       const batch = $('#vq43-sim-batch');
@@ -2668,7 +2702,8 @@
     const fileType = control.dataset.simFileType || (kind === 'file' ? 'workspace' : 'folder');
     const target = simulationScopeObject(scope, key);
     if (!target || !field) return;
-    const current = target[field] || '';
+    const imageFolderList = kind === 'folder' && scope === 'position' && !!imageRootListField(field);
+    const current = imageFolderList ? imageRootsForPosition(target, field)[0] || '' : target[field] || '';
     const workspaceKind = fileType === 'workspace' && scope === 'position' && key
       ? (field.toLowerCase().startsWith('blue') ? 'blue' : 'green')
       : '';
@@ -2680,7 +2715,7 @@
       control.textContent = '여는 중...';
     }
     try {
-      const data = await requestSimulationPicker(kind === 'file' ? '/api/pick/file' : '/api/pick/folder', { initialPath:current, fileType });
+      const data = await requestSimulationPicker(kind === 'file' ? '/api/pick/file' : '/api/pick/folder', { initialPath:current, fileType, multiple:imageFolderList });
       const selectedPaths = Array.isArray(data?.paths) ? data.paths.filter(Boolean) : (data?.path ? [data.path] : []);
       if (!data.ok || selectedPaths.length === 0) {
         if (workspaceKind) clearWorkspaceInspectStatus(key, workspaceKind, true);
@@ -2689,7 +2724,8 @@
       }
       const currentTarget = simulationScopeObject(scope, key);
       if (!currentTarget) return;
-      currentTarget[field] = selectedPaths[0];
+      if (imageFolderList) setImageRootsForPosition(currentTarget, field, selectedPaths);
+      else currentTarget[field] = selectedPaths[0];
       if (workspaceKind === 'green') currentTarget.greenWorkspaceInfo = null;
       else if (workspaceKind === 'blue') currentTarget.blueWorkspaceInfo = null;
       persistSimulationForm();
@@ -2699,8 +2735,8 @@
       } else {
         const selector = `input[data-sim-scope="${CSS.escape(scope)}"][data-sim-field="${CSS.escape(field)}"]${key?`[data-sim-key="${CSS.escape(key)}"]`:''}`;
         const input = $(selector, $('#vq43-page'));
-        if (input) input.value = selectedPaths[0];
-        if (selectedPaths.length > 1) showToast(`${selectedPaths.length}개 폴더가 선택되었습니다. 현재 입력에는 첫 번째 경로를 사용합니다.`);
+        if (input) input.value = imageFolderList ? selectedPaths.join('; ') : selectedPaths[0];
+        if (imageFolderList && selectedPaths.length > 1) showToast(`Image Folder ${selectedPaths.length}개를 선택했습니다. 순서대로 모두 Simulation에 사용합니다.`);
       }
     } catch (error) {
       if (workspaceKind) clearWorkspaceInspectStatus(key, workspaceKind, true);
@@ -2996,6 +3032,7 @@
           key:p.key, displayName:p.displayName, enabled:true,
           greenWorkspacePath:p.greenWorkspacePath, blueWorkspacePath:p.blueWorkspacePath,
           greenImageRoot:p.greenImageRoot, blueImageRoot:p.blueImageRoot,
+          greenImageRoots:imageRootsForPosition(p, 'greenImageRoot'), blueImageRoots:imageRootsForPosition(p, 'blueImageRoot'),
           greenStreamName:p.greenStreamName, blueStreamName:p.blueStreamName, blueToolName:p.blueToolName,
           greenKeyword:p.greenKeyword, integratedKeyword:p.integratedKeyword
         };
@@ -3618,12 +3655,16 @@
 
   function simPathField(scope, key, field, title, placeholder, kind='file', fileType='workspace', disabled=false) {
     const target = simulationScopeObject(scope, key);
-    const value = target?.[field] || '';
+    const multipleImageFolders = kind === 'folder' && scope === 'position' && !!imageRootListField(field);
+    const imageRoots = multipleImageFolders ? imageRootsForPosition(target, field) : [];
+    const value = multipleImageFolders ? imageRoots.join('; ') : target?.[field] || '';
     const workspaceKind = fileType === 'workspace' && scope === 'position' && key ? (field.toLowerCase().startsWith('blue') ? 'blue' : 'green') : '';
     const status = workspaceKind ? workspaceInspectStatusFor(key, workspaceKind, value) : null;
     const busy = !!status && ['picking','queued','reading'].includes(status.phase);
     const buttonText = status?.phase === 'picking' ? '선택 중' : status?.phase === 'queued' ? '대기 중' : status?.phase === 'reading' ? '읽는 중' : value ? '변경' : '선택';
-    return `<div class="vq43-sim-path ${disabled?'disabled':''}"><span>${escapeHtml(title)}</span><div><input data-sim-scope="${scope}" data-sim-field="${field}" data-vq-base-disabled="${disabled?'1':'0'}" ${key?`data-sim-key="${key}"`:''} value="${escapeHtml(value)}" placeholder="${escapeHtml(placeholder)}" ${disabled?'disabled':''}><button type="button" data-vq-action="simulation-browse" data-sim-scope="${scope}" data-sim-kind="${kind}" data-sim-file-type="${fileType}" data-sim-field="${field}" data-vq-base-disabled="${disabled?'1':'0'}" ${key?`data-sim-key="${key}"`:''} data-vq-workspace-busy="${busy?'1':'0'}" ${disabled||busy?'disabled':''} aria-busy="${busy?'true':'false'}">${escapeHtml(buttonText)}</button></div></div>`;
+    const displayTitle = multipleImageFolders ? `${title} (다중 선택)` : title;
+    const displayPlaceholder = multipleImageFolders ? `${placeholder} — Ctrl/Shift로 여러 폴더 선택` : placeholder;
+    return `<div class="vq43-sim-path ${disabled?'disabled':''}"><span>${escapeHtml(displayTitle)}</span><div><input data-sim-scope="${scope}" data-sim-field="${field}" data-vq-base-disabled="${disabled?'1':'0'}" ${key?`data-sim-key="${key}"`:''} value="${escapeHtml(value)}" placeholder="${escapeHtml(displayPlaceholder)}" ${disabled?'disabled':''}><button type="button" data-vq-action="simulation-browse" data-sim-scope="${scope}" data-sim-kind="${kind}" data-sim-file-type="${fileType}" data-sim-multiple="${multipleImageFolders?'1':'0'}" data-sim-field="${field}" data-vq-base-disabled="${disabled?'1':'0'}" ${key?`data-sim-key="${key}"`:''} data-vq-workspace-busy="${busy?'1':'0'}" ${disabled||busy?'disabled':''} aria-busy="${busy?'true':'false'}">${escapeHtml(buttonText)}</button></div></div>`;
   }
 
   function simulationPositionRows() {

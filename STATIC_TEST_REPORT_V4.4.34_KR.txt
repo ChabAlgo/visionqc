@@ -1,0 +1,7 @@
+VisionQC v4.4.34 / Agent v0.2.12 검사 결과
+
+- npm test: 38건 PASS
+- Agent x64 Release 빌드: 경고 0, 오류 0
+- 다중 폴더 선택 HTTP 요청·경로 배열·Simulation DTO 전달: PASS
+- Explorer 선택 취소 완료 응답: PASS
+- Web/Agent 버전 일치 및 캐시 키 갱신: PASS

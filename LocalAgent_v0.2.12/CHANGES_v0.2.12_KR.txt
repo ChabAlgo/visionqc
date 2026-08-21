@@ -1,0 +1,14 @@
+VisionQC Local Agent v0.2.12 변경사항
+
+1. 파일·폴더 선택 완료 안정화
+- Explorer 대화상자의 실제 UI 작업 완료 신호를 기다려 선택 후 Web 로딩이 남는 문제를 보완했습니다.
+- COM IFileOpenDialog 상속 메서드의 vtable 선언을 표준 형태로 정리했습니다.
+- 선택 취소 요청은 Explorer 종료 지연과 무관하게 즉시 완료 결과를 반환합니다.
+
+2. Image Folder 다중 선택
+- Ctrl/Shift로 여러 Image Folder를 동시에 고를 수 있습니다.
+- 선택한 모든 폴더를 Agent와 Green/Blue Simulation에 전달합니다.
+- 여러 입력 폴더의 동일 파일명 충돌을 막기 위해 출력 경로를 입력 폴더별로 구분합니다.
+
+3. 정리
+- 이전 LocalAgent_v0.2.10, 중간 obj 파일, 과거 정적 테스트 보고서와 누적 CSS를 정리했습니다.

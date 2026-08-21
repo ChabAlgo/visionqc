@@ -1,3 +1,15 @@
+# VisionQC v4.4.34
+
+## 파일·폴더 선택 및 다중 Image Folder
+
+- Explorer 선택 작업의 완료 신호를 사용해 파일·폴더 선택 뒤 Web 로딩이 남는 문제를 보완했습니다.
+- 취소 요청은 Agent에서 즉시 완료 상태로 반환됩니다.
+- Image Folder는 Ctrl/Shift 다중 선택을 지원하며 모든 선택 경로가 Simulation에 전달됩니다.
+- 여러 입력 폴더의 출력 경로를 분리해 파일명 충돌을 방지합니다.
+- 이전 Local Agent, 빌드 중간 파일, 과거 보고서와 누적 CSS를 정리했습니다.
+
+---
+
 # VisionQC v4.4.33
 
 ## Windows 파일·폴더 선택
