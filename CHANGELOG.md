@@ -1,3 +1,12 @@
+# VisionQC v4.4.38
+
+## Chrome 권한 요청 동작
+
+- 자동 2초 상태 감시와 별도로, 사용자가 `Agent 실행`을 클릭하면 즉시 Chrome Loopback Network 권한 요청을 실행합니다.
+- Agent가 이미 실행 중인 경우에도 같은 버튼으로 Chrome 연결 권한을 다시 요청할 수 있습니다.
+
+---
+
 # VisionQC v4.4.37
 
 ## Chrome 권한 진단

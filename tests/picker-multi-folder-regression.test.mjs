@@ -56,3 +56,9 @@ test('Chrome loopback permission denial has a clear recovery message', () => {
   assert.match(helper, /permission\.state === 'prompt'/);
   assert.match(poll, /await localAgentOfflineMessage\(\)/);
 });
+
+test('Agent Run click requests Chrome loopback access before launching the protocol', () => {
+  const launch = js.slice(js.indexOf('function launchSimulationAgent'), js.indexOf('async function stopSimulationAgent'));
+  assert.match(launch, /pollSimulationAgentStatus\(\);/);
+  assert.ok(launch.indexOf('pollSimulationAgentStatus();') < launch.indexOf("window.location.href = 'visionqc-agent://start'"));
+});

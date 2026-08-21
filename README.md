@@ -1,6 +1,10 @@
-# VisionQC GitHub Pages v4.4.37
+# VisionQC GitHub Pages v4.4.38
 
 GitHub Pages 정적 배포용 VisionQC Web입니다. 실제 VPDL Runtime/GPU 작업은 사용자 PC의 VisionQC Local Agent v0.2.12에서 실행합니다.
+
+## v4.4.38 핵심
+
+- `Agent 실행` 클릭을 Chrome의 사용자 동작으로 사용해 Loopback Network 권한 요청을 즉시 보냅니다. Local Agent가 이미 실행 중이어도 이 버튼으로 연결 권한을 다시 요청할 수 있습니다.
 
 ## v4.4.37 핵심
 

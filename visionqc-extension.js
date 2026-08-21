@@ -1,7 +1,7 @@
 (() => {
   'use strict';
 
-  const VERSION = '4.4.37';
+  const VERSION = '4.4.38';
   const DEFAULT_POSITION_DEFS = [
     { key:'CA_TOP', name:'CA(TOP)' },
     { key:'AN_TOP', name:'AN(TOP)' },
@@ -2534,7 +2534,10 @@
   }
 
   function launchSimulationAgent() {
-    showToast('Local Agent 실행 요청을 보냈습니다. Chrome 확인창이 나오면 열기를 허용하세요.');
+    // Chrome loopback-network 권한은 사용자 동작에서 요청해야 안내창이 안정적으로 표시됩니다.
+    // Agent가 이미 실행 중인 경우에도 이 클릭으로 연결 권한을 다시 요청할 수 있습니다.
+    pollSimulationAgentStatus();
+    showToast('Local Agent 실행 및 Chrome 로컬 연결 권한을 요청합니다. Chrome 확인창이 나오면 허용하세요.');
     window.location.href = 'visionqc-agent://start';
     setTimeout(pollSimulationAgentStatus, 800);
     setTimeout(pollSimulationAgentStatus, 2200);
