@@ -1,7 +1,7 @@
 (() => {
   'use strict';
 
-  const VERSION = '4.4.34';
+  const VERSION = '4.4.35';
   const DEFAULT_POSITION_DEFS = [
     { key:'CA_TOP', name:'CA(TOP)' },
     { key:'AN_TOP', name:'AN(TOP)' },
@@ -2397,9 +2397,9 @@
       const requestOptions = {
         method: options.method || 'GET', cache:'no-store',
         mode:'cors', credentials:'omit',
-        // Chrome Local Network Access에서 공개 HTTPS 페이지가 loopback Agent로
-        // 통신한다는 의도를 명시합니다. 미지원 브라우저는 알 수 없는 옵션을 무시합니다.
-        targetAddressSpace:'loopback',
+        // Chrome Local Network Access의 표준 loopback 주소 공간 값은 local입니다.
+        // loopback은 유효한 Fetch 값이 아니어서 Chrome에서는 요청 자체가 시작되지 않습니다.
+        targetAddressSpace:'local',
         headers: options.body ? { 'Content-Type':'text/plain;charset=UTF-8' } : undefined,
         body: options.body ? JSON.stringify(options.body) : undefined,
         signal: controller.signal
@@ -2730,6 +2730,10 @@
       else if (workspaceKind === 'blue') currentTarget.blueWorkspaceInfo = null;
       persistSimulationForm();
       if (workspaceKind) {
+        // Runtime File Load 전에도 선택한 경로를 즉시 input에 보입니다.
+        const selector = `input[data-sim-scope="${CSS.escape(scope)}"][data-sim-field="${CSS.escape(field)}"]${key?`[data-sim-key="${CSS.escape(key)}"]`:''}`;
+        const input = $(selector, $('#vq43-page'));
+        if (input) input.value = selectedPaths[0];
         clearWorkspaceInspectStatus(key, workspaceKind, false);
         refreshWorkspaceInspectionUi(key, workspaceKind);
       } else {
@@ -3676,12 +3680,12 @@
       const p = form.positions[key], enabled = active.includes(key);
       const head = `<div class="vq43-sim-position-ident"><label class="vq43-sim-position-enable"><input type="checkbox" data-sim-active-position="${key}" data-sim-mode="${mode}" ${enabled?'checked':''}><strong>${escapeHtml(label)}</strong></label><button class="vq43-sim-remove-position" data-vq-action="simulation-remove-position" data-sim-key="${key}" title="Position 전체 제거">×</button></div>`;
       if (mode === 'green') {
-        return `<div class="vq43-sim-position-row-new">${head}${simPathField('position',key,'greenWorkspacePath','Workspace','Green Runtime Workspace','file','workspace')}${simPathField('position',key,'greenImageRoot','Image Folder','Green 이미지 폴더','folder','folder',keywordMode)}${workspaceSelectHtml(key,'green','greenStreamName',p.greenStreamName,'Green')}${keywordMode?`<label class="vq43-sim-compact-field"><span>Keyword</span><input data-sim-scope="position" data-sim-field="greenKeyword" data-sim-key="${key}" value="${escapeHtml(p.greenKeyword)}"></label>`:''}${workspaceInfoSummary(key,'green')}</div>`;
+        return `<div class="vq43-sim-position-row-new">${head}${simPathField('position',key,'greenWorkspacePath','Workspace','Green Runtime Workspace','file','workspace')}${simPathField('position',key,'greenImageRoot','Image Folder','Green 이미지 폴더','folder','folder')}${workspaceSelectHtml(key,'green','greenStreamName',p.greenStreamName,'Green')}${keywordMode?`<label class="vq43-sim-compact-field"><span>Keyword</span><input data-sim-scope="position" data-sim-field="greenKeyword" data-sim-key="${key}" value="${escapeHtml(p.greenKeyword)}"></label>`:''}${workspaceInfoSummary(key,'green')}</div>`;
       }
       if (mode === 'blue') {
         return `<div class="vq43-sim-position-row-new">${head}${simPathField('position',key,'blueWorkspacePath','Workspace','Blue Runtime Workspace','file','workspace')}${simPathField('position',key,'blueImageRoot','Image Folder','Blue 원본 이미지 폴더','folder','folder')}${workspaceSelectHtml(key,'blue','blueStreamName',p.blueStreamName,'Blue')}${workspaceSelectHtml(key,'blue','blueToolName',p.blueToolName,'Blue')}${workspaceInfoSummary(key,'blue')}</div>`;
       }
-      return `<div class="vq43-sim-position-row-new integrated">${head}${simPathField('position',key,'greenWorkspacePath','Green Workspace','Green Runtime Workspace','file','workspace')}${simPathField('position',key,'blueWorkspacePath','Blue Workspace','Blue Runtime Workspace','file','workspace')}${simPathField('position',key,'blueImageRoot','Image Folder','Blue Crop와 공유되는 원본 이미지 폴더','folder','folder',keywordMode)}${workspaceSelectHtml(key,'green','greenStreamName',p.greenStreamName,'Green')}${workspaceSelectHtml(key,'blue','blueStreamName',p.blueStreamName,'Blue')}${workspaceSelectHtml(key,'blue','blueToolName',p.blueToolName,'Blue')}${keywordMode?`<label class="vq43-sim-compact-field"><span>Keyword</span><input data-sim-scope="position" data-sim-field="integratedKeyword" data-sim-key="${key}" value="${escapeHtml(p.integratedKeyword)}"></label>`:''}<div class="vq43-workspace-summary-pair">${workspaceInfoSummary(key,'green')}${workspaceInfoSummary(key,'blue')}</div></div>`;
+      return `<div class="vq43-sim-position-row-new integrated">${head}${simPathField('position',key,'greenWorkspacePath','Green Workspace','Green Runtime Workspace','file','workspace')}${simPathField('position',key,'blueWorkspacePath','Blue Workspace','Blue Runtime Workspace','file','workspace')}${simPathField('position',key,'blueImageRoot','Image Folder','Blue Crop와 공유되는 원본 이미지 폴더','folder','folder')}${workspaceSelectHtml(key,'green','greenStreamName',p.greenStreamName,'Green')}${workspaceSelectHtml(key,'blue','blueStreamName',p.blueStreamName,'Blue')}${workspaceSelectHtml(key,'blue','blueToolName',p.blueToolName,'Blue')}${keywordMode?`<label class="vq43-sim-compact-field"><span>Keyword</span><input data-sim-scope="position" data-sim-field="integratedKeyword" data-sim-key="${key}" value="${escapeHtml(p.integratedKeyword)}"></label>`:''}<div class="vq43-workspace-summary-pair">${workspaceInfoSummary(key,'green')}${workspaceInfoSummary(key,'blue')}</div></div>`;
     }).join('');
   }
 

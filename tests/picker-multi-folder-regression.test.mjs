@@ -30,3 +30,20 @@ test('Image Folder browse requests and Simulation payload include all selected f
   assert.match(field, /data-sim-multiple/);
   assert.match(field, /다중 선택/);
 });
+
+test('Keyword mode keeps Image Folder multi-selection available', () => {
+  const rows = js.slice(js.indexOf('function simulationPositionRows'), js.indexOf('function simulationPositionToolbar'));
+  assert.doesNotMatch(rows, /greenImageRoot[^\n]*'folder','folder',keywordMode/);
+  assert.doesNotMatch(rows, /blueImageRoot[^\n]*'folder','folder',keywordMode/);
+});
+
+test('Workspace selection updates its path input without a second UI event', () => {
+  const browse = js.slice(js.indexOf('async function browseSimulationPath'), js.indexOf('function createPositionKey'));
+  assert.match(browse, /if \(workspaceKind\) \{[\s\S]*?if \(input\) input\.value = selectedPaths\[0\];[\s\S]*?refreshWorkspaceInspectionUi/);
+});
+
+test('Chrome Local Network Access uses the valid local address space value', () => {
+  const fetcher = js.slice(js.indexOf('async function agentFetch'), js.indexOf('async function pollSimulationAgentStatus'));
+  assert.match(fetcher, /targetAddressSpace:'local'/);
+  assert.doesNotMatch(fetcher, /targetAddressSpace:'loopback'/);
+});

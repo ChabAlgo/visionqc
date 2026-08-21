@@ -1,6 +1,13 @@
-# VisionQC GitHub Pages v4.4.34
+# VisionQC GitHub Pages v4.4.35
 
 GitHub Pages 정적 배포용 VisionQC Web입니다. 실제 VPDL Runtime/GPU 작업은 사용자 PC의 VisionQC Local Agent v0.2.12에서 실행합니다.
+
+## v4.4.35 핵심
+
+- Chrome의 Local Network Access 요청에 유효하지 않은 `loopback` 값을 전달하던 문제를 표준 `local` 값으로 수정했습니다. Chrome에서도 Local Agent 파일·폴더 선택 요청이 정상 전송됩니다.
+- Workspace를 선택하면 다른 체크박스나 입력 이벤트를 기다리지 않고, 선택한 경로가 즉시 Position 입력칸에 표시됩니다.
+- Keyword Mode에서도 Position별 Image Folder 선택 버튼을 비활성화하지 않아 Ctrl/Shift 다중 폴더 선택을 계속 사용할 수 있습니다.
+- Local Agent의 `IFileOpenDialog` 기반 Explorer 선택기를 유지하여 왼쪽 탐색창(홈/드라이브/빠른 액세스)이 있는 Windows 표준 선택 화면을 사용합니다.
 
 ## v4.4.34 핵심
 
