@@ -8,7 +8,7 @@ async function openSimulation(page) {
   await expect(page.locator('.vq43-sim-options-scroll')).toBeVisible();
 }
 
-test.describe('VisionQC v4.4.35 FHD interaction regression', () => {
+test.describe('VisionQC v4.4.37 FHD interaction regression', () => {
   test('Tool add/remove preserves all edited runtime parameters', async ({ page }) => {
     await openSimulation(page);
     const progress = page.locator('input[data-sim-scope="green"][data-sim-field="printEvery"]');

@@ -42,8 +42,17 @@ test('Workspace selection updates its path input without a second UI event', () 
   assert.match(browse, /if \(workspaceKind\) \{[\s\S]*?if \(input\) input\.value = selectedPaths\[0\];[\s\S]*?refreshWorkspaceInspectionUi/);
 });
 
-test('Chrome Local Network Access uses the valid local address space value', () => {
+test('Chrome uses the loopback address space that matches the Local Agent listener', () => {
   const fetcher = js.slice(js.indexOf('async function agentFetch'), js.indexOf('async function pollSimulationAgentStatus'));
-  assert.match(fetcher, /targetAddressSpace:'local'/);
-  assert.doesNotMatch(fetcher, /targetAddressSpace:'loopback'/);
+  assert.match(fetcher, /targetAddressSpace:'loopback'/);
+  assert.doesNotMatch(fetcher, /targetAddressSpace:'local'/);
+});
+
+test('Chrome loopback permission denial has a clear recovery message', () => {
+  const helper = js.slice(js.indexOf('async function localAgentOfflineMessage'), js.indexOf('async function pollSimulationAgentStatus'));
+  const poll = js.slice(js.indexOf('async function pollSimulationAgentStatus'), js.indexOf('function startSimulationAgentMonitor'));
+  assert.match(helper, /name:'loopback-network'/);
+  assert.match(helper, /permission\.state === 'denied'/);
+  assert.match(helper, /permission\.state === 'prompt'/);
+  assert.match(poll, /await localAgentOfflineMessage\(\)/);
 });

@@ -1,8 +1,26 @@
+# VisionQC v4.4.37
+
+## Chrome 권한 진단
+
+- Chrome 145+ Loopback Network 권한의 `prompt`/`denied` 상태를 감지해 Local Agent 카드에 복구 방법을 표시합니다.
+- 사용자 허용이 필요한 Chrome 보안 권한은 자동 우회하지 않으며, 권한 허용 뒤 기존 2초 상태 감시가 자동으로 Agent를 연결합니다.
+
+---
+
+# VisionQC v4.4.36
+
+## Chrome Loopback 연결 수정
+
+- Chrome 실측에서 `targetAddressSpace: local` 요청이 127.0.0.1(`loopback`)과 불일치하여 CORS 차단되는 것을 확인했습니다.
+- Local Agent가 바인딩된 127.0.0.1과 동일한 `targetAddressSpace: loopback`을 사용하도록 수정했습니다.
+
+---
+
 # VisionQC v4.4.35
 
 ## Chrome 연결 및 Simulation 경로 선택
 
-- Chrome Local Network Access Fetch 옵션의 잘못된 `loopback` 주소 공간 값을 표준 `local`로 수정했습니다. Edge와 Chrome 모두 Local Agent 파일·폴더 선택 요청을 전송합니다.
+- Chrome Local Network Access Fetch 옵션을 수정했습니다. 후속 v4.4.36에서 Local Agent loopback과 정확히 일치하도록 보정했습니다.
 - Workspace 선택 직후 선택 경로가 Position 입력칸에 즉시 반영되도록 수정했습니다.
 - Keyword Mode에서도 Position별 Image Folder 선택을 유지하여 Ctrl/Shift 다중 폴더 선택이 가능합니다.
 - 파일·폴더 선택은 왼쪽 탐색창이 포함된 Windows 표준 Explorer `IFileOpenDialog`를 계속 사용합니다.

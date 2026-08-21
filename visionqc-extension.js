@@ -1,7 +1,7 @@
 (() => {
   'use strict';
 
-  const VERSION = '4.4.35';
+  const VERSION = '4.4.37';
   const DEFAULT_POSITION_DEFS = [
     { key:'CA_TOP', name:'CA(TOP)' },
     { key:'AN_TOP', name:'AN(TOP)' },
@@ -2397,9 +2397,9 @@
       const requestOptions = {
         method: options.method || 'GET', cache:'no-store',
         mode:'cors', credentials:'omit',
-        // Chrome Local Network Access의 표준 loopback 주소 공간 값은 local입니다.
-        // loopback은 유효한 Fetch 값이 아니어서 Chrome에서는 요청 자체가 시작되지 않습니다.
-        targetAddressSpace:'local',
+        // Agent가 127.0.0.1에만 바인딩되므로 Chrome에 실제 대상 주소 공간을 정확히 알립니다.
+        // local을 쓰면 Chrome이 loopback 대상과 불일치로 CORS 요청을 차단합니다.
+        targetAddressSpace:'loopback',
         headers: options.body ? { 'Content-Type':'text/plain;charset=UTF-8' } : undefined,
         body: options.body ? JSON.stringify(options.body) : undefined,
         signal: controller.signal
@@ -2441,6 +2441,22 @@
     clearSimulationLoadedWorkspaces({ render:true });
     closeSimulationEvents();
     if (state.page === 'simulation') updateSimulationAgentDom();
+  }
+
+  async function localAgentOfflineMessage() {
+    // Chrome 145+는 public HTTPS -> 127.0.0.1 접근에 loopback-network 권한을 요구합니다.
+    // 지원하지 않는 브라우저는 기존 Agent 중지 메시지를 그대로 사용합니다.
+    if (location.protocol !== 'https:' || !navigator.permissions?.query) return 'Local Agent가 중지되었습니다.';
+    try {
+      const permission = await navigator.permissions.query({ name:'loopback-network' });
+      if (permission.state === 'denied') {
+        return 'Chrome의 로컬 네트워크(이 기기의 앱) 권한이 차단되었습니다. 주소창 왼쪽 사이트 설정에서 허용한 뒤 이 페이지를 새로고침하세요.';
+      }
+      if (permission.state === 'prompt') {
+        return 'Chrome이 Local Agent(127.0.0.1) 연결 권한을 요청합니다. 브라우저 권한 안내가 보이면 허용하세요.';
+      }
+    } catch (_) { }
+    return 'Local Agent가 중지되었습니다.';
   }
 
   async function pollSimulationAgentStatus() {
@@ -2499,7 +2515,7 @@
     } catch (_) {
       state.simulationAgentPollFailures += 1;
       if (!wasConnected || state.simulationAgentPollFailures >= 2) {
-        markSimulationAgentOffline('Local Agent가 중지되었습니다.');
+        markSimulationAgentOffline(await localAgentOfflineMessage());
       }
     } finally {
       state.simulationAgentPollInFlight = false;
