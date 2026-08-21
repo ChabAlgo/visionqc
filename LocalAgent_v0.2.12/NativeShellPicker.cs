@@ -21,6 +21,12 @@ namespace VisionQC.LocalAgent
         private static readonly object ActiveDialogSync = new object();
         private static IFileDialog _activeDialog;
         private static string _activeDialogTitle = "";
+        // 요청 순간 전면에 있던 브라우저를 Explorer 대화상자의 owner로 사용합니다.
+        // 임시 Agent 창을 parent로 쓰면 Chromium이 다시 전면을 가져갈 수 있습니다.
+        private static IntPtr _preferredParentWindow;
+        // Shell의 네트워크/가상 드라이브 MRU는 초기화하되, 이 Agent 세션에서
+        // 마지막으로 성공 선택한 안전한 로컬 폴더는 다음 선택의 시작점으로 기억합니다.
+        private static string _lastSelectedFolder = "";
         private static bool _cancelRequested;
         // IFileDialog COM 객체는 생성한 STA에서만 안전하게 닫을 수 있습니다.
         // HTTP 처리 스레드에서 Close를 호출하면 Explorer 창은 남고 선택 작업이
@@ -185,6 +191,17 @@ namespace VisionQC.LocalAgent
         [return: MarshalAs(UnmanagedType.Bool)]
         private static extern bool SetForegroundWindow(IntPtr hWnd);
 
+        [DllImport("user32.dll")]
+        private static extern IntPtr GetForegroundWindow();
+
+        [DllImport("user32.dll")]
+        [return: MarshalAs(UnmanagedType.Bool)]
+        private static extern bool IsWindow(IntPtr hWnd);
+
+        [DllImport("user32.dll")]
+        [return: MarshalAs(UnmanagedType.Bool)]
+        private static extern bool IsWindowVisible(IntPtr hWnd);
+
         [DllImport("user32.dll", CharSet = CharSet.Unicode, SetLastError = true)]
         private static extern IntPtr FindWindow(string lpClassName, string lpWindowName);
 
@@ -215,12 +232,15 @@ namespace VisionQC.LocalAgent
 
         internal static void PrepareDialogRequest()
         {
+            IntPtr parentWindow = IntPtr.Zero;
+            try { parentWindow = GetForegroundWindow(); } catch { }
             lock (ActiveDialogSync)
             {
                 _activeDialog = null;
                 _activeDialogTitle = "";
                 _cancelRequested = false;
                 _dialogThreadInvoker = null;
+                _preferredParentWindow = parentWindow;
             }
         }
 
@@ -307,6 +327,7 @@ namespace VisionQC.LocalAgent
                 _activeDialogTitle = "";
                 _cancelRequested = false;
                 _dialogThreadInvoker = null;
+                _preferredParentWindow = IntPtr.Zero;
             }
         }
 
@@ -342,7 +363,7 @@ namespace VisionQC.LocalAgent
                     if (allowMultiple) options |= FileOpenOptions.FOS_ALLOWMULTISELECT;
                     dialog.SetOptions(options);
 
-                    string initialFolder = FastLocalInitialFolder(initialPath, false) ?? SafeLocalInitialFolder();
+                    string initialFolder = PreferredInitialFolder(initialPath, false);
                     if (!string.IsNullOrWhiteSpace(initialFolder))
                     {
                         try
@@ -362,15 +383,20 @@ namespace VisionQC.LocalAgent
                     if (hr == ERROR_CANCELLED_HRESULT) return new string[0];
                     if (hr != S_OK) Marshal.ThrowExceptionForHR(hr);
 
+                    string[] selectedPaths;
                     if (allowMultiple)
                     {
                         dialog.GetResults(out resultItems);
-                        return ShellItemPaths(resultItems);
+                        selectedPaths = ShellItemPaths(resultItems);
                     }
-
-                    dialog.GetResult(out resultItem);
-                    string path = ShellItemPath(resultItem);
-                    return string.IsNullOrWhiteSpace(path) ? new string[0] : new[] { path };
+                    else
+                    {
+                        dialog.GetResult(out resultItem);
+                        string path = ShellItemPath(resultItem);
+                        selectedPaths = string.IsNullOrWhiteSpace(path) ? new string[0] : new[] { path };
+                    }
+                    foreach (string path in selectedPaths) RememberLastSelectedFolder(path);
+                    return selectedPaths;
                 }
                 finally
                 {
@@ -436,7 +462,7 @@ namespace VisionQC.LocalAgent
                     dialog.SetFileTypes((uint)filters.Length, filters);
                     dialog.SetFileTypeIndex(1);
 
-                    string initialFolder = FastLocalInitialFolder(initialPath, true) ?? SafeLocalInitialFolder();
+                    string initialFolder = PreferredInitialFolder(initialPath, true);
                     if (!string.IsNullOrWhiteSpace(initialPath) && Path.HasExtension(initialPath))
                     {
                         try { dialog.SetFileName(Path.GetFileName(initialPath)); } catch { }
@@ -463,7 +489,12 @@ namespace VisionQC.LocalAgent
                     if (hr != S_OK) Marshal.ThrowExceptionForHR(hr);
 
                     dialog.GetResult(out resultItem);
-                    return ShellItemPath(resultItem);
+                    string selectedPath = ShellItemPath(resultItem);
+                    if (!string.IsNullOrWhiteSpace(selectedPath))
+                    {
+                        try { RememberLastSelectedFolder(Path.GetDirectoryName(selectedPath)); } catch { }
+                    }
+                    return selectedPath;
                 }
                 finally
                 {
@@ -561,6 +592,34 @@ namespace VisionQC.LocalAgent
             return null;
         }
 
+        private static string PreferredInitialFolder(string initialPath, bool filePicker)
+        {
+            string lastSelected;
+            lock (ActiveDialogSync) lastSelected = _lastSelectedFolder;
+            string lastLocal = FastLocalInitialFolder(lastSelected, false);
+            if (!string.IsNullOrWhiteSpace(lastLocal)) return lastLocal;
+            return FastLocalInitialFolder(initialPath, filePicker) ?? SafeLocalInitialFolder();
+        }
+
+        private static void RememberLastSelectedFolder(string folder)
+        {
+            string localFolder = FastLocalInitialFolder(folder, false);
+            if (string.IsNullOrWhiteSpace(localFolder)) return;
+            lock (ActiveDialogSync) _lastSelectedFolder = localFolder;
+        }
+
+        private static IntPtr PreparedParentWindow()
+        {
+            IntPtr candidate;
+            lock (ActiveDialogSync) candidate = _preferredParentWindow;
+            try
+            {
+                return candidate != IntPtr.Zero && IsWindow(candidate) && IsWindowVisible(candidate)
+                    ? candidate : IntPtr.Zero;
+            }
+            catch { return IntPtr.Zero; }
+        }
+
         private static void PromoteShellDialogWhenCreated(string dialogTitle)
         {
             if (string.IsNullOrWhiteSpace(dialogTitle)) return;
@@ -600,17 +659,28 @@ namespace VisionQC.LocalAgent
                 Form owner = null;
                 try
                 {
-                    owner = CreateDialogOwner(caption);
-                    owner.Show();
-                    owner.BringToFront();
-                    owner.Activate();
-                    SetForegroundWindow(owner.Handle);
-                    RegisterDialogThread(owner);
+                    IntPtr parentWindow = PreparedParentWindow();
+                    if (parentWindow != IntPtr.Zero)
+                    {
+                        // 실제 Chrome/Edge 창을 owner로 지정하면 Explorer가 브라우저의
+                        // 모달 자식으로 열려 뒤에 숨지 않고 같은 창 위에 표시됩니다.
+                        SetForegroundWindow(parentWindow);
+                    }
+                    else
+                    {
+                        owner = CreateDialogOwner(caption);
+                        owner.Show();
+                        owner.BringToFront();
+                        owner.Activate();
+                        SetForegroundWindow(owner.Handle);
+                        RegisterDialogThread(owner);
+                        parentWindow = owner.Handle;
+                    }
 
                     // IFileDialog.Show 자체가 모달 메시지 루프를 실행합니다. Application.Run 안에서
                     // BeginInvoke로 한 번 더 중첩하면 Explorer가 닫혀도 외부 작업이 반환되지 않는
                     // 경우가 있으므로, 별도 STA에서 바로 호출하고 반환 즉시 owner를 정리합니다.
-                    result = showDialog(owner.Handle);
+                    result = showDialog(parentWindow);
                 }
                 catch (Exception ex) { error = ex; }
                 finally

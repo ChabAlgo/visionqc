@@ -1,7 +1,7 @@
 (() => {
   'use strict';
 
-  const VERSION = '4.4.40';
+  const VERSION = '4.4.41';
   const DEFAULT_POSITION_DEFS = [
     { key:'CA_TOP', name:'CA(TOP)' },
     { key:'AN_TOP', name:'AN(TOP)' },
@@ -23,7 +23,7 @@
   const NG_POSITION_PREFIX = 'ng-position:';
   const IMG_RE = /\.(png|jpe?g|bmp|gif|webp|tif?f)$/i;
   const LOCAL_AGENT_URL = 'http://127.0.0.1:17891';
-  const EXPECTED_AGENT_VERSION = '0.2.14';
+  const EXPECTED_AGENT_VERSION = '0.2.15';
   const PICKER_POLL_INTERVAL_MS = 600;
   const RUNTIME_PRELOAD_TIMEOUT_MS = 15 * 60 * 1000;
   const NOTIFICATION_KEY = 'visionqc-v4428-notifications';
@@ -1986,6 +1986,31 @@
     return normalized;
   }
 
+  function isMultiFolderSelectionField(scope, field) {
+    return (scope === 'position' && !!imageRootListField(field)) ||
+      ((scope === 'green' || scope === 'integrated') && field === 'keywordInputRoot');
+  }
+
+  function simulationFolderRoots(target, scope, field) {
+    if (!target) return [];
+    if (scope === 'position') return imageRootsForPosition(target, field);
+    if ((scope === 'green' || scope === 'integrated') && field === 'keywordInputRoot') {
+      return normalizeImageRoots(target.keywordInputRoots, target.keywordInputRoot || '');
+    }
+    return [];
+  }
+
+  function setSimulationFolderRoots(target, scope, field, paths) {
+    const normalized = normalizeImageRoots(paths, '');
+    if (!target) return normalized;
+    if (scope === 'position') return setImageRootsForPosition(target, field, normalized);
+    if ((scope === 'green' || scope === 'integrated') && field === 'keywordInputRoot') {
+      target.keywordInputRoots = normalized;
+      target.keywordInputRoot = normalized[0] || '';
+    }
+    return normalized;
+  }
+
   function simulationDefaults() {
     const positions = {};
     simulationPositionDefs().forEach(({key,label}) => {
@@ -2007,7 +2032,7 @@
       },
       positions,
       green:{
-        cellIdCsvPath:'', keywordMode:false, keywordInputRoot:'', keepSubfolders:false,
+        cellIdCsvPath:'', keywordMode:false, keywordInputRoot:'', keywordInputRoots:[], keepSubfolders:false,
         useGpu:true, gpuDevices:'0', jpegQuality:80, heatmapAlpha:55, heatmapAlphaCut:25,
         heatmapImageSave:true, forceJet:true, printEvery:100,
         tools:simulationDefaultTools(), judgements:simulationDefaultJudgements()
@@ -2019,7 +2044,7 @@
         fallbacks:simulationPositionDefs().map(({key,label}) => simulationDefaultFallback(key,label,'Locate'))
       },
       integrated:{
-        cellIdCsvPath:'', keywordMode:false, keywordInputRoot:'', keepCropImages:false, heatmapImageSave:false
+        cellIdCsvPath:'', keywordMode:false, keywordInputRoot:'', keywordInputRoots:[], keepCropImages:false, heatmapImageSave:false
       }
     };
   }
@@ -2099,6 +2124,10 @@
     form.green = mergeSimulationSection(defaults.green, legacyGreen, form.green);
     form.blue = mergeSimulationSection(defaults.blue, legacyBlue, form.blue);
     form.integrated = mergeSimulationSection(defaults.integrated, legacyIntegrated, form.integrated);
+    form.green.keywordInputRoots = normalizeImageRoots(form.green.keywordInputRoots, form.green.keywordInputRoot || '');
+    form.green.keywordInputRoot = form.green.keywordInputRoots[0] || '';
+    form.integrated.keywordInputRoots = normalizeImageRoots(form.integrated.keywordInputRoots, form.integrated.keywordInputRoot || '');
+    form.integrated.keywordInputRoot = form.integrated.keywordInputRoots[0] || '';
 
     if (!Array.isArray(form.green.tools)) form.green.tools = simulationDefaultTools();
     else form.green.tools = form.green.tools.map(t => {
@@ -2256,7 +2285,7 @@
     const target = simulationScopeObject(scope, key);
     if (!target) return;
     const value = input.type === 'checkbox' ? input.checked : input.type === 'number' ? Number(input.value) : input.value;
-    if (scope === 'position' && imageRootListField(field)) setImageRootsForPosition(target, field, value);
+    if (isMultiFolderSelectionField(scope, field)) setSimulationFolderRoots(target, scope, field, value);
     else target[field] = value;
     if (field === 'printEvery') {
       if (!state.simulationProgress?.running) state.simulationProgress.batchSize = Math.max(1, Number(value) || 1);
@@ -2721,8 +2750,8 @@
     const fileType = control.dataset.simFileType || (kind === 'file' ? 'workspace' : 'folder');
     const target = simulationScopeObject(scope, key);
     if (!target || !field) return;
-    const imageFolderList = kind === 'folder' && scope === 'position' && !!imageRootListField(field);
-    const current = imageFolderList ? imageRootsForPosition(target, field)[0] || '' : target[field] || '';
+    const imageFolderList = kind === 'folder' && isMultiFolderSelectionField(scope, field);
+    const current = imageFolderList ? simulationFolderRoots(target, scope, field)[0] || '' : target[field] || '';
     const workspaceKind = fileType === 'workspace' && scope === 'position' && key
       ? (field.toLowerCase().startsWith('blue') ? 'blue' : 'green')
       : '';
@@ -2743,7 +2772,7 @@
       }
       const currentTarget = simulationScopeObject(scope, key);
       if (!currentTarget) return;
-      if (imageFolderList) setImageRootsForPosition(currentTarget, field, selectedPaths);
+      if (imageFolderList) setSimulationFolderRoots(currentTarget, scope, field, selectedPaths);
       else currentTarget[field] = selectedPaths[0];
       if (workspaceKind === 'green') currentTarget.greenWorkspaceInfo = null;
       else if (workspaceKind === 'blue') currentTarget.blueWorkspaceInfo = null;
@@ -3678,8 +3707,8 @@
 
   function simPathField(scope, key, field, title, placeholder, kind='file', fileType='workspace', disabled=false) {
     const target = simulationScopeObject(scope, key);
-    const multipleImageFolders = kind === 'folder' && scope === 'position' && !!imageRootListField(field);
-    const imageRoots = multipleImageFolders ? imageRootsForPosition(target, field) : [];
+    const multipleImageFolders = kind === 'folder' && isMultiFolderSelectionField(scope, field);
+    const imageRoots = multipleImageFolders ? simulationFolderRoots(target, scope, field) : [];
     const value = multipleImageFolders ? imageRoots.join('; ') : target?.[field] || '';
     const workspaceKind = fileType === 'workspace' && scope === 'position' && key ? (field.toLowerCase().startsWith('blue') ? 'blue' : 'green') : '';
     const status = workspaceKind ? workspaceInspectStatusFor(key, workspaceKind, value) : null;
@@ -3699,12 +3728,12 @@
       const p = form.positions[key], enabled = active.includes(key);
       const head = `<div class="vq43-sim-position-ident"><label class="vq43-sim-position-enable"><input type="checkbox" data-sim-active-position="${key}" data-sim-mode="${mode}" ${enabled?'checked':''}><strong>${escapeHtml(label)}</strong></label><button class="vq43-sim-remove-position" data-vq-action="simulation-remove-position" data-sim-key="${key}" title="Position 전체 제거">×</button></div>`;
       if (mode === 'green') {
-        return `<div class="vq43-sim-position-row-new">${head}${simPathField('position',key,'greenWorkspacePath','Workspace','Green Runtime Workspace','file','workspace')}${simPathField('position',key,'greenImageRoot','Image Folder','Green 이미지 폴더','folder','folder')}${workspaceSelectHtml(key,'green','greenStreamName',p.greenStreamName,'Green')}${keywordMode?`<label class="vq43-sim-compact-field"><span>Keyword</span><input data-sim-scope="position" data-sim-field="greenKeyword" data-sim-key="${key}" value="${escapeHtml(p.greenKeyword)}"></label>`:''}${workspaceInfoSummary(key,'green')}</div>`;
+        return `<div class="vq43-sim-position-row-new">${head}${simPathField('position',key,'greenWorkspacePath','Workspace','Green Runtime Workspace','file','workspace')}${simPathField('position',key,'greenImageRoot','Image Folder','Green 이미지 폴더','folder','folder',keywordMode)}${workspaceSelectHtml(key,'green','greenStreamName',p.greenStreamName,'Green')}${keywordMode?`<label class="vq43-sim-compact-field"><span>Keyword</span><input data-sim-scope="position" data-sim-field="greenKeyword" data-sim-key="${key}" value="${escapeHtml(p.greenKeyword)}"></label>`:''}${workspaceInfoSummary(key,'green')}</div>`;
       }
       if (mode === 'blue') {
         return `<div class="vq43-sim-position-row-new">${head}${simPathField('position',key,'blueWorkspacePath','Workspace','Blue Runtime Workspace','file','workspace')}${simPathField('position',key,'blueImageRoot','Image Folder','Blue 원본 이미지 폴더','folder','folder')}${workspaceSelectHtml(key,'blue','blueStreamName',p.blueStreamName,'Blue')}${workspaceSelectHtml(key,'blue','blueToolName',p.blueToolName,'Blue')}${workspaceInfoSummary(key,'blue')}</div>`;
       }
-      return `<div class="vq43-sim-position-row-new integrated">${head}${simPathField('position',key,'greenWorkspacePath','Green Workspace','Green Runtime Workspace','file','workspace')}${simPathField('position',key,'blueWorkspacePath','Blue Workspace','Blue Runtime Workspace','file','workspace')}${simPathField('position',key,'blueImageRoot','Image Folder','Blue Crop와 공유되는 원본 이미지 폴더','folder','folder')}${workspaceSelectHtml(key,'green','greenStreamName',p.greenStreamName,'Green')}${workspaceSelectHtml(key,'blue','blueStreamName',p.blueStreamName,'Blue')}${workspaceSelectHtml(key,'blue','blueToolName',p.blueToolName,'Blue')}${keywordMode?`<label class="vq43-sim-compact-field"><span>Keyword</span><input data-sim-scope="position" data-sim-field="integratedKeyword" data-sim-key="${key}" value="${escapeHtml(p.integratedKeyword)}"></label>`:''}<div class="vq43-workspace-summary-pair">${workspaceInfoSummary(key,'green')}${workspaceInfoSummary(key,'blue')}</div></div>`;
+      return `<div class="vq43-sim-position-row-new integrated">${head}${simPathField('position',key,'greenWorkspacePath','Green Workspace','Green Runtime Workspace','file','workspace')}${simPathField('position',key,'blueWorkspacePath','Blue Workspace','Blue Runtime Workspace','file','workspace')}${simPathField('position',key,'blueImageRoot','Image Folder','Blue Crop와 공유되는 원본 이미지 폴더','folder','folder',keywordMode)}${workspaceSelectHtml(key,'green','greenStreamName',p.greenStreamName,'Green')}${workspaceSelectHtml(key,'blue','blueStreamName',p.blueStreamName,'Blue')}${workspaceSelectHtml(key,'blue','blueToolName',p.blueToolName,'Blue')}${keywordMode?`<label class="vq43-sim-compact-field"><span>Keyword</span><input data-sim-scope="position" data-sim-field="integratedKeyword" data-sim-key="${key}" value="${escapeHtml(p.integratedKeyword)}"></label>`:''}<div class="vq43-workspace-summary-pair">${workspaceInfoSummary(key,'green')}${workspaceInfoSummary(key,'blue')}</div></div>`;
     }).join('');
   }
 

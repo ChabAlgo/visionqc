@@ -1390,10 +1390,10 @@ namespace VisionQC.LocalAgent
                 Enabled = true,
                 RuntimeWorkspacePath = FirstNonEmpty(p.blueWorkspacePath, p.workspacePath),
                 ImageRoots = integrated && iopt.keywordMode
-                    ? NormalizeImageRoots(null, iopt.keywordInputRoot)
+                    ? GetIntegratedKeywordImageRoots(iopt)
                     : GetBlueImageRoots(p),
                 ImageRoot = integrated && iopt.keywordMode
-                    ? FirstNonEmpty(iopt.keywordInputRoot)
+                    ? FirstNonEmpty(GetIntegratedKeywordImageRoots(iopt).ToArray())
                     : FirstNonEmpty(GetBlueImageRoots(p).ToArray()),
                 StreamName = FirstNonEmpty(p.blueStreamName, p.streamName, "기본값"),
                 BlueToolName = FirstNonEmpty(p.blueToolName, "Locate"),
@@ -1441,7 +1441,7 @@ namespace VisionQC.LocalAgent
                 OutputRoot = outputRoot,
                 CellIdCsvPath = integrated ? (iopt.cellIdCsvPath ?? "") : (opt.cellIdCsvPath ?? ""),
                 KeywordMode = integrated ? false : opt.keywordMode,
-                KeywordInputRoot = integrated ? "" : (opt.keywordInputRoot ?? ""),
+                KeywordInputRoot = integrated ? "" : FirstNonEmpty(GetGreenKeywordImageRoots(opt).ToArray()),
                 UseGpu = opt.useGpu,
                 GpuDevices = ParseGpuList(opt.gpuDevices, opt.useGpu),
                 JpegQuality = Clamp(opt.jpegQuality, 1, 100, 80),
@@ -1462,10 +1462,10 @@ namespace VisionQC.LocalAgent
                 WorkspacePath = FirstNonEmpty(p.greenWorkspacePath, p.workspacePath),
                 InputRoots = integrated
                     ? NormalizeImageRoots(null, Path.Combine(cropRoot, p.displayName))
-                    : (opt.keywordMode ? NormalizeImageRoots(null, opt.keywordInputRoot) : GetGreenImageRoots(p)),
+                    : (opt.keywordMode ? GetGreenKeywordImageRoots(opt) : GetGreenImageRoots(p)),
                 InputRoot = integrated
                     ? Path.Combine(cropRoot, p.displayName)
-                    : (opt.keywordMode ? FirstNonEmpty(opt.keywordInputRoot) : FirstNonEmpty(GetGreenImageRoots(p).ToArray())),
+                    : (opt.keywordMode ? FirstNonEmpty(GetGreenKeywordImageRoots(opt).ToArray()) : FirstNonEmpty(GetGreenImageRoots(p).ToArray())),
                 StreamName = FirstNonEmpty(p.greenStreamName, p.streamName, "기본값"),
                 Keyword = integrated ? "" : FirstNonEmpty(p.greenKeyword, p.keyword),
                 Electrode = p.key != null && p.key.StartsWith("CA", StringComparison.OrdinalIgnoreCase) ? "CA" : "AN",
@@ -1555,9 +1555,11 @@ namespace VisionQC.LocalAgent
             AgentBlueOptions b = GetBlueOptions(req);
             AgentIntegratedOptions i = GetIntegratedOptions(req);
 
-            if ((mode == "green" && g.keywordMode) && (string.IsNullOrWhiteSpace(g.keywordInputRoot) || !Directory.Exists(g.keywordInputRoot)))
+            List<string> greenKeywordRoots = GetGreenKeywordImageRoots(g);
+            List<string> integratedKeywordRoots = GetIntegratedKeywordImageRoots(i);
+            if ((mode == "green" && g.keywordMode) && (greenKeywordRoots.Count == 0 || greenKeywordRoots.Any(root => !Directory.Exists(root))))
                 return "Green Keyword 입력 폴더를 확인하세요.";
-            if ((mode == "integrated" && i.keywordMode) && (string.IsNullOrWhiteSpace(i.keywordInputRoot) || !Directory.Exists(i.keywordInputRoot)))
+            if ((mode == "integrated" && i.keywordMode) && (integratedKeywordRoots.Count == 0 || integratedKeywordRoots.Any(root => !Directory.Exists(root))))
                 return "Integrated Keyword 입력 폴더를 확인하세요.";
             string cellCsv = mode == "integrated" ? i.cellIdCsvPath : g.cellIdCsvPath;
             if (mode != "blue" && !string.IsNullOrWhiteSpace(cellCsv))
@@ -1795,6 +1797,18 @@ namespace VisionQC.LocalAgent
             return NormalizeImageRoots(position == null ? null : position.blueImageRoots,
                 position == null ? "" : position.blueImageRoot,
                 position == null ? "" : position.imageRoot);
+        }
+
+        private static List<string> GetGreenKeywordImageRoots(AgentGreenOptions options)
+        {
+            return NormalizeImageRoots(options == null ? null : options.keywordInputRoots,
+                options == null ? "" : options.keywordInputRoot);
+        }
+
+        private static List<string> GetIntegratedKeywordImageRoots(AgentIntegratedOptions options)
+        {
+            return NormalizeImageRoots(options == null ? null : options.keywordInputRoots,
+                options == null ? "" : options.keywordInputRoot);
         }
 
         private static List<string> NormalizeImageRoots(IEnumerable<string> roots, params string[] fallbackRoots)

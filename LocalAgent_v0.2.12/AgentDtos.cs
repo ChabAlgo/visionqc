@@ -27,6 +27,7 @@ namespace VisionQC.LocalAgent
         public string cellIdCsvPath { get; set; }
         public bool keywordMode { get; set; }
         public string keywordInputRoot { get; set; }
+        public List<string> keywordInputRoots { get; set; }
         public bool keepSubfolders { get; set; }
         public bool useGpu { get; set; }
         public string gpuDevices { get; set; }
@@ -62,6 +63,7 @@ namespace VisionQC.LocalAgent
         public string cellIdCsvPath { get; set; }
         public bool keywordMode { get; set; }
         public string keywordInputRoot { get; set; }
+        public List<string> keywordInputRoots { get; set; }
         public bool keepCropImages { get; set; }
         public bool heatmapImageSave { get; set; }
     }

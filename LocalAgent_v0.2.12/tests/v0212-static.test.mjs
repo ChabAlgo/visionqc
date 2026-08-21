@@ -10,10 +10,10 @@ const server = read('AgentServer.cs');
 const picker = read('NativeShellPicker.cs');
 const program = read('Program.cs');
 
-test('Agent v0.2.14 version is consistent', () => {
-  assert.match(program, /AgentVersion = "0\.2\.14"/);
-  assert.match(read('Properties/AssemblyInfo.cs'), /AssemblyVersion\("0\.2\.14\.0"\)/);
-  assert.match(read('BUILD_RELEASE_x64.cmd'), /v0\.2\.14/);
+test('Agent v0.2.15 version is consistent', () => {
+  assert.match(program, /AgentVersion = "0\.2\.15"/);
+  assert.match(read('Properties/AssemblyInfo.cs'), /AssemblyVersion\("0\.2\.15\.0"\)/);
+  assert.match(read('BUILD_RELEASE_x64.cmd'), /v0\.2\.15/);
 });
 
 test('picker HTTP calls return immediately and use idempotent start/status jobs', () => {
@@ -110,7 +110,18 @@ test('picker jobs and simulation DTO retain every selected image folder', () => 
   assert.match(server, /GetBlueImageRoots\(p\)/);
   assert.match(read('AgentDtos.cs'), /List<string> greenImageRoots/);
   assert.match(read('AgentDtos.cs'), /List<string> blueImageRoots/);
+  assert.match(read('AgentDtos.cs'), /List<string> keywordInputRoots/);
+  assert.match(server, /GetGreenKeywordImageRoots/);
+  assert.match(server, /GetIntegratedKeywordImageRoots/);
   assert.match(read('Engine/GreenOverlayProcessor.cs'), /InputRoots/);
   assert.match(read('Engine/BlueCropCore.cs'), /ImageRoots/);
   assert.match(read('Engine/BlueCropCore.cs'), /EnumerateSlotImages/);
+});
+
+test('picker uses the requesting browser as owner and remembers the last local folder', () => {
+  assert.match(picker, /GetForegroundWindow\(\)/);
+  assert.match(picker, /PreparedParentWindow/);
+  assert.match(picker, /result = showDialog\(parentWindow\)/);
+  assert.match(picker, /PreferredInitialFolder/);
+  assert.match(picker, /RememberLastSelectedFolder/);
 });

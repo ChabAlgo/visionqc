@@ -7,16 +7,21 @@ import test from 'node:test';
 const root = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const js = readFileSync(resolve(root, 'visionqc-extension.js'), 'utf8');
 
-test('Image Folder fields retain a normalized list of selected folders', () => {
+test('Image Folder and Keyword Input Root fields retain normalized selected folder lists', () => {
   const start = js.indexOf('function imageRootListField');
   const end = js.indexOf('function simulationDefaults', start);
   assert.ok(start >= 0 && end > start);
-  const helpers = new Function(`${js.slice(start, end)}; return { imageRootListField, normalizeImageRoots, imageRootsForPosition, setImageRootsForPosition };`)();
+  const helpers = new Function(`${js.slice(start, end)}; return { imageRootListField, normalizeImageRoots, imageRootsForPosition, setImageRootsForPosition, isMultiFolderSelectionField, simulationFolderRoots, setSimulationFolderRoots };`)();
   const position = { greenImageRoot:'C:\\old', greenImageRoots:[] };
   assert.deepEqual(helpers.imageRootsForPosition(position, 'greenImageRoot'), ['C:\\old']);
   assert.deepEqual(helpers.setImageRootsForPosition(position, 'greenImageRoot', ['C:\\A', 'C:\\B', 'c:\\a']), ['C:\\A', 'C:\\B']);
   assert.equal(position.greenImageRoot, 'C:\\A');
   assert.deepEqual(position.greenImageRoots, ['C:\\A', 'C:\\B']);
+  const keyword = { keywordInputRoot:'C:\\old', keywordInputRoots:[] };
+  assert.equal(helpers.isMultiFolderSelectionField('integrated', 'keywordInputRoot'), true);
+  assert.deepEqual(helpers.setSimulationFolderRoots(keyword, 'integrated', 'keywordInputRoot', ['C:\\A', 'C:\\B', 'c:\\a']), ['C:\\A', 'C:\\B']);
+  assert.equal(keyword.keywordInputRoot, 'C:\\A');
+  assert.deepEqual(keyword.keywordInputRoots, ['C:\\A', 'C:\\B']);
 });
 
 test('Image Folder browse requests and Simulation payload include all selected folders', () => {
@@ -24,17 +29,19 @@ test('Image Folder browse requests and Simulation payload include all selected f
   const request = js.slice(js.indexOf('function buildSimulationRequest'), js.indexOf('function runtimeSignaturePath'));
   const field = js.slice(js.indexOf('function simPathField'), js.indexOf('function simulationPositionRows'));
   assert.match(browse, /multiple:imageFolderList/);
-  assert.match(browse, /setImageRootsForPosition\(currentTarget, field, selectedPaths\)/);
+  assert.match(browse, /setSimulationFolderRoots\(currentTarget, scope, field, selectedPaths\)/);
   assert.match(request, /greenImageRoots:imageRootsForPosition/);
   assert.match(request, /blueImageRoots:imageRootsForPosition/);
   assert.match(field, /data-sim-multiple/);
   assert.match(field, /다중 선택/);
 });
 
-test('Keyword mode keeps Image Folder multi-selection available', () => {
+test('Keyword mode disables per-position Image Folder and enables multi-folder Keyword Input Root', () => {
   const rows = js.slice(js.indexOf('function simulationPositionRows'), js.indexOf('function simulationPositionToolbar'));
-  assert.doesNotMatch(rows, /greenImageRoot[^\n]*'folder','folder',keywordMode/);
-  assert.doesNotMatch(rows, /blueImageRoot[^\n]*'folder','folder',keywordMode/);
+  const options = js.slice(js.indexOf('function greenFilterOptions'), js.indexOf('function greenRuntimeOptions'));
+  assert.match(rows, /greenImageRoot[^\n]*'folder','folder',keywordMode/);
+  assert.match(rows, /blueImageRoot[^\n]*'folder','folder',keywordMode/);
+  assert.match(options, /keywordInputRoot[^\n]*'folder','folder',!obj\.keywordMode/);
 });
 
 test('Workspace selection updates its path input without a second UI event', () => {
