@@ -10,10 +10,10 @@ const server = read('AgentServer.cs');
 const picker = read('NativeShellPicker.cs');
 const program = read('Program.cs');
 
-test('Agent v0.2.13 version is consistent', () => {
-  assert.match(program, /AgentVersion = "0\.2\.13"/);
-  assert.match(read('Properties/AssemblyInfo.cs'), /AssemblyVersion\("0\.2\.13\.0"\)/);
-  assert.match(read('BUILD_RELEASE_x64.cmd'), /v0\.2\.13/);
+test('Agent v0.2.14 version is consistent', () => {
+  assert.match(program, /AgentVersion = "0\.2\.14"/);
+  assert.match(read('Properties/AssemblyInfo.cs'), /AssemblyVersion\("0\.2\.14\.0"\)/);
+  assert.match(read('BUILD_RELEASE_x64.cmd'), /v0\.2\.14/);
 });
 
 test('picker HTTP calls return immediately and use idempotent start/status jobs', () => {
@@ -98,6 +98,8 @@ test('folder picker supports multiple Explorer selections without changing file 
   assert.match(picker, /ShowInTaskbar = false/);
   assert.match(picker, /Opacity = 1/);
   assert.match(picker, /TopMost = true/);
+  assert.match(picker, /PromoteShellDialogWhenCreated\("VisionQC 폴더 선택"\)/);
+  assert.match(picker, /SetWindowPos\(dialogHandle, HwndTopmost/);
 });
 
 test('picker jobs and simulation DTO retain every selected image folder', () => {

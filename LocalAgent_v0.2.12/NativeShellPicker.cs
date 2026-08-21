@@ -12,7 +12,12 @@ namespace VisionQC.LocalAgent
         private const int S_OK = 0;
         private const int ERROR_CANCELLED_HRESULT = unchecked((int)0x800704C7);
         private const uint WM_CLOSE = 0x0010;
+        private const int SW_SHOWNORMAL = 1;
+        private const uint SWP_NOSIZE = 0x0001;
+        private const uint SWP_NOMOVE = 0x0002;
+        private const uint SWP_SHOWWINDOW = 0x0040;
         private const uint DRIVE_FIXED = 3;
+        private static readonly IntPtr HwndTopmost = new IntPtr(-1);
         private static readonly object ActiveDialogSync = new object();
         private static IFileDialog _activeDialog;
         private static string _activeDialogTitle = "";
@@ -187,6 +192,14 @@ namespace VisionQC.LocalAgent
         [return: MarshalAs(UnmanagedType.Bool)]
         private static extern bool PostMessage(IntPtr hWnd, uint msg, IntPtr wParam, IntPtr lParam);
 
+        [DllImport("user32.dll")]
+        [return: MarshalAs(UnmanagedType.Bool)]
+        private static extern bool ShowWindow(IntPtr hWnd, int nCmdShow);
+
+        [DllImport("user32.dll", SetLastError = true)]
+        [return: MarshalAs(UnmanagedType.Bool)]
+        private static extern bool SetWindowPos(IntPtr hWnd, IntPtr hWndInsertAfter, int x, int y, int cx, int cy, uint flags);
+
         [DllImport("shell32.dll", CharSet = CharSet.Unicode, PreserveSig = false)]
         private static extern void SHCreateItemFromParsingName(
             [MarshalAs(UnmanagedType.LPWStr)] string pszPath,
@@ -344,6 +357,7 @@ namespace VisionQC.LocalAgent
                     SetActiveDialog(dialog, "VisionQC 폴더 선택");
                     if (IsCancelRequested(dialog)) return new string[0];
                     SetForegroundWindow(ownerHandle);
+                    PromoteShellDialogWhenCreated("VisionQC 폴더 선택");
                     int hr = dialog.Show(ownerHandle);
                     if (hr == ERROR_CANCELLED_HRESULT) return new string[0];
                     if (hr != S_OK) Marshal.ThrowExceptionForHR(hr);
@@ -443,6 +457,7 @@ namespace VisionQC.LocalAgent
                     SetActiveDialog(dialog, dialogTitle);
                     if (IsCancelRequested(dialog)) return null;
                     SetForegroundWindow(ownerHandle);
+                    PromoteShellDialogWhenCreated(dialogTitle);
                     int hr = dialog.Show(ownerHandle);
                     if (hr == ERROR_CANCELLED_HRESULT) return null;
                     if (hr != S_OK) Marshal.ThrowExceptionForHR(hr);
@@ -544,6 +559,34 @@ namespace VisionQC.LocalAgent
                 catch { }
             }
             return null;
+        }
+
+        private static void PromoteShellDialogWhenCreated(string dialogTitle)
+        {
+            if (string.IsNullOrWhiteSpace(dialogTitle)) return;
+            var thread = new Thread(() =>
+            {
+                DateTime deadline = DateTime.UtcNow.AddSeconds(5);
+                while (DateTime.UtcNow < deadline)
+                {
+                    IntPtr dialogHandle = IntPtr.Zero;
+                    try { dialogHandle = FindWindow(null, dialogTitle); } catch { }
+                    if (dialogHandle != IntPtr.Zero)
+                    {
+                        try
+                        {
+                            ShowWindow(dialogHandle, SW_SHOWNORMAL);
+                            SetWindowPos(dialogHandle, HwndTopmost, 0, 0, 0, 0, SWP_NOMOVE | SWP_NOSIZE | SWP_SHOWWINDOW);
+                            SetForegroundWindow(dialogHandle);
+                        }
+                        catch { }
+                        return;
+                    }
+                    Thread.Sleep(40);
+                }
+            });
+            thread.IsBackground = true;
+            thread.Start();
         }
 
         private static T RunOwnedDialog<T>(string caption, Func<IntPtr, T> showDialog)

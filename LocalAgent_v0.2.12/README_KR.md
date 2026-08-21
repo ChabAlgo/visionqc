@@ -1,9 +1,10 @@
-# VisionQC Local Agent v0.2.13
+# VisionQC Local Agent v0.2.14
 
 VisionQC Web과 사용자 PC의 Cognex VPDL Runtime/GPU/로컬 파일을 연결하는 loopback 실행 엔진입니다.
 
-## v0.2.13 핵심
-- Chrome이 전면인 상태에서도 Explorer 폴더 선택 창이 숨지 않도록, 화면 중앙의 실제 1px 최상위 owner 창으로 Windows Shell Dialog를 열도록 보완
+## v0.2.14 핵심
+- Chrome이 전면을 계속 소유하는 경우에도 Explorer 선택 창이 생성되는 즉시 전면으로 승격하도록 보완
+- 화면 중앙의 실제 1px 최상위 owner 창을 사용해 Windows Shell Dialog의 안정적인 표시 유지
 - Image Folder의 Windows 기본 다중 선택(Ctrl/Shift) 유지
 
 ## v0.2.12 핵심
@@ -81,7 +82,7 @@ VisionQC Web과 사용자 PC의 Cognex VPDL Runtime/GPU/로컬 파일을 연결�
 3. `REGISTER_PROTOCOL.cmd`
 4. `CHECK_PROTOCOL.cmd`에서 현재 EXE 경로 확인
 5. `RUN_AGENT.cmd` 또는 Web의 Agent 실행
-6. `http://127.0.0.1:17891/api/status`에서 `agentVersion: 0.2.13` 확인
+6. `http://127.0.0.1:17891/api/status`에서 `agentVersion: 0.2.14` 확인
 
 `OptimizedGPUMemory(ulong)`은 GPU 장치 번호가 아니라 예약 메모리의 byte 수를 받습니다. 이 패키지는 장치 선택을 `InitializeComputeDevices`에만 맡기고, 최적화 메모리는 설치된 VPDL Runtime의 기본 설정을 유지합니다.
 
