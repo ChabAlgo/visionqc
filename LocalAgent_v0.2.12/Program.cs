@@ -1,5 +1,6 @@
 ﻿using System;
 using System.IO;
+using System.Linq;
 using System.Reflection;
 using Microsoft.Win32;
 using System.Windows.Forms;
@@ -8,7 +9,7 @@ namespace VisionQC.LocalAgent
 {
     internal static class Program
     {
-        internal const string AgentVersion = "0.2.15";
+        internal const string AgentVersion = "0.2.16";
 
         [STAThread]
         private static void Main(string[] args)
@@ -17,6 +18,7 @@ namespace VisionQC.LocalAgent
             Application.SetCompatibleTextRenderingDefault(false);
             AppDomain.CurrentDomain.AssemblyResolve += ResolveAssemblyFromLocalOrVpdInstall;
 
+            bool openOfflinePage = args != null && args.Any(arg => string.Equals(arg, "--offline", StringComparison.OrdinalIgnoreCase));
             if (args != null && args.Length > 0)
             {
                 if (string.Equals(args[0], "--register", StringComparison.OrdinalIgnoreCase))
@@ -35,7 +37,7 @@ namespace VisionQC.LocalAgent
 
             using (var server = new AgentServer())
             {
-                server.RunUntilExit();
+                server.RunUntilExit(openOfflinePage);
             }
         }
 

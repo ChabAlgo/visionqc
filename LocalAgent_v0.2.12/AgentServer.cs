@@ -66,7 +66,7 @@ namespace VisionQC.LocalAgent
             _gpuName = DetectGpuName();
         }
 
-        public void RunUntilExit()
+        public void RunUntilExit(bool openOfflinePage = false)
         {
             _listener = new TcpListener(IPAddress.Loopback, Port);
             try
@@ -83,6 +83,7 @@ namespace VisionQC.LocalAgent
             Task.Run(() => AcceptLoop(_serverCts.Token));
             // Agent는 사용자가 종료할 때까지 유지하고, 시작 직후 License를 확인한다.
             Task.Run(() => RuntimeCheck("{\"useGpu\":true,\"gpuDevices\":\"0\"}"));
+            if (openOfflinePage) Task.Run(OpenOfflinePage);
 
             while (!_serverCts.IsCancellationRequested) Thread.Sleep(250);
         }
@@ -116,6 +117,13 @@ namespace VisionQC.LocalAgent
                 if (request.Method == "OPTIONS")
                 {
                     await WriteResponse(stream, 204, "text/plain", "", origin).ConfigureAwait(false);
+                    client.Close();
+                    return;
+                }
+
+                if (request.Method == "GET" && !request.Path.StartsWith("/api/", StringComparison.OrdinalIgnoreCase))
+                {
+                    await WriteOfflineWebAsset(stream, request.Path, origin).ConfigureAwait(false);
                     client.Close();
                     return;
                 }
@@ -1934,9 +1942,76 @@ namespace VisionQC.LocalAgent
             await WriteResponse(stream, status, "application/json; charset=utf-8", _json.Serialize(data), origin).ConfigureAwait(false);
         }
 
+        private async Task OpenOfflinePage()
+        {
+            // 리스너가 완전히 준비된 뒤 기본 브라우저에서 로컬 UI를 연다.
+            await Task.Delay(350).ConfigureAwait(false);
+            try
+            {
+                Process.Start(new ProcessStartInfo
+                {
+                    FileName = "http://127.0.0.1:" + Port + "/",
+                    UseShellExecute = true
+                });
+            }
+            catch { }
+        }
+
+        private async Task WriteOfflineWebAsset(NetworkStream stream, string requestPath, string origin)
+        {
+            const string notFound = "<!doctype html><meta charset=\"utf-8\"><title>VisionQC Offline</title><p>오프라인 UI 파일을 찾을 수 없습니다. VisionQC_Agent_Installer를 다시 실행해 주세요.</p>";
+            try
+            {
+                string relative = Uri.UnescapeDataString(requestPath ?? "/");
+                if (relative == "/" || string.Equals(relative, "/offline", StringComparison.OrdinalIgnoreCase)) relative = "/index.html";
+                relative = relative.TrimStart('/').Replace('/', Path.DirectorySeparatorChar);
+                if (string.IsNullOrWhiteSpace(relative)) relative = "index.html";
+
+                string root = Path.GetFullPath(Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "Web"));
+                string path = Path.GetFullPath(Path.Combine(root, relative));
+                if (!path.StartsWith(root + Path.DirectorySeparatorChar, StringComparison.OrdinalIgnoreCase) && !string.Equals(path, root, StringComparison.OrdinalIgnoreCase))
+                {
+                    await WriteResponse(stream, 404, "text/html; charset=utf-8", notFound, origin).ConfigureAwait(false);
+                    return;
+                }
+                if (!File.Exists(path))
+                {
+                    await WriteResponse(stream, 404, "text/html; charset=utf-8", notFound, origin).ConfigureAwait(false);
+                    return;
+                }
+                await WriteBytesResponse(stream, 200, OfflineContentType(path), File.ReadAllBytes(path), origin).ConfigureAwait(false);
+            }
+            catch
+            {
+                await WriteResponse(stream, 500, "text/html; charset=utf-8", notFound, origin).ConfigureAwait(false);
+            }
+        }
+
+        private static string OfflineContentType(string path)
+        {
+            switch (Path.GetExtension(path).ToLowerInvariant())
+            {
+                case ".html": return "text/html; charset=utf-8";
+                case ".js": return "application/javascript; charset=utf-8";
+                case ".css": return "text/css; charset=utf-8";
+                case ".json": return "application/json; charset=utf-8";
+                case ".svg": return "image/svg+xml";
+                case ".png": return "image/png";
+                case ".jpg": case ".jpeg": return "image/jpeg";
+                case ".ico": return "image/x-icon";
+                case ".woff2": return "font/woff2";
+                default: return "application/octet-stream";
+            }
+        }
+
         private async Task WriteResponse(NetworkStream stream, int status, string contentType, string body, string origin)
         {
-            byte[] bytes = Encoding.UTF8.GetBytes(body ?? "");
+            await WriteBytesResponse(stream, status, contentType, Encoding.UTF8.GetBytes(body ?? ""), origin).ConfigureAwait(false);
+        }
+
+        private async Task WriteBytesResponse(NetworkStream stream, int status, string contentType, byte[] bytes, string origin)
+        {
+            bytes = bytes ?? new byte[0];
             string reason = status == 200 ? "OK" : status == 204 ? "No Content" : status == 404 ? "Not Found" : status >= 500 ? "Internal Server Error" : "Error";
             string headers = "HTTP/1.1 " + status + " " + reason + "\r\n" +
                 "Content-Type: " + contentType + "\r\n" +

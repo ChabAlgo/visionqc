@@ -10,10 +10,10 @@ const server = read('AgentServer.cs');
 const picker = read('NativeShellPicker.cs');
 const program = read('Program.cs');
 
-test('Agent v0.2.15 version is consistent', () => {
-  assert.match(program, /AgentVersion = "0\.2\.15"/);
-  assert.match(read('Properties/AssemblyInfo.cs'), /AssemblyVersion\("0\.2\.15\.0"\)/);
-  assert.match(read('BUILD_RELEASE_x64.cmd'), /v0\.2\.15/);
+test('Agent v0.2.16 version is consistent', () => {
+  assert.match(program, /AgentVersion = "0\.2\.16"/);
+  assert.match(read('Properties/AssemblyInfo.cs'), /AssemblyVersion\("0\.2\.16\.0"\)/);
+  assert.match(read('BUILD_RELEASE_x64.cmd'), /v0\.2\.16/);
 });
 
 test('picker HTTP calls return immediately and use idempotent start/status jobs', () => {

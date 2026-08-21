@@ -1,4 +1,9 @@
-# VisionQC Local Agent v0.2.15
+# VisionQC Local Agent v0.2.16
+
+## v0.2.16 오프라인 패키지
+- `VisionQC_Agent_Installer_v0.2.16.exe` 하나로 Agent 설치, `visionqc-agent://` 프로토콜 등록, Agent 실행, 오프라인 UI 열기를 처리합니다.
+- 설치된 Agent가 `http://127.0.0.1:17891/`에서 Web UI와 로컬 글꼴/스크립트를 직접 제공하므로 인터넷과 GitHub Pages 없이 사용할 수 있습니다.
+- Cognex VPDL Runtime과 라이선스는 별도 제품이므로 시뮬레이션 PC에 기존 설치가 필요합니다.
 
 VisionQC Web과 사용자 PC의 Cognex VPDL Runtime/GPU/로컬 파일을 연결하는 loopback 실행 엔진입니다.
 
@@ -82,7 +87,7 @@ VisionQC Web과 사용자 PC의 Cognex VPDL Runtime/GPU/로컬 파일을 연결�
 3. `REGISTER_PROTOCOL.cmd`
 4. `CHECK_PROTOCOL.cmd`에서 현재 EXE 경로 확인
 5. `RUN_AGENT.cmd` 또는 Web의 Agent 실행
-6. `http://127.0.0.1:17891/api/status`에서 `agentVersion: 0.2.15` 확인
+6. `http://127.0.0.1:17891/api/status`에서 `agentVersion: 0.2.16` 확인
 
 `OptimizedGPUMemory(ulong)`은 GPU 장치 번호가 아니라 예약 메모리의 byte 수를 받습니다. 이 패키지는 장치 선택을 `InitializeComputeDevices`에만 맡기고, 최적화 메모리는 설치된 VPDL Runtime의 기본 설정을 유지합니다.
 

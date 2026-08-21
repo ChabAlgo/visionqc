@@ -1,5 +1,8 @@
 # VisionQC GitHub Pages repository
 *.zip
+!downloads/
+!downloads/*.zip
+!downloads/*.exe
 *.log
 .DS_Store
 Thumbs.db
@@ -10,3 +13,5 @@ Desktop.ini
 /test-results/
 /LocalAgent_v*/obj/
 /LocalAgent_v*/.cache/
+/LocalAgent_v*/OfflineInstaller/bin/
+/LocalAgent_v*/OfflineInstaller/obj/

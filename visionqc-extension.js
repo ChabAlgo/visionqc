@@ -1,7 +1,7 @@
 (() => {
   'use strict';
 
-  const VERSION = '4.4.41';
+  const VERSION = '4.4.42';
   const DEFAULT_POSITION_DEFS = [
     { key:'CA_TOP', name:'CA(TOP)' },
     { key:'AN_TOP', name:'AN(TOP)' },
@@ -23,7 +23,9 @@
   const NG_POSITION_PREFIX = 'ng-position:';
   const IMG_RE = /\.(png|jpe?g|bmp|gif|webp|tif?f)$/i;
   const LOCAL_AGENT_URL = 'http://127.0.0.1:17891';
-  const EXPECTED_AGENT_VERSION = '0.2.15';
+  const EXPECTED_AGENT_VERSION = '0.2.16';
+  const AGENT_INSTALLER_URL = './downloads/VisionQC_Agent_Installer_v0.2.16.exe';
+  const OFFLINE_PACKAGE_URL = './downloads/VisionQC_Offline_v4.4.42.zip';
   const PICKER_POLL_INTERVAL_MS = 600;
   const RUNTIME_PRELOAD_TIMEOUT_MS = 15 * 60 * 1000;
   const NOTIFICATION_KEY = 'visionqc-v4428-notifications';
@@ -547,7 +549,7 @@
     if (!control) return;
     const action = control.dataset.vqAction;
     if (!action) return;
-    const simulationConfigAction = action.startsWith('simulation-') && !['simulation-stop','simulation-agent-stop','simulation-agent-info','simulation-log-clear'].includes(action);
+    const simulationConfigAction = action.startsWith('simulation-') && !['simulation-stop','simulation-agent-stop','simulation-agent-info','simulation-agent-download','simulation-offline-download','simulation-log-clear'].includes(action);
     if (state.simulationProgress?.running && simulationConfigAction && action !== 'simulation-start') {
       showToast('Simulation 실행 중에는 옵션/Position/Workspace를 변경할 수 없습니다.', true);
       return;
@@ -561,6 +563,8 @@
     }
     else if (action === 'simulation-agent-launch') launchSimulationAgent();
     else if (action === 'simulation-agent-stop') stopSimulationAgent();
+    else if (action === 'simulation-agent-download') downloadAgentInstaller();
+    else if (action === 'simulation-offline-download') downloadOfflinePackage();
     else if (action === 'simulation-agent-info') showToast('VisionQC Web은 GUI만 담당하고 VPDL Runtime · GPU · Workspace 처리는 사용자 PC의 Local Agent가 수행합니다.');
     else if (action === 'simulation-browse') browseSimulationPath(control);
     else if (action === 'simulation-runtime-load') loadSelectedRuntimeFiles();
@@ -3916,7 +3920,26 @@
 
   function simulationTopActionsHtml() {
     const connected = state.simulationAgent?.status === 'connected';
-    return `<button class="vq43-btn" data-vq-action="simulation-agent-launch">Agent 실행</button><button class="vq43-btn vq43-btn-red" data-vq-action="simulation-agent-stop" ${connected?'':'disabled'}>Agent 종료</button>`;
+    return `<button class="vq43-btn" data-vq-action="simulation-agent-launch">Agent 실행</button><button class="vq43-btn vq43-btn-red" data-vq-action="simulation-agent-stop" ${connected?'':'disabled'}>Agent 종료</button><button class="vq43-btn" data-vq-action="simulation-agent-download" title="Agent 설치·프로토콜 등록·실행을 한 번에 진행하는 단일 EXE를 받습니다.">Agent 다운로드</button><button class="vq43-btn" data-vq-action="simulation-offline-download" title="인터넷 없이 VisionQC UI와 Agent를 사용하는 오프라인 패키지입니다.">오프라인 패키지</button>`;
+  }
+
+  function downloadFile(url, message) {
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = '';
+    link.style.display = 'none';
+    document.body.appendChild(link);
+    link.click();
+    link.remove();
+    showToast(message);
+  }
+
+  function downloadAgentInstaller() {
+    downloadFile(AGENT_INSTALLER_URL, 'VisionQC Agent 설치 파일을 다운로드합니다. 실행하면 설치·등록·오프라인 UI 실행이 자동으로 진행됩니다.');
+  }
+
+  function downloadOfflinePackage() {
+    downloadFile(OFFLINE_PACKAGE_URL, '오프라인 패키지를 다운로드합니다. 압축을 푼 뒤 VisionQC_Agent_Installer EXE를 실행하세요.');
   }
 
   function simulationAgentCardHtml() {
