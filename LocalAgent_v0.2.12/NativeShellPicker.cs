@@ -597,6 +597,11 @@ namespace VisionQC.LocalAgent
         private static Form CreateDialogOwner(string caption)
         {
             var workArea = Screen.FromPoint(Cursor.Position).WorkingArea;
+            // IFileOpenDialog는 owner HWND를 기준으로 위치를 잡습니다. 작업 영역 밖의
+            // 투명 owner에 종속하면 다중 폴더 선택창이 화면 밖 모달로 남을 수 있어,
+            // 현재 모니터 중앙에 실제 1px owner를 배치합니다.
+            int ownerLeft = workArea.Left + Math.Max(0, (workArea.Width - 1) / 2);
+            int ownerTop = workArea.Top + Math.Max(0, (workArea.Height - 1) / 2);
             var owner = new Form
             {
                 Text = "VisionQC Local Agent - " + caption,
@@ -605,10 +610,15 @@ namespace VisionQC.LocalAgent
                 StartPosition = FormStartPosition.Manual,
                 Width = 1,
                 Height = 1,
-                Left = workArea.Right + 16,
-                Top = workArea.Bottom + 16,
-                Opacity = 0,
-                TopMost = false,
+                Left = ownerLeft,
+                Top = ownerTop,
+                // Opacity=0인 layered owner는 IFileOpenDialog가 비가시 모달로
+                // 남는 경우가 있습니다. 1px의 실제 Win32 창을 사용하면 Explorer
+                // 대화상자가 안정적으로 현재 데스크톱에 표시됩니다.
+                Opacity = 1,
+                // Chromium이 전면을 소유하고 있어도 Shell 대화상자가 뒤에 숨지 않게
+                // 선택 작업이 끝나는 짧은 동안만 owner를 최상위로 유지합니다.
+                TopMost = true,
                 MinimizeBox = false,
                 MaximizeBox = false
             };

@@ -1,7 +1,7 @@
 (() => {
   'use strict';
 
-  const VERSION = '4.4.38';
+  const VERSION = '4.4.39';
   const DEFAULT_POSITION_DEFS = [
     { key:'CA_TOP', name:'CA(TOP)' },
     { key:'AN_TOP', name:'AN(TOP)' },
@@ -23,7 +23,7 @@
   const NG_POSITION_PREFIX = 'ng-position:';
   const IMG_RE = /\.(png|jpe?g|bmp|gif|webp|tif?f)$/i;
   const LOCAL_AGENT_URL = 'http://127.0.0.1:17891';
-  const EXPECTED_AGENT_VERSION = '0.2.12';
+  const EXPECTED_AGENT_VERSION = '0.2.13';
   const PICKER_POLL_INTERVAL_MS = 600;
   const RUNTIME_PRELOAD_TIMEOUT_MS = 15 * 60 * 1000;
   const NOTIFICATION_KEY = 'visionqc-v4428-notifications';

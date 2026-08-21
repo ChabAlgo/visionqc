@@ -10,10 +10,10 @@ const server = read('AgentServer.cs');
 const picker = read('NativeShellPicker.cs');
 const program = read('Program.cs');
 
-test('Agent v0.2.12 version is consistent', () => {
-  assert.match(program, /AgentVersion = "0\.2\.12"/);
-  assert.match(read('Properties/AssemblyInfo.cs'), /AssemblyVersion\("0\.2\.12\.0"\)/);
-  assert.match(read('BUILD_RELEASE_x64.cmd'), /v0\.2\.12/);
+test('Agent v0.2.13 version is consistent', () => {
+  assert.match(program, /AgentVersion = "0\.2\.13"/);
+  assert.match(read('Properties/AssemblyInfo.cs'), /AssemblyVersion\("0\.2\.13\.0"\)/);
+  assert.match(read('BUILD_RELEASE_x64.cmd'), /v0\.2\.13/);
 });
 
 test('picker HTTP calls return immediately and use idempotent start/status jobs', () => {
@@ -96,7 +96,8 @@ test('folder picker supports multiple Explorer selections without changing file 
   assert.match(picker, /new ManualResetEvent\(false\)/);
   assert.doesNotMatch(picker, /thread\.Join\(\)/);
   assert.match(picker, /ShowInTaskbar = false/);
-  assert.match(picker, /TopMost = false/);
+  assert.match(picker, /Opacity = 1/);
+  assert.match(picker, /TopMost = true/);
 });
 
 test('picker jobs and simulation DTO retain every selected image folder', () => {
