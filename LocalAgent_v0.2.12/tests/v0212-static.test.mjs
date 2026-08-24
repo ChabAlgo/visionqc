@@ -11,10 +11,10 @@ const picker = read('NativeShellPicker.cs');
 const pickerService = read('Services/PickerService.cs');
 const program = read('Program.cs');
 
-test('Agent v1.2.0 version is consistent', () => {
-  assert.match(program, /AgentVersion = "1\.2\.0"/);
-  assert.match(read('Properties/AssemblyInfo.cs'), /AssemblyVersion\("1\.2\.0\.0"\)/);
-  assert.match(read('BUILD_RELEASE_x64.cmd'), /v1\.2\.0/);
+test('Agent v1.2.1 version is consistent', () => {
+  assert.match(program, /AgentVersion = "1\.2\.1"/);
+  assert.match(read('Properties/AssemblyInfo.cs'), /AssemblyVersion\("1\.2\.1\.0"\)/);
+  assert.match(read('BUILD_RELEASE_x64.cmd'), /v1\.2\.1/);
 });
 
 test('HTTP server delegates picker lifecycle to the isolated picker service', () => {
@@ -137,11 +137,14 @@ test('large CSV history import and server-side history search stay outside Agent
   assert.match(store, /idx_images_capture_result/);
 });
 
-test('AI Suggest auto-selects one filename Position and can save Green heatmap overlays', () => {
-  assert.match(server, /case "\/api\/classification\/inspect\/auto"/);
-  assert.match(server, /private object InspectSingleGreenImageAuto/);
+test('AI Suggest reuses the loaded Runtime and never writes a single inspection to SQLite', () => {
+  assert.match(server, /case "\/api\/classification\/inspect-upload"/);
+  assert.match(server, /private object InspectUploadedGreenImage/);
+  assert.match(server, /Path\.GetTempPath\(\)/);
   assert.match(server, /PositionResolver\.Resolve/);
-  assert.match(server, /RuntimePreloadResponse preload = PreloadRuntime/);
+  assert.match(server, /_preloadedRuntimeSignature/);
   assert.match(server, /config\.HeatmapImageSave = req\.green != null && req\.green\.heatmapImageSave/);
+  assert.doesNotMatch(server, /PersistSingleInspection/);
+  assert.doesNotMatch(server, /InspectSingleGreenImageAuto/);
   assert.match(read('AgentDtos.cs'), /bool heatmapImageSave/);
 });

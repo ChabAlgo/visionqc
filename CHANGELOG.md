@@ -1,3 +1,15 @@
+# VisionQC v4.7.1
+
+## SQLite 집계 / AI SUGGEST / 이미지 Viewer
+
+- 메인 날짜별 NG율을 History 검색 필터와 분리하고 Simulation·CSV 이력만 집계합니다.
+- Gemini 호출 기반 AI SUGGEST를 현재 사전 로드 Runtime Green Tool 검사로 교체하고 별도 AI 검사 메뉴를 제거했습니다.
+- Tool Score 점 클릭 Viewer에 원본/크롭과 Tool별 Green Heatmap Overlay 전환 버튼을 추가했습니다.
+- 실제 NG 폴더는 결과 CSV에 매칭되는 Cell ID만 지연 색인하고, Viewer에서만 원본 파일을 읽습니다.
+- 실제 NG 검출 최소 Score에 다른 Tool NG 제외 기준 입력값(초기 0.80)을 추가했습니다.
+
+---
+
 # VisionQC v4.4.38
 
 ## Chrome 권한 요청 동작

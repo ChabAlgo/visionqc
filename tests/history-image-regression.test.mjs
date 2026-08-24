@@ -39,3 +39,14 @@ test('Heatmap overlay save controls are Green-only, including Integrated mode', 
   assert.match(runtime, /NG 원본 위 Heatmap Overlay 저장/);
   assert.match(runtime, /!integrated/);
 });
+
+test('Actual NG folders defer original-file reads and calculate an exclusion-aware detected minimum score', () => {
+  const scan = js.slice(js.indexOf('async function scanNgDirectory'), js.indexOf('async function chooseNgPositionFolder'));
+  const analysis = js.slice(js.indexOf('function scorePoints'), js.indexOf('function downloadScoreFilterCsv'));
+  assert.match(scan, /function actualNgTargetKeys/);
+  assert.match(scan, /fileHandle:handle/);
+  assert.doesNotMatch(scan, /await handle\.getFile\(\)/);
+  assert.match(analysis, /function actualNgMinimumScore/);
+  assert.match(analysis, /otherToolNgScores/);
+  assert.match(js, /id="vq43-actual-ng-exclusion-score"/);
+});

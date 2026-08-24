@@ -1,19 +1,19 @@
 {
-  "releaseTag": "visionqc-v4.7.0-agent-v1.2.0",
-  "webVersion": "4.7.0",
-  "agentVersion": "1.2.0",
-  "minimumAgentVersion": "1.2.0",
+  "releaseTag": "visionqc-v4.7.1-agent-v1.2.1",
+  "webVersion": "4.7.1",
+  "agentVersion": "1.2.1",
+  "minimumAgentVersion": "1.2.1",
   "compatibility": {
-    "web": "4.7.0",
-    "agent": "1.2.0"
+    "web": "4.7.1",
+    "agent": "1.2.1"
   },
   "artifacts": {
-    "agentInstaller": "downloads/VisionQC_Agent_Installer_v1.2.0.exe",
-    "offlinePackage": "downloads/VisionQC_Offline_v4.7.0.zip",
+    "agentInstaller": "downloads/VisionQC_Agent_Installer_v1.2.1.exe",
+    "offlinePackage": "downloads/VisionQC_Offline_v4.7.1.zip",
     "sha256": {
-      "agentInstaller": "F793E587C9260A1894095B3A782A43C991C02965D7B4BA0163246F2BF1DBDBF7",
-      "offlinePackage": "9C60731A39D94377FFD005D853E2C997B8DF3C715E876A891CDBEEC0A01A3615"
+      "agentInstaller": "3E96A98684CC9419F9CA4B25C34E521FAD98BBBB54B576E92A8B180B4DFB41DC",
+      "offlinePackage": "1D1C84896984EEA572AD0A66010D2933F2F65933EE0535E09585C964E15FEA9D"
     }
   },
-  "notes": "CSV FullPath 이미지 조회, SQLite 검사 이력, Green 전용 Heatmap Overlay와 구조 문서화를 포함한 릴리스입니다. 배포 파일은 GitHub Release와 별도 백업 저장소에 보관합니다."
+  "notes": "Simulation·CSV 전용 SQLite 집계, Runtime 기반 AI SUGGEST, Tool Score Heatmap Viewer와 대용량 실제 NG 폴더 지연 색인을 포함한 릴리스입니다. 배포 파일은 GitHub Release와 별도 백업 저장소에 보관합니다."
 }

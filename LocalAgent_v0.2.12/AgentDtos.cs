@@ -25,9 +25,18 @@ namespace VisionQC.LocalAgent
     }
 
     // 분류 화면의 VPDL Inspect는 시뮬레이션 설정을 재사용하되, 현재 이미지 한 장만 처리한다.
-    public sealed class AgentSingleInspectionRequest : AgentStartRequest
+    public class AgentSingleInspectionRequest : AgentStartRequest
     {
         public string imagePath { get; set; }
+    }
+
+    // 분류 화면은 브라우저가 보유한 File 객체를 base64로 한 번만 전달한다.
+    // Agent는 임시 파일로 검사한 뒤 즉시 제거하며 SQLite 검사 이력을 만들지 않는다.
+    public sealed class AgentUploadedInspectionRequest : AgentSingleInspectionRequest
+    {
+        public string imageBase64 { get; set; }
+        public string fileName { get; set; }
+        public string mimeType { get; set; }
     }
 
     public sealed class AgentImagePreviewRequest
@@ -93,6 +102,8 @@ namespace VisionQC.LocalAgent
         public string toolResult { get; set; }
         public string totalResult { get; set; }
         public string sourceName { get; set; }
+        public string fullPath { get; set; }
+        public List<string> sourceTypes { get; set; }
         public int page { get; set; } = 1;
         public int pageSize { get; set; } = 50;
     }

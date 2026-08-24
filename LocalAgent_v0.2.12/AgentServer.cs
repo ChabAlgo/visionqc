@@ -212,8 +212,8 @@ namespace VisionQC.LocalAgent
                     case "/api/classification/inspect":
                         result = InspectSingleGreenImage(request.Body);
                         break;
-                    case "/api/classification/inspect/auto":
-                        result = InspectSingleGreenImageAuto(request.Body);
+                    case "/api/classification/inspect-upload":
+                        result = InspectUploadedGreenImage(request.Body);
                         break;
                     case "/api/simulation/start":
                         result = StartSimulation(request.Body);
@@ -325,14 +325,12 @@ namespace VisionQC.LocalAgent
             bool reusable = true;
             try
             {
-                // 단일 AI 검사 Overlay는 임시 폴더가 아니라 사용자 LocalAppData에 남긴다.
-                // SQLite에는 Tool별 overlay_path만 저장하며, 원본 이미지 자체는 복사하지 않는다.
+                // 단일 검사는 현재 사전 로드된 Runtime만 재사용한다. 분석 이력 SQLite에는 저장하지 않는다.
                 var config = BuildGreenConfig(req, SingleInspectionOutputRoot(), null, false);
                 config.HeatmapImageSave = req.green != null && req.green.heatmapImageSave;
                 config.WorkspaceSlots = config.WorkspaceSlots.Where(x => string.Equals(x.Key, position.key, StringComparison.OrdinalIgnoreCase)).ToList();
                 foreach (var tool in config.Tools) tool.PositionKeys = new List<string> { position.key };
                 LiveAnalysisRecord record = GreenOverlayProcessor.InspectSingle(config, position.key, req.imagePath, control, true, CancellationToken.None);
-                PersistSingleInspection(req, record);
                 AppendAgentLog("INFO", "단일 Green 검사 완료 | " + position.displayName + " | " + Path.GetFileName(req.imagePath) + " | " + record.TotalResult);
                 return new { ok = true, position = position.displayName, key = position.key, record = record };
             }
@@ -366,32 +364,53 @@ namespace VisionQC.LocalAgent
             }
         }
 
-        // 파일명 Position 문자열을 기준으로 Position/Green Workspace를 한 개로 좁힌 뒤,
-        // Runtime File Load와 단일 검사를 연속 수행하는 AI Suggest용 진입점이다.
-        private object InspectSingleGreenImageAuto(string body)
+        // Gemini 같은 외부 AI 호출 없이, 브라우저에서 선택한 이미지 1장을 현재 Runtime으로 검사한다.
+        // 브라우저는 로컬 절대 경로를 노출하지 않으므로 이 경로에서만 짧게 임시 파일을 사용한다.
+        private object InspectUploadedGreenImage(string body)
         {
-            AgentSingleInspectionRequest req;
-            try { req = _json.Deserialize<AgentSingleInspectionRequest>(body ?? "{}"); }
-            catch (SysException ex) { return new { ok = false, error = "AI 자동 검사 설정 JSON 오류: " + ex.Message }; }
-            if (req == null || string.IsNullOrWhiteSpace(req.imagePath) || !File.Exists(req.imagePath))
-                return new { ok = false, error = "AI 자동 검사할 이미지 파일을 찾을 수 없습니다." };
+            AgentUploadedInspectionRequest req;
+            try { req = _json.Deserialize<AgentUploadedInspectionRequest>(body ?? "{}"); }
+            catch (SysException ex) { return new { ok = false, error = "분류 AI Suggest 요청 JSON 오류: " + ex.Message }; }
+            if (req == null || string.IsNullOrWhiteSpace(req.imageBase64)) return new { ok = false, error = "검사할 이미지 데이터가 없습니다." };
+            if (req.imageBase64.Length > 110 * 1024 * 1024) return new { ok = false, error = "AI Suggest 이미지는 80MB 이하만 지원합니다." };
 
-            PositionResolution resolution = PositionResolver.Resolve(req.imagePath, req.positions);
-            if (resolution.matches.Count == 0)
-                return new { ok = false, error = "파일명에서 활성 Position을 찾지 못했습니다. 파일명에 Position 문자열이 있어야 합니다." };
-            if (!resolution.IsUnique)
-                return new { ok = false, error = "파일명에 여러 Position이 동시에 일치합니다: " + string.Join(", ", resolution.matches.Select(x => x.displayName)) };
-            if (string.IsNullOrWhiteSpace(FirstNonEmpty(resolution.Position.greenWorkspacePath, resolution.Position.workspacePath)))
-                return new { ok = false, error = resolution.Position.displayName + " Green Workspace가 설정되지 않았습니다." };
+            byte[] bytes;
+            try { bytes = Convert.FromBase64String(req.imageBase64); }
+            catch (SysException ex) { return new { ok = false, error = "이미지 base64 형식 오류: " + ex.Message }; }
+            if (bytes.Length == 0 || bytes.Length > 80 * 1024 * 1024) return new { ok = false, error = "AI Suggest 이미지는 80MB 이하만 지원합니다." };
 
-            req.mode = "green";
-            req.positions = new List<AgentPositionRequest> { resolution.Position };
-            string normalized = _json.Serialize(req);
-            RuntimePreloadResponse preload = PreloadRuntime(normalized);
-            if (!preload.ok) return new { ok = false, autoLoaded = false, position = resolution.Position.displayName, error = preload.error };
+            string originalName = Path.GetFileName(req.fileName ?? "image.png");
+            if (string.IsNullOrWhiteSpace(originalName)) originalName = "image.png";
+            foreach (char invalid in Path.GetInvalidFileNameChars()) originalName = originalName.Replace(invalid, '_');
+            string extension = Path.GetExtension(originalName);
+            if (string.IsNullOrWhiteSpace(extension)) originalName += MimeImageExtension(req.mimeType);
+            string temporaryRoot = Path.Combine(Path.GetTempPath(), "VisionQC", "classification-inspection");
+            string temporaryPath = Path.Combine(temporaryRoot, Guid.NewGuid().ToString("N") + "_" + originalName);
+            try
+            {
+                Directory.CreateDirectory(temporaryRoot);
+                File.WriteAllBytes(temporaryPath, bytes);
+                req.imagePath = temporaryPath;
+                return InspectSingleGreenImage(_json.Serialize(req));
+            }
+            catch (SysException ex)
+            {
+                return new { ok = false, error = "AI Suggest 임시 이미지 검사 실패: " + ex.Message };
+            }
+            finally
+            {
+                try { if (File.Exists(temporaryPath)) File.Delete(temporaryPath); } catch { }
+            }
+        }
 
-            AppendAgentLog("INFO", "AI Suggest 자동 Workspace 선택 | " + resolution.Position.displayName + " | " + Path.GetFileName(req.imagePath));
-            return InspectSingleGreenImage(normalized);
+        private static string MimeImageExtension(string mimeType)
+        {
+            string type = (mimeType ?? "").Trim().ToLowerInvariant();
+            if (type == "image/jpeg") return ".jpg";
+            if (type == "image/bmp") return ".bmp";
+            if (type == "image/tiff") return ".tif";
+            if (type == "image/webp") return ".webp";
+            return ".png";
         }
 
         private static string SingleInspectionOutputRoot()
@@ -1235,32 +1254,6 @@ namespace VisionQC.LocalAgent
             catch (SysException ex)
             {
                 AppendAgentLog("WARN", "SQLite Simulation 이력 마감 실패: " + ex.Message);
-            }
-        }
-
-        private void PersistSingleInspection(AgentStartRequest request, LiveAnalysisRecord record)
-        {
-            try
-            {
-                lock (_historyWriteSync)
-                {
-                    var session = _historyStore.Start(new SqliteRunStore.RunStoreStart
-                    {
-                        SourceType = "single-inspection",
-                        Mode = "green",
-                        SourceName = "Green 단일 검사",
-                        AgentVersion = Program.AgentVersion,
-                        ConfigJson = _json.Serialize(request),
-                        NamingProfile = request.namingProfile,
-                        NamingProfileJson = _json.Serialize(request.namingProfile ?? new NamingProfile())
-                    });
-                    _historyStore.AppendLiveRecord(session, record);
-                    _historyStore.Complete(session, "completed", "Green 단일 검사 완료");
-                }
-            }
-            catch (SysException ex)
-            {
-                AppendAgentLog("WARN", "SQLite 단일 검사 이력 저장 실패(검사는 완료됨): " + ex.Message);
             }
         }
 

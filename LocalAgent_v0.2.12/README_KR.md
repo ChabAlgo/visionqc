@@ -1,12 +1,12 @@
-# VisionQC Local Agent v1.2.0
+# VisionQC Local Agent v1.2.1
 
-## v1.2.0 유지보수 기준
+## v1.2.1 유지보수 기준
 
 - `Services/HistoryService.cs`: 이력 HTTP 요청과 비동기 import 작업 관리.
 - `Services/CsvHistoryFileImporter.cs`: CSV 한 줄씩 SQLite에 직접 적재.
 - `Persistence/SqliteRunStore.cs`: 영구 검사 이력과 서버 측 검색/페이지네이션.
 - `API_V1.2_HISTORY_KR.md`, `Services/HISTORY_SERVICE_KR.md`, `Persistence/HISTORY_STORE_KR.md`를 새 작업 전에 확인합니다.
-- 배포 파일은 `VisionQC_Agent_Installer_v1.2.0.exe`, `VisionQC_Offline_v4.7.0.zip`입니다.
+- 배포 파일은 `VisionQC_Agent_Installer_v1.2.1.exe`, `VisionQC_Offline_v4.7.1.zip`입니다.
 
 # 이전 변경 이력
 

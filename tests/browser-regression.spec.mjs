@@ -177,7 +177,7 @@ test.describe('VisionQC v4.4.38 FHD interaction regression', () => {
     expect(result.agentTime).toBe('17:17:26.771');
   });
 
-  test('SQLite History and AI inspection navigation render without an Agent connection', async ({ page }) => {
+  test('SQLite History and Runtime AI Suggest bridge navigation render without an Agent connection', async ({ page }) => {
     await page.goto('/index.html?vqDebug=1&browserRegression=1', { waitUntil: 'domcontentloaded' });
     await page.waitForFunction(() => Boolean(window.__VISIONQC_DEBUG__), null, { timeout: 15000 });
 
@@ -189,10 +189,9 @@ test.describe('VisionQC v4.4.38 FHD interaction regression', () => {
     await expect(page.locator('[data-history-field="cellId"]')).toBeVisible();
     await expect(page.locator('.vq43-history-kpis')).toBeVisible();
 
-    await page.locator('[data-vq-page="inspection"]').click();
-    await expect(page.locator('.vq43-inspection-page')).toBeVisible();
-    await expect(page.locator('#vq43-inspection-image-path')).toBeVisible();
-    await expect(page.locator('#vq43-inspection-heatmap')).toBeChecked();
+    await expect(page.locator('[data-vq-page="inspection"]')).toHaveCount(0);
+    const bridgeInstalled = await page.evaluate(() => Boolean(window.__VISIONQC_V471_AI_SUGGEST_BRIDGE__));
+    expect(bridgeInstalled).toBe(true);
 
     const settingSvg = await page.locator('[data-vq-page="settings"] .vq43-icon-svg').count();
     expect(settingSvg).toBeGreaterThan(0);

@@ -11,14 +11,14 @@ const css = read('visionqc-extension.css');
 const dashboardCss = read('visionqc-v470.css');
 const html = read('index.html');
 
-test('v4.7.0 Web and Agent download targets are aligned', () => {
-  assert.match(read('VERSION.txt'), /v4\.7\.0/);
-  assert.match(html, /visionqc-extension\.js\?v=4\.7\.0/);
-  assert.match(html, /visionqc-v470\.css\?v=4\.7\.0/);
-  assert.match(js, /const VERSION = '4\.7\.0'/);
-  assert.match(js, /const EXPECTED_AGENT_VERSION = '1\.2\.0'/);
-  assert.match(js, /VisionQC_Agent_Installer_v1\.2\.0\.exe/);
-  assert.match(js, /VisionQC_Offline_v4\.7\.0\.zip/);
+test('v4.7.1 Web and Agent download targets are aligned', () => {
+  assert.match(read('VERSION.txt'), /v4\.7\.1/);
+  assert.match(html, /visionqc-extension\.js\?v=4\.7\.1/);
+  assert.match(html, /visionqc-v470\.css\?v=4\.7\.1/);
+  assert.match(js, /const VERSION = '4\.7\.1'/);
+  assert.match(js, /const EXPECTED_AGENT_VERSION = '1\.2\.1'/);
+  assert.match(js, /VisionQC_Agent_Installer_v1\.2\.1\.exe/);
+  assert.match(js, /VisionQC_Offline_v4\.7\.1\.zip/);
 });
 
 test('persistent History page has filters, server-side pagination, daily NG chart and image viewer', () => {
@@ -38,15 +38,17 @@ test('persistent History page has filters, server-side pagination, daily NG char
   assert.match(dashboardCss, /\.vq43-main-history-dashboard/);
 });
 
-test('AI inspection page resolves a filename to a Green workspace and toggles stored overlay paths', () => {
-  assert.match(js, /navItem\('inspection', 'inspection'/);
-  assert.match(js, /function inspectionRequest\(\)/);
-  assert.match(js, /\/api\/classification\/inspect\/auto/);
-  assert.match(js, /function toggleInspectionOverlay/);
-  assert.match(js, /function loadInspectionPreview/);
-  assert.match(js, /heatmapImageSave = !!state\.inspectionHeatmapEnabled/);
-  assert.match(css, /\.vq43-inspection-preview/);
-  assert.match(css, /\.vq43-inspection-tool/);
+test('AI SUGGEST uses the loaded local Runtime and tool-score viewer has explicit Heatmap controls', () => {
+  assert.match(js, /function installLegacyAiSuggestRuntimeBridge/);
+  assert.match(js, /\/api\/classification\/inspect-upload/);
+  assert.match(js, /function buildLoadedRuntimeAiSuggestRequest/);
+  assert.doesNotMatch(js, /\/api\/classification\/inspect\/auto/);
+  assert.doesNotMatch(js, /navItem\('inspection', 'inspection'/);
+  assert.match(js, /function overlayImagesForRecord/);
+  assert.match(js, /data-vq-action="modal-overlay-image"/);
+  assert.match(js, /function actualNgMinimumScore/);
+  assert.match(js, /data-vq-modal-overlay/);
+  assert.match(dashboardCss, /\.vq43-modal-image-switcher/);
 });
 
 test('settings uses an SVG cog icon rather than an emoji glyph', () => {

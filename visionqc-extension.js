@@ -1,7 +1,7 @@
 (() => {
   'use strict';
 
-  const VERSION = '4.7.0';
+  const VERSION = '4.7.1';
   const DEFAULT_POSITION_DEFS = [
     { key:'CA_TOP', name:'CA(TOP)' },
     { key:'AN_TOP', name:'AN(TOP)' },
@@ -24,9 +24,12 @@
   const NG_POSITION_PREFIX = 'ng-position:';
   const IMG_RE = /\.(png|jpe?g|bmp|gif|webp|tif?f)$/i;
   const LOCAL_AGENT_URL = 'http://127.0.0.1:17891';
-  const EXPECTED_AGENT_VERSION = '1.2.0';
-  const AGENT_INSTALLER_URL = './downloads/VisionQC_Agent_Installer_v1.2.0.exe';
-  const OFFLINE_PACKAGE_URL = './downloads/VisionQC_Offline_v4.7.0.zip';
+  const EXPECTED_AGENT_VERSION = '1.2.1';
+  const AGENT_INSTALLER_URL = './downloads/VisionQC_Agent_Installer_v1.2.1.exe';
+  const OFFLINE_PACKAGE_URL = './downloads/VisionQC_Offline_v4.7.1.zip';
+  // SQLite에는 사용자가 명시적으로 남기려는 두 종류의 결과만 표시한다.
+  // 이전 버전의 단발 검사(single-inspection) 이력은 보존하되 화면 집계에서는 제외한다.
+  const PERSISTED_HISTORY_SOURCE_TYPES = ['simulation', 'csv-import', 'csv-file-stream'];
   const PICKER_POLL_INTERVAL_MS = 600;
   const RUNTIME_PRELOAD_TIMEOUT_MS = 15 * 60 * 1000;
   const NOTIFICATION_KEY = 'visionqc-v4428-notifications';
@@ -117,20 +120,20 @@
     analysisPosition: 'ALL',
     analysisScoreCutoff: 0.80,
     analysisScoreCompare: 'GTE',
+    actualNgOtherToolExclusionScore: 0.80,
     analysisPoints: [],
     analysisPointMap: new Map(),
     historyImporting: false,
     historyLoaded: false,
     historyLoading: false,
     historyData: null,
-    historyFilters: { fromDate:'', toDate:'', cellId:'', position:'', tool:'', toolResult:'', totalResult:'NG', sourceName:'', page:1, pageSize:50 },
+    historyFilters: { fromDate:'', toDate:'', cellId:'', position:'', tool:'', toolResult:'', totalResult:'', sourceName:'', page:1, pageSize:50 },
     historyFileImport: null,
-    inspectionImagePath: '',
-    inspectionRunning: false,
-    inspectionHeatmapEnabled: true,
-    inspectionOverlayEnabled: false,
-    inspectionOverlayTool: '',
-    inspectionResult: null,
+    dashboardHistoryLoaded: false,
+    dashboardHistoryLoading: false,
+    dashboardHistoryData: null,
+    dashboardHistoryRefreshTimer: null,
+    modalOverlayPath: '',
     simulationMode: 'integrated',
     simulationAgent: { status: 'idle', version: '-', vpdl: '-', license: '-', gpu: '-', message: 'Local Agent 연결 전' },
     simulationAgentPollInFlight: false,
@@ -323,7 +326,6 @@
       analysis:'<path d="M4 19V5"/><path d="M4 19h16"/><path d="m7 15 4-4 3 2 5-6"/><circle cx="7" cy="15" r="1"/><circle cx="11" cy="11" r="1"/><circle cx="14" cy="13" r="1"/><circle cx="19" cy="7" r="1"/>',
       classification:'<rect x="3" y="4" width="18" height="16" rx="2"/><circle cx="8" cy="9" r="1.5"/><path d="m5 17 4-4 3 3 2-2 5 4"/><path d="m15 7 1.5 1.5L19 6"/>',
       history:'<path d="M7 3h8l3 3v15H7z"/><path d="M15 3v4h4"/><path d="M10 12h5M10 16h5"/>',
-      inspection:'<rect x="3" y="4" width="18" height="16" rx="2"/><circle cx="9" cy="10" r="2"/><path d="m5 18 4-4 3 3 2-2 4 3"/><path d="M17 8h3m-1.5-1.5v3"/>',
       simulation:'<circle cx="12" cy="12" r="9"/><path d="m10 8 6 4-6 4z"/>',
       settings:'<circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 0 0 .34 1.88l.06.06-2.12 2.12-.06-.06a1.7 1.7 0 0 0-1.88-.34 1.7 1.7 0 0 0-1.03 1.55V20.3h-3v-.09A1.7 1.7 0 0 0 10.68 18.66a1.7 1.7 0 0 0-1.88.34l-.06.06-2.12-2.12.06-.06A1.7 1.7 0 0 0 7.02 15a1.7 1.7 0 0 0-1.55-1.03H5.4v-3h.07A1.7 1.7 0 0 0 7.02 9.94a1.7 1.7 0 0 0-.34-1.88l-.06-.06 2.12-2.12.06.06a1.7 1.7 0 0 0 1.88.34A1.7 1.7 0 0 0 11.71 4.73V4.65h3v.08a1.7 1.7 0 0 0 1.03 1.55 1.7 1.7 0 0 0 1.88-.34l.06-.06L19.8 8l-.06.06a1.7 1.7 0 0 0-.34 1.88 1.7 1.7 0 0 0 1.55 1.03h.08v3h-.08A1.7 1.7 0 0 0 19.4 15z"/>',
       bell:'<path d="M18 8a6 6 0 0 0-12 0c0 7-3 7-3 9h18c0-2-3-2-3-9"/><path d="M10 21h4"/>',
@@ -349,7 +351,6 @@
             ${navItem('simulation', 'simulation', '시뮬레이션', 'VPDL Local Runtime · GPU')}
             ${navItem('settings', 'settings', '설정', 'Input · 실제 NG 경로')}
             ${navItem('history', 'history', '검사 이력', 'SQLite · 날짜별 NG율 · 이미지')}
-            ${navItem('inspection', 'inspection', 'AI 검사', '파일명 Position · Workspace 자동 선택')}
           </nav>
           <div class="vq43-rail-bottom" aria-label="향후 기능">
             <button type="button" class="vq43-rail-placeholder vq43-notification-item" data-vq-action="notifications-open" title="오류·경고 알림"><span class="vq43-rail-icon">${railIconSvg('bell')}<i id="vq43-notification-count" class="vq43-notification-count" hidden>0</i></span><b>알림</b></button>
@@ -463,7 +464,7 @@
   }
 
   function setPage(page) {
-    if (!['main', 'analysis', 'history', 'classification', 'inspection', 'simulation', 'settings'].includes(page)) page = 'classification';
+    if (!['main', 'analysis', 'history', 'classification', 'simulation', 'settings'].includes(page)) page = 'classification';
     state.page = page;
     document.body.dataset.vqPage = page;
     safeStorageSet(PAGE_KEY, page);
@@ -652,10 +653,8 @@
     else if (action === 'history-page') changeHistoryPage(Number(control.dataset.vqHistoryPage));
     else if (action === 'history-open-image') openHistoryImage(Number(control.dataset.vqHistoryImageId));
     else if (action === 'history-import-file') chooseHistoryCsvImport();
-    else if (action === 'inspection-browse') browseInspectionImage();
-    else if (action === 'inspection-run') runAutoInspection();
-    else if (action === 'inspection-overlay') toggleInspectionOverlay();
-    else if (action === 'inspection-overlay-tool') selectInspectionOverlayTool(control.dataset.vqInspectionTool || '');
+    else if (action === 'modal-original-image') selectModalOriginalImage();
+    else if (action === 'modal-overlay-image') selectModalOverlayImage(control.dataset.vqModalOverlay || '');
     else if (action === 'choose-ng-folder') chooseNgFolder();
     else if (action === 'clear-inputs') clearAnalysisInputs();
     else if (action === 'miss-tab') {
@@ -738,6 +737,22 @@
         state.analysisScoreCutoff = clampScore(cutoffInput.value, 0.80);
         cutoffInput.value = state.analysisScoreCutoff.toFixed(2);
       };
+    }
+
+    const actualNgExclusionInput = $('#vq43-actual-ng-exclusion-score', shell);
+    if (actualNgExclusionInput) {
+      const syncActualNgExclusion = () => {
+        state.actualNgOtherToolExclusionScore = clampScore(actualNgExclusionInput.value, 0.80);
+        actualNgExclusionInput.value = state.actualNgOtherToolExclusionScore.toFixed(2);
+        renderAnalysis();
+        bindPageControls();
+      };
+      actualNgExclusionInput.onchange = syncActualNgExclusion;
+      actualNgExclusionInput.onkeydown = (event) => {
+        event.stopPropagation();
+        if (event.key === 'Enter') { event.preventDefault(); syncActualNgExclusion(); }
+      };
+      actualNgExclusionInput.onclick = (event) => event.stopPropagation();
     }
 
     $$('.vq43-threshold-input', shell).forEach((input) => {
@@ -841,7 +856,6 @@
     });
     bindSimulationComplexControls();
     bindHistoryControls(shell);
-    bindInspectionControls(shell);
     applySimulationTooltips(shell);
     applySimulationLockDom();
   }
@@ -1305,6 +1319,9 @@
         }
       }
       await send(batch, true);
+      state.historyLoaded = false;
+      state.dashboardHistoryLoaded = false;
+      scheduleDashboardHistoryRefresh(0);
       showToast(`CSV 분석 이력 ${numberText(saved)}행을 SQLite에 저장했습니다. 원본 이미지는 복사하지 않고 경로만 기록합니다.`);
     } catch (error) {
       console.error(error);
@@ -1356,9 +1373,14 @@
       if (permission !== 'granted') throw new Error('실제 NG 폴더 접근 권한이 없습니다.');
     }
     const images = [], warnings = [];
+    // 결과 CSV가 먼저 준비되어 있으면 필요한 Cell ID만 색인하고, 모두 찾으면 즉시 순회를 끝낸다.
+    // 실제 NG 원본을 미리 getFile()로 읽지 않아 대용량 루트의 메모리/지연을 크게 줄인다.
+    const pendingTargets = actualNgTargetKeys();
+    const limitToLoadedResults = pendingTargets.size > 0;
     let invalidCell = 0, unknownPosition = 0;
     async function walk(directory, parts) {
       for await (const [name, handle] of directory.entries()) {
+        if (limitToLoadedResults && pendingTargets.size === 0) return;
         const next = [...parts, name];
         if (handle.kind === 'directory') await walk(handle, next);
         else if (handle.kind === 'file' && IMG_RE.test(name)) {
@@ -1366,15 +1388,18 @@
           if (!position) { unknownPosition += 1; continue; }
           const cellId = extractCellId(name) || extractCellId(next.join('/'));
           if (!cellId) { invalidCell += 1; continue; }
-          const file = await handle.getFile();
+          const targetKey = resultKey(position, cellId);
+          if (limitToLoadedResults && !pendingTargets.has(targetKey)) continue;
           const relativePath = normalizePath(next.join('/'));
-          images.push({ key: `${position}|${cellId}|${relativePath.toLowerCase()}`, position, cellId, file, relativePath });
+          images.push({ key: `${position}|${cellId}|${relativePath.toLowerCase()}`, position, cellId, fileHandle:handle, relativePath });
+          if (limitToLoadedResults) pendingTargets.delete(targetKey);
         }
       }
     }
     await walk(rootHandle, [rootHandle.name || '']);
     if (invalidCell) warnings.push(`Cell ID 추출 실패 이미지 ${numberText(invalidCell)}개 제외`);
     if (unknownPosition) warnings.push(`Position 폴더 밖 이미지 ${numberText(unknownPosition)}개 제외`);
+    if (limitToLoadedResults) warnings.push(`불러온 결과 CSV에 있는 Cell ID만 빠르게 색인했습니다 (${numberText(images.length)}개).`);
     if (!images.length) warnings.push('분석 가능한 실제 NG 이미지가 없습니다.');
     return { rootName: rootHandle.name || 'NG Images', images, warnings };
   }
@@ -1388,24 +1413,43 @@
       if (permission !== 'granted') throw new Error('실제 NG 폴더 접근 권한이 없습니다.');
     }
     const images = [], warnings = [];
+    const pendingTargets = actualNgTargetKeys(position);
+    const limitToLoadedResults = pendingTargets.size > 0;
     let invalidCell = 0;
     async function walk(directory, parts) {
       for await (const [name, handle] of directory.entries()) {
+        if (limitToLoadedResults && pendingTargets.size === 0) return;
         const next = [...parts, name];
         if (handle.kind === 'directory') await walk(handle, next);
         else if (handle.kind === 'file' && IMG_RE.test(name)) {
           const cellId = extractCellId(name) || extractCellId(next.join('/'));
           if (!cellId) { invalidCell += 1; continue; }
-          const file = await handle.getFile();
+          const targetKey = resultKey(position, cellId);
+          if (limitToLoadedResults && !pendingTargets.has(targetKey)) continue;
           const relativePath = normalizePath(next.join('/'));
-          images.push({ key:`${position}|${cellId}|${relativePath.toLowerCase()}`, position, cellId, file, relativePath });
+          images.push({ key:`${position}|${cellId}|${relativePath.toLowerCase()}`, position, cellId, fileHandle:handle, relativePath });
+          if (limitToLoadedResults) pendingTargets.delete(targetKey);
         }
       }
     }
     await walk(rootHandle, [rootHandle.name || '']);
     if (invalidCell) warnings.push(`Cell ID 추출 실패 이미지 ${numberText(invalidCell)}개 제외`);
+    if (limitToLoadedResults) warnings.push(`불러온 결과 CSV에 있는 Cell ID만 빠르게 색인했습니다 (${numberText(images.length)}개).`);
     if (!images.length) warnings.push('분석 가능한 실제 NG 이미지가 없습니다.');
     return { rootName:rootHandle.name || position, images, warnings };
+  }
+
+  function actualNgTargetKeys(position = '') {
+    const targets = new Set();
+    Object.entries(state.resultInputs || {}).forEach(([name, input]) => {
+      if (position && name !== position) return;
+      (input?.rows || []).forEach((row) => {
+        const cellId = String(row?.cellId || '').trim().toUpperCase();
+        const rowPosition = normalizePosition(row?.position) || name;
+        if (cellId && rowPosition) targets.add(resultKey(rowPosition, cellId));
+      });
+    });
+    return targets;
   }
 
   async function chooseNgPositionFolder(position) {
@@ -1638,7 +1682,6 @@
     if (state.page === 'main') renderDashboard();
     else if (state.page === 'analysis') renderAnalysis();
     else if (state.page === 'history') renderHistory();
-    else if (state.page === 'inspection') renderInspection();
     else if (state.page === 'simulation') renderSimulation();
     else if (state.page === 'settings') renderSettings();
     bindPageControls();
@@ -1785,7 +1828,7 @@
     const persistedHistory = mainHistoryDashboardPanel();
     if (!model?.records.length) {
       $('#vq43-page').innerHTML = `<div class="vq43-content"><div class="vq43-topline"><div><div class="vq43-eyebrow">Main Dashboard</div><h1 class="vq43-title">검사 결과 전체 View</h1><p class="vq43-subtitle">CSV 분석 결과와 Local Agent SQLite 검사 이력을 한 화면에서 확인합니다.</p></div><div class="vq43-top-actions"><button class="vq43-btn" data-vq-action="open-settings">Input 변경</button></div></div>${persistedHistory}<section class="vq43-section"><div class="vq43-empty"><div class="vq43-empty-card"><div class="vq43-empty-symbol">◌</div><h2>분석 Input이 없습니다</h2><p>설정 메뉴에서 Position별 시뮬레이션 결과 파일과 실제 NG 이미지 폴더를 입력하세요. 결과 파일은 1개 Position만 입력해도 분석할 수 있습니다.</p></div></div></section></div>`;
-      if (!state.historyLoaded && !state.historyLoading) setTimeout(() => refreshHistory(false), 0);
+      if (!state.dashboardHistoryLoaded && !state.dashboardHistoryLoading) setTimeout(() => refreshDashboardHistory(), 0);
       return;
     }
     const positions = positionNames();
@@ -1810,13 +1853,13 @@
         </section>
         ${model.duplicates.length ? `<div class="vq43-note">⚠ 중복 Cell ID + Position ${numberText(model.duplicates.length)}건은 하나라도 NG이면 NG로 통합했습니다.</div>` : ''}
       </div>`;
-    if (!state.historyLoaded && !state.historyLoading) setTimeout(() => refreshHistory(false), 0);
+    if (!state.dashboardHistoryLoaded && !state.dashboardHistoryLoading) setTimeout(() => refreshDashboardHistory(), 0);
   }
 
   function mainHistoryDashboardPanel() {
-    const data = state.historyData || { totalCount:0, ngCount:0, uniqueCellCount:0, daily:[] };
-    const loading = state.historyLoading;
-    return `<section class="vq43-section vq43-main-history-dashboard"><div class="vq43-section-title"><span class="vq43-step blue">H</span><div><h3>날짜별 검사 NG율 · SQLite 이력</h3><p>${loading ? 'Local Agent SQLite 이력을 불러오는 중입니다.' : 'Simulation·AI 검사·직접 저장한 CSV 이력의 날짜별 전체/NG 건수입니다. 막대를 누르면 이력 화면에서 해당 날짜를 엽니다.'}</p></div><button class="vq43-btn vq43-btn-blue" data-vq-action="history-open">검사 이력 열기</button></div><div class="vq43-main-history-kpis"><span>영구 검사 이미지 <b>${numberText(data.totalCount)}</b></span><span class="ng">NG 이미지 <b>${numberText(data.ngCount)}</b></span><span>고유 Cell ID <b>${numberText(data.uniqueCellCount)}</b></span><span class="ng">NG율 <b>${rateText(data.totalCount ? data.ngCount / data.totalCount : 0)}</b></span></div>${historyDateBars(data.daily)}</section>`;
+    const data = state.dashboardHistoryData || { totalCount:0, ngCount:0, uniqueCellCount:0, daily:[] };
+    const loading = state.dashboardHistoryLoading;
+    return `<section class="vq43-section vq43-main-history-dashboard"><div class="vq43-section-title"><span class="vq43-step blue">H</span><div><h3>날짜별 검사 NG율 · SQLite 이력</h3><p>${loading ? 'Local Agent SQLite 이력을 불러오는 중입니다.' : '시뮬레이션 결과와 저장한 CSV 분석 결과만 집계합니다. 막대를 누르면 이력 화면에서 해당 날짜를 엽니다.'}</p></div><button class="vq43-btn vq43-btn-blue" data-vq-action="history-open">검사 이력 열기</button></div><div class="vq43-main-history-kpis"><span>검사 이미지 <b>${numberText(data.totalCount)}</b></span><span class="ng">NG 이미지 <b>${numberText(data.ngCount)}</b></span><span>고유 Cell ID <b>${numberText(data.uniqueCellCount)}</b></span><span class="ng">NG율 <b>${rateText(data.totalCount ? data.ngCount / data.totalCount : 0)}</b></span></div>${historyDateBars(data.daily)}</section>`;
   }
 
   function kpi(label, value, detail, tone = '', rawDetail = false) {
@@ -1960,10 +2003,25 @@
         if (scope === 'ACTUAL_NG_TOOL_NG' && observation.result !== 'NG') return;
         if (scope === 'ACTUAL_NG_TOOL_OK' && observation.result !== 'OK') return;
         const key = `${record.key}|${tool}|${index}`;
-        points.push({ key, recordKey: record.key, cellId: record.cellId, position: record.position, result: observation.result, score: observation.score, hasActualImage, hasCsvImage:!!row.fullPath, fullPath:row.fullPath || '', sourceFileName: row.sourceFileName || '', sourceRowNumber: row.sourceRowNumber || '' });
+        const otherToolNgScores = Object.entries(row.tools || {}).filter(([otherTool, other]) => otherTool !== tool && other?.result === 'NG' && Number.isFinite(other?.score)).map(([otherTool, other]) => ({ tool:otherTool, score:other.score }));
+        points.push({ key, recordKey: record.key, cellId: record.cellId, position: record.position, result: observation.result, score: observation.score, hasActualImage, hasCsvImage:!!row.fullPath, fullPath:row.fullPath || '', sourceFileName: row.sourceFileName || '', sourceRowNumber: row.sourceRowNumber || '', otherToolNgScores });
       });
     });
     return points;
+  }
+
+  function actualNgMinimumScore(tool, position, otherToolExclusionScore) {
+    const candidates = scorePoints(tool, 'ACTUAL_NG_TOOL_NG', position);
+    const threshold = clampScore(otherToolExclusionScore, 0.80);
+    const excluded = candidates.filter((point) => point.otherToolNgScores.some((item) => item.score >= threshold));
+    const eligible = candidates.filter((point) => !point.otherToolNgScores.some((item) => item.score >= threshold));
+    return {
+      candidates,
+      eligible,
+      excluded,
+      threshold,
+      min:eligible.length ? Math.min(...eligible.map((point) => point.score)) : null
+    };
   }
 
   function downloadScoreFilterCsv() {
@@ -1997,6 +2055,7 @@
     const avg = mean(values), min = values.length ? Math.min(...values) : null, max = values.length ? Math.max(...values) : null, med = median(values);
     const okValues = points.filter((point) => point.result === 'OK').map((point) => point.score);
     const ngValues = points.filter((point) => point.result === 'NG').map((point) => point.score);
+    const actualNgMinimum = actualNgMinimumScore(state.analysisTool, state.analysisPosition, state.actualNgOtherToolExclusionScore);
     const scopeInfo = {
       TOOL_OK: { text: '실제 NG 이미지 경로와 관계없이 선택 Tool의 원본 OK 판정 Score만 표시합니다.', label: '선택 Tool의 OK Score', color: '초록: Tool OK Score' },
       TOOL_NG: { text: '실제 NG 이미지 경로와 관계없이 선택 Tool의 원본 NG 판정 Score만 표시합니다.', label: '선택 Tool의 NG Score', color: '빨강: Tool NG Score' },
@@ -2007,6 +2066,7 @@
       <div class="vq43-content"><div class="vq43-eyebrow" style="color:#a78bfa">Detailed Analysis</div><h1 class="vq43-title">Tool별 Score 분석</h1><p class="vq43-subtitle">Tool 판정 결과와 Score를 조건별로 분리하여 분석합니다.</p>
         <div class="vq43-filter">${customDropdown('position', 'Position', state.analysisPosition, [{ value: 'ALL', label: '전체 Position' }, ...positionNames().map((position) => ({ value: position, label: position }))])}${customDropdown('tool', 'Tool', state.analysisTool, model.tools.map((tool) => ({ value: tool, label: tool })))}${customDropdown('scope', '분석 범위', state.analysisScope, [{ value: 'TOOL_OK', label: '선택 Tool의 OK Score' }, { value: 'TOOL_NG', label: '선택 Tool의 NG Score' }, { value: 'ACTUAL_NG_TOOL_NG', label: 'NG Image를 NG로 검출한 Score' }, { value: 'ACTUAL_NG_TOOL_OK', label: 'NG Image를 OK로 판정한 Score' }])}</div>
         <div class="vq43-kpi-grid">${kpi('Score 데이터', numberText(points.length), `OK ${okValues.length} · NG ${ngValues.length}`)}${kpi('평균 Score', scoreText(avg), '그래프 파란 점선', 'blue')}${kpi('최소 Score', scoreText(min), '그래프 노란 강조', 'amber')}${kpi('최대 / 중앙값', scoreText(max), `Median ${scoreText(med)}`)}</div>
+        <section class="vq43-actual-ng-minimum"><div><strong>실제 NG 검출 최소 Score</strong><p>선택 Tool이 실제 NG 이미지를 NG로 검출한 점수만 대상으로 계산합니다. 다른 Tool이 함께 NG이고 아래 기준 이상이면 그 행은 최소값 후보에서 제외합니다.</p></div><label>다른 Tool NG 제외 기준<input id="vq43-actual-ng-exclusion-score" type="number" inputmode="decimal" min="0.50" max="1.00" step="0.01" value="${actualNgMinimum.threshold.toFixed(2)}"></label><div class="vq43-actual-ng-minimum-value"><span>조건 적용 최소</span><b>${scoreText(actualNgMinimum.min)}</b><small>후보 ${numberText(actualNgMinimum.eligible.length)} · 제외 ${numberText(actualNgMinimum.excluded.length)} / 전체 ${numberText(actualNgMinimum.candidates.length)}</small></div></section>
         <div class="vq43-analysis-export"><div><strong>Score 조건 CSV 저장</strong><span>현재 Position · Tool · 분석 범위 안에서 Score 조건으로 필터합니다.</span></div><label>Score<input id="vq43-score-cutoff" type="number" inputmode="decimal" min="0.50" max="1.00" step="0.01" value="${state.analysisScoreCutoff.toFixed(2)}"></label>${customDropdown('compare', '조건', state.analysisScoreCompare, [{ value: 'GTE', label: '이상 (≥)' }, { value: 'LTE', label: '이하 (≤)' }])}<button class="vq43-btn vq43-btn-green" data-vq-action="download-score-filter">CSV 저장</button></div>
         <div class="vq43-note" style="margin-top:16px">${escapeHtml(scopeInfo.text)}</div>
         <div class="vq43-chart-grid"><div class="vq43-chart-card"><div class="vq43-chart-head"><div><h3>Score 분포</h3><p>${escapeHtml(scopeInfo.color)}</p></div><span>▥</span></div><div class="vq43-chart-area">${points.length ? histogramSvg(points) : '<div class="vq43-chart-empty">해당 조건의 Score가 없습니다.</div>'}</div></div><div class="vq43-chart-card"><div class="vq43-chart-head"><div><h3>Cell별 Score</h3><p>낮은 Score부터 정렬 · 점에 마우스를 올리면 Cell ID · Position · Score 표시</p></div><button class="vq43-chart-expand-btn" type="button" data-vq-action="open-chart-modal" ${points.length ? '' : 'disabled'}>⛶ 확대 보기</button></div><div class="vq43-chart-area">${points.length ? scatterSvg(points) : '<div class="vq43-chart-empty">해당 조건의 Score가 없습니다.</div>'}</div></div></div>
@@ -2082,22 +2142,6 @@
     });
   }
 
-  function bindInspectionControls(shell) {
-    if (state.page !== 'inspection') return;
-    const imagePath = $('#vq43-inspection-image-path', shell);
-    if (imagePath) {
-      imagePath.oninput = () => { state.inspectionImagePath = imagePath.value; };
-      imagePath.onchange = () => { state.inspectionImagePath = imagePath.value.trim(); };
-      imagePath.onkeydown = (event) => event.stopPropagation();
-      imagePath.onclick = (event) => event.stopPropagation();
-    }
-    const heatmap = $('#vq43-inspection-heatmap', shell);
-    if (heatmap) {
-      heatmap.onchange = () => { state.inspectionHeatmapEnabled = !!heatmap.checked; };
-      heatmap.onclick = (event) => event.stopPropagation();
-    }
-  }
-
   function historyDateBars(daily) {
     const rows = (Array.isArray(daily) ? daily : []).slice(-90);
     if (!rows.length) return '<div class="vq43-history-empty">표시할 날짜별 이력이 없습니다.</div>';
@@ -2135,7 +2179,7 @@
     state.historyLoading = true;
     if (state.page === 'history') renderHistory();
     try {
-      const data = await agentFetch('/api/history/search', { method:'POST', timeout:120000, body:{ ...state.historyFilters } });
+      const data = await agentFetch('/api/history/search', { method:'POST', timeout:120000, body:{ ...state.historyFilters, sourceTypes:PERSISTED_HISTORY_SOURCE_TYPES } });
       if (!data.ok) throw new Error(data.error || 'SQLite 이력 조회 실패');
       state.historyData = data;
       state.historyLoaded = true;
@@ -2148,6 +2192,34 @@
       if (state.page === 'history') { renderHistory(); bindPageControls(); }
       else if (state.page === 'main') { renderDashboard(); bindPageControls(); }
     }
+  }
+
+  // 메인 대시보드는 이력 화면의 검색 조건과 절대 공유하지 않는다.
+  // 특히 이력 화면에서 NG만 검색해도, 메인 차트는 전체 검사 건수를 분모로 유지한다.
+  async function refreshDashboardHistory() {
+    if (state.dashboardHistoryLoading) return;
+    state.dashboardHistoryLoading = true;
+    if (state.page === 'main') renderDashboard();
+    try {
+      const data = await agentFetch('/api/history/search', {
+        method:'POST', timeout:120000,
+        body:{ sourceTypes:PERSISTED_HISTORY_SOURCE_TYPES, totalResult:'', page:1, pageSize:10 }
+      });
+      if (!data.ok) throw new Error(data.error || 'SQLite 메인 이력 조회 실패');
+      state.dashboardHistoryData = data;
+      state.dashboardHistoryLoaded = true;
+    } catch (error) {
+      // 메인 분석 화면을 막지 않도록 토스트 대신 콘솔에만 남긴다. 다음 자동 갱신에서 재시도한다.
+      console.warn('SQLite 메인 이력 조회 실패:', error);
+    } finally {
+      state.dashboardHistoryLoading = false;
+      if (state.page === 'main') { renderDashboard(); bindPageControls(); }
+    }
+  }
+
+  function scheduleDashboardHistoryRefresh(delay = 900) {
+    clearTimeout(state.dashboardHistoryRefreshTimer);
+    state.dashboardHistoryRefreshTimer = setTimeout(() => refreshDashboardHistory(), delay);
   }
 
   function changeHistoryPage(page) {
@@ -2178,7 +2250,13 @@
         state.historyFileImport = status;
         if (state.page === 'history') renderHistory();
         if (!status.running) {
-          if (status.ok && status.completed) { showToast(`대용량 CSV 저장 완료: ${numberText(status.processed)}행`); state.historyLoaded = false; refreshHistory(true); }
+          if (status.ok && status.completed) {
+            showToast(`대용량 CSV 저장 완료: ${numberText(status.processed)}행`);
+            state.historyLoaded = false;
+            state.dashboardHistoryLoaded = false;
+            scheduleDashboardHistoryRefresh(0);
+            if (state.page === 'history') refreshHistory(true);
+          }
           else showToast(status.error || '대용량 CSV 저장이 중단되었습니다.', true);
           return;
         }
@@ -2190,124 +2268,20 @@
     const item = (state.historyData?.items || []).find((row) => Number(row.imageId) === Number(imageId));
     if (!item) return;
     const images = [];
+    const overlayImages = [];
     if (item.fullPath) images.push({ fullPath:item.fullPath, relativePath:item.fullPath, name:item.fullPath.split(/[\\/]/).pop() || item.fullPath, kind:'원본' });
     (item.tools || []).forEach((tool) => {
       if (!tool.overlayPath) return;
-      images.push({ fullPath:tool.overlayPath, relativePath:tool.overlayPath, name:`${tool.tool} Heatmap Overlay`, kind:'Heatmap Overlay' });
+      overlayImages.push({ fullPath:tool.overlayPath, relativePath:tool.overlayPath, name:`${tool.tool} Heatmap Overlay`, kind:'Heatmap Overlay', toolName:tool.tool });
     });
-    if (!images.length) return showToast('저장된 원본 또는 Overlay 이미지 경로가 없습니다.', true);
+    if (!images.length && !overlayImages.length) return showToast('저장된 원본 또는 Overlay 이미지 경로가 없습니다.', true);
     const tools = Object.fromEntries((item.tools || []).map((tool) => [tool.tool, { tool:tool.tool, result:tool.result, representativeScore:tool.score }]));
     state.modalMissKey = null;
-    state.modalItem = { key:`history-${item.imageId}`, cellId:item.cellId || '-', position:item.position || '-', record:{ tools }, images, label:'SQLite History Image' };
+    state.modalItem = { key:`history-${item.imageId}`, cellId:item.cellId || '-', position:item.position || '-', record:{ tools }, images, overlayImages, label:'SQLite History Image' };
     state.modalIndex = 0;
+    state.modalOverlayPath = images.length ? '' : (overlayImages[0]?.fullPath || '');
     resetModalView();
     renderModal();
-  }
-
-  function inspectionRequest() {
-    const form = ensureSimulationForm();
-    const positions = Object.values(form.positions || {}).filter((position) => position && position.enabled !== false).map((position) => ({
-      key:position.key, displayName:position.displayName, enabled:true,
-      greenWorkspacePath:position.greenWorkspacePath, greenImageRoot:position.greenImageRoot,
-      greenImageRoots:imageRootsForPosition(position, 'greenImageRoot'), greenStreamName:position.greenStreamName
-    }));
-    const green = cloneSimulation(form.green || {});
-    green.heatmapImageSave = !!state.inspectionHeatmapEnabled;
-    return { mode:'green', outputRoot:form.outputRoot || '', namingProfile:state.namingProfile, imagePath:state.inspectionImagePath.trim(), green, positions };
-  }
-
-  function inspectionImagePath() {
-    const record = state.inspectionResult;
-    if (!record) return state.inspectionImagePath;
-    if (state.inspectionOverlayEnabled && state.inspectionOverlayTool) {
-      const selected = Object.values(record.tools || {}).find((tool) => tool.tool === state.inspectionOverlayTool && tool.overlayPath);
-      if (selected?.overlayPath) return selected.overlayPath;
-    }
-    return record.fullPath || state.inspectionImagePath;
-  }
-
-  function inspectionToolCards(record) {
-    return Object.values(record?.tools || {}).map((tool) => `<button type="button" class="vq43-inspection-tool ${String(tool.result).toUpperCase()==='NG'?'ng':'ok'} ${state.inspectionOverlayTool===tool.tool?'selected':''}" data-vq-action="inspection-overlay-tool" data-vq-inspection-tool="${escapeHtml(tool.tool)}"><b>${escapeHtml(tool.tool)}</b><span>${escapeHtml(tool.result || '-')} · ${Number.isFinite(tool.score)?Number(tool.score).toFixed(4):'-'}</span>${tool.overlayPath?'<small>Heatmap 있음</small>':''}</button>`).join('') || '<div class="vq43-history-empty">Tool 결과가 없습니다.</div>';
-  }
-
-  function renderInspection() {
-    const record = state.inspectionResult;
-    const overlays = Object.values(record?.tools || {}).filter((tool) => tool.overlayPath);
-    const selectedPath = inspectionImagePath();
-    $('#vq43-page').innerHTML = `<div class="vq43-content vq43-inspection-page"><div class="vq43-topline"><div><div class="vq43-eyebrow">AI Suggest · Green Tool</div><h1 class="vq43-title">파일명 기반 자동 Workspace 검사</h1><p class="vq43-subtitle">이미지 파일명에 있는 Position 문자열로 Green Workspace를 선택하고, Runtime Load부터 Tool별 단일 검사까지 한 번에 실행합니다.</p></div></div><section class="vq43-inspection-config"><label>검사 이미지 경로<div><input id="vq43-inspection-image-path" value="${escapeHtml(state.inspectionImagePath)}" placeholder="이미지 파일을 선택하세요"><button class="vq43-btn" data-vq-action="inspection-browse">이미지 선택</button></div></label><label class="vq43-check"><input id="vq43-inspection-heatmap" type="checkbox" ${state.inspectionHeatmapEnabled?'checked':''}> NG Tool Heatmap Overlay 저장</label><button class="vq43-btn vq43-btn-green" data-vq-action="inspection-run" ${state.inspectionRunning?'disabled':''}>${state.inspectionRunning?'AI 검사 중...':'AI Suggest 자동 검사'}</button></section>${record ? `<section class="vq43-inspection-result"><header><div><small>${escapeHtml(record.position || '')} · Runtime 자동 선택 완료</small><h3>${escapeHtml(record.cellId || '-')} · ${escapeHtml(record.totalResult || '-')}</h3><p>${escapeHtml(record.fullPath || '')}</p></div><button class="vq43-btn" data-vq-action="inspection-overlay" ${overlays.length?'':'disabled'}>${state.inspectionOverlayEnabled?'원본 보기':'Heatmap 보기'}</button></header><div class="vq43-inspection-body"><div class="vq43-inspection-preview"><img id="vq43-inspection-preview" alt="검사 이미지"><span id="vq43-inspection-preview-status">이미지 불러오는 중...</span><small>${escapeHtml(selectedPath || '')}</small></div><div class="vq43-inspection-tools">${inspectionToolCards(record)}</div></div></section>` : `<section class="vq43-history-empty">시뮬레이션 설정에서 Position별 Green Workspace와 Stream을 저장한 뒤 이미지를 선택하세요. 파일명에는 설정한 Position 문자열이 정확히 한 개 포함되어야 합니다.</section>`}</div>`;
-    if (record && selectedPath) setTimeout(loadInspectionPreview, 0);
-  }
-
-  async function browseInspectionImage() {
-    if (state.simulationAgent.status !== 'connected') return showToast('AI 검사 이미지 선택에는 실행 중인 Local Agent가 필요합니다.', true);
-    try {
-      const data = await requestSimulationPicker('/api/pick/file', { fileType:'image', initialPath:state.inspectionImagePath });
-      if (data?.ok && data.path) { state.inspectionImagePath = data.path; if (state.page === 'inspection') renderInspection(); }
-    } catch (error) { showToast(`이미지 선택 실패: ${error.message || error}`, true); }
-  }
-
-  async function runAutoInspection() {
-    const request = inspectionRequest();
-    if (!request.imagePath) return showToast('검사 이미지를 먼저 선택하세요.', true);
-    if (!request.positions.length) return showToast('시뮬레이션 설정에 활성 Position과 Green Workspace가 필요합니다.', true);
-    state.inspectionRunning = true;
-    if (state.page === 'inspection') renderInspection();
-    try {
-      const data = await agentFetch('/api/classification/inspect/auto', { method:'POST', timeout:300000, body:request, timeoutMessage:'AI 자동 검사 시간이 5분을 초과했습니다.' });
-      if (!data.ok) throw new Error(data.error || 'AI 자동 검사 실패');
-      state.inspectionResult = normalizeInspectionRecord(data.record);
-      const firstOverlay = Object.values(state.inspectionResult?.tools || {}).find((tool) => tool.overlayPath);
-      state.inspectionOverlayTool = firstOverlay?.tool || '';
-      state.inspectionOverlayEnabled = false;
-      showToast(`AI 검사 완료: ${data.position || state.inspectionResult?.position || '-'} · ${state.inspectionResult?.totalResult || '-'}`);
-    } catch (error) { showToast(`AI 자동 검사 실패: ${error.message || error}`, true); }
-    finally { state.inspectionRunning = false; if (state.page === 'inspection') { renderInspection(); bindPageControls(); } }
-  }
-
-  function normalizeInspectionRecord(value) {
-    const record = value || {};
-    const sourceTools = record.tools || record.Tools || {};
-    const tools = Object.fromEntries(Object.entries(sourceTools).map(([key, tool]) => {
-      const item = tool || {};
-      const name = item.tool || item.Tool || key;
-      return [name, { tool:name, result:item.result || item.Result || '', score:Number.isFinite(item.score) ? item.score : (Number.isFinite(item.Score) ? item.Score : null), overlayPath:item.overlayPath || item.OverlayPath || '' }];
-    }));
-    return {
-      fileName:record.fileName || record.FileName || '', fullPath:record.fullPath || record.FullPath || '', cellId:record.cellId || record.CellId || '',
-      position:record.position || record.Position || '', totalResult:record.totalResult || record.TotalResult || '', judgement:record.judgement || record.Judgement || '', tools
-    };
-  }
-
-  function toggleInspectionOverlay() {
-    if (!state.inspectionOverlayTool) return;
-    state.inspectionOverlayEnabled = !state.inspectionOverlayEnabled;
-    renderInspection();
-    bindPageControls();
-  }
-
-  function selectInspectionOverlayTool(tool) {
-    const selected = Object.values(state.inspectionResult?.tools || {}).find((item) => item.tool === tool);
-    if (!selected) return;
-    state.inspectionOverlayTool = tool;
-    state.inspectionOverlayEnabled = !!selected.overlayPath;
-    renderInspection();
-    bindPageControls();
-  }
-
-  async function loadInspectionPreview() {
-    const path = inspectionImagePath();
-    const target = $('#vq43-inspection-preview');
-    const status = $('#vq43-inspection-preview-status');
-    if (!path || !target) return;
-    const expected = path;
-    try {
-      const preview = await agentFetch('/api/image/preview', { method:'POST', timeout:60000, body:{ imagePath:path, maxDimension:2560 } });
-      if (inspectionImagePath() !== expected || !target.isConnected) return;
-      target.src = preview.dataUrl || '';
-      status?.remove();
-    } catch (error) {
-      if (status) status.textContent = `이미지 표시 실패: ${error.message || error}`;
-    }
   }
 
   const simulationPositionDefs = () => positionDefs().map(x => ({ key:x.key, label:x.name }));
@@ -2841,6 +2815,80 @@
       }
       throw error;
     } finally { clearTimeout(timer); }
+  }
+
+  // 기존 이미지 분류 화면의 AI SUGGEST 버튼은 번들 안에서 Gemini SDK를 호출한다.
+  // 이 브리지는 그 요청만 가로채 현재 Runtime File Load로 준비된 Green Tool 검사로 전환한다.
+  // 따라서 API Key/외부 인터넷을 사용하지 않으며, 기존 분류 UI의 결과 반영 방식은 유지한다.
+  function installLegacyAiSuggestRuntimeBridge() {
+    if (window.__VISIONQC_V471_AI_SUGGEST_BRIDGE__) return;
+    window.__VISIONQC_V471_AI_SUGGEST_BRIDGE__ = true;
+    // 기존 번들은 키가 비어 있으면 요청 생성 전 반환한다. 실제 키를 절대 사용하지 않고
+    // 로컬 브리지용 값만 넣어, 아래 fetch 가로채기까지 정상적으로 도달하게 한다.
+    globalThis.__GEMINI_API_KEY__ = 'VISIONQC_LOCAL_RUNTIME_ONLY';
+    const originalFetch = window.fetch.bind(window);
+    window.fetch = async (input, init = {}) => {
+      const url = typeof input === 'string' ? input : input?.url || '';
+      if (!/generativelanguage\.googleapis\.com/i.test(url)) return originalFetch(input, init);
+      let payload;
+      try { payload = JSON.parse(typeof init.body === 'string' ? init.body : ''); }
+      catch (_) { return originalFetch(input, init); }
+      const parts = payload?.contents?.parts || payload?.contents?.[0]?.parts || [];
+      const inlineData = parts.map((part) => part?.inlineData).find(Boolean);
+      const prompt = parts.map((part) => part?.text || '').join('\n');
+      if (!inlineData?.data || !/Analyze this manufacturing image/i.test(prompt)) return originalFetch(input, init);
+      try {
+        const request = buildLoadedRuntimeAiSuggestRequest(inlineData, prompt);
+        const data = await agentFetch('/api/classification/inspect-upload', {
+          method:'POST', timeout:300000, body:request,
+          timeoutMessage:'AI SUGGEST Runtime 검사가 5분을 초과했습니다.'
+        });
+        if (!data?.ok) throw new Error(data?.error || 'AI SUGGEST Runtime 검사 실패');
+        const suggestion = legacySuggestionFromRuntimeRecord(data.record || {}, data.position || '');
+        showToast(`AI SUGGEST Runtime 검사 완료: ${data.position || '-'} · ${suggestion.status}`);
+        return new Response(JSON.stringify({
+          candidates:[{ content:{ role:'model', parts:[{ text:JSON.stringify(suggestion) }] }, finishReason:'STOP' }]
+        }), { status:200, headers:{ 'Content-Type':'application/json' } });
+      } catch (error) {
+        showToast(`AI SUGGEST Runtime 검사 실패: ${error.message || error}`, true);
+        return new Response(JSON.stringify({ error:{ message:String(error.message || error) } }), { status:503, headers:{ 'Content-Type':'application/json' } });
+      }
+    };
+  }
+
+  function buildLoadedRuntimeAiSuggestRequest(inlineData, prompt) {
+    const request = buildSimulationRequest();
+    if (request.mode === 'blue') throw new Error('AI SUGGEST는 Green Tool 검사입니다. Green 또는 Integrated 모드로 Runtime File Load를 먼저 실행하세요.');
+    if (!request.positions?.length) throw new Error('AI SUGGEST에 사용할 활성 Position이 없습니다.');
+    request.green = cloneSimulation(request.green || {});
+    request.green.heatmapImageSave = true;
+    request.imageBase64 = String(inlineData.data || '');
+    request.mimeType = String(inlineData.mimeType || 'image/png');
+    const fileName = /file:\s*(.*?)\s*\)\s*for quality/i.exec(prompt || '')?.[1];
+    request.fileName = String(fileName || `classification-${Date.now()}.png`).trim();
+    return request;
+  }
+
+  function legacySuggestionFromRuntimeRecord(record, position) {
+    const tools = Object.values(record?.tools || record?.Tools || {});
+    const ngTools = tools.filter((tool) => String(tool?.result ?? tool?.Result ?? '').toUpperCase() === 'NG');
+    const status = runtimeLegacyStatus(record?.judgement ?? record?.Judgement, ngTools);
+    const scores = ngTools.map((tool) => Number(tool?.score ?? tool?.Score)).filter(Number.isFinite);
+    const confidence = scores.length ? Math.max(...scores) : (String(record?.totalResult ?? record?.TotalResult ?? '').toUpperCase() === 'OK' ? 1 : 0);
+    const summary = ngTools.map((tool) => `${tool?.tool ?? tool?.Tool}: ${Number(tool?.score ?? tool?.Score).toFixed?.(4) || '-'}`).join(', ');
+    return { status, reason:`${position || record?.position || record?.Position || 'Green Tool'} Runtime 검사${summary ? ` · ${summary}` : ''}`, confidence, regions:[] };
+  }
+
+  function runtimeLegacyStatus(judgement, ngTools) {
+    if (!ngTools.length) return 'OK';
+    const text = [judgement, ...ngTools.map((tool) => tool?.tool ?? tool?.Tool ?? '')].join(' ').toUpperCase();
+    if (text.includes('CRACK')) return 'CRACK';
+    if (text.includes('FOIL') || text.includes('DAMAGE')) return 'FOIL_DAMAGE';
+    if (text.includes('WELD')) return 'MAIN_WELDING';
+    if (text.includes('TAB')) return 'NO_TAB';
+    if (text.includes('SPATTER')) return 'SPATTER';
+    if (text.includes('TRIM')) return 'TRIMMING';
+    return 'ETC';
   }
 
   function resetSimulationPickerState() {
@@ -3574,6 +3622,9 @@
     if (data?.state && typeof data.state === 'object') state.simulationProgress = { ...state.simulationProgress, ...data.state };
     else if (Number.isFinite(Number(data?.processed))) state.simulationProgress.processed = Number(data.processed);
     rebuildModel(state.page === 'main' || state.page === 'analysis');
+    // Simulation 이력은 Agent가 batch 단위로 SQLite에 커밋한다. 이벤트가 잠잠해진 뒤 한 번만 갱신한다.
+    state.dashboardHistoryLoaded = false;
+    scheduleDashboardHistoryRefresh(1800);
     updateSimulationStatusDom();
   }
 
@@ -4628,8 +4679,9 @@
     const miss = state.model?.misses.find((item) => item.key === key);
     if (!miss) return;
     state.modalMissKey = key;
-    state.modalItem = { ...miss, label: 'Missed Actual NG' };
+    state.modalItem = { ...miss, overlayImages:overlayImagesForRecord(miss.record), label: 'Missed Actual NG' };
     state.modalIndex = 0;
+    state.modalOverlayPath = '';
     resetModalView();
     renderModal();
   }
@@ -4642,12 +4694,15 @@
     const csvImages = csvImagesForRecord(record);
     const actualImages = state.model?.actualMap.get(point.recordKey) || [];
     const images = [...csvImages, ...actualImages];
-    if (!images.length) return showToast('CSV FullPath 또는 매칭된 실제 NG 이미지가 없습니다.', true);
+    const overlayImages = overlayImagesForRecord(record);
+    if (!images.length && !overlayImages.length) return showToast('CSV FullPath, 실제 NG 이미지 또는 Heatmap Overlay가 없습니다.', true);
     state.modalMissKey = null;
-    state.modalItem = { key: point.recordKey, cellId: point.cellId, position: point.position, record, images, label: csvImages.length ? 'CSV FullPath Image' : 'Actual NG Image' };
+    state.modalItem = { key: point.recordKey, cellId: point.cellId, position: point.position, record, images, overlayImages, label: csvImages.length ? 'CSV FullPath Image' : 'Actual NG Image' };
     state.modalIndex = 0;
+    state.modalOverlayPath = images.length ? '' : (overlayImages[0]?.fullPath || '');
     resetModalView();
     renderModal();
+    if (!overlayImages.length) hydrateModalOverlaysFromHistory(record, point.recordKey);
   }
 
   function csvImagesForRecord(record) {
@@ -4660,22 +4715,62 @@
     }).map((fullPath) => ({ fullPath, relativePath:fullPath, name:fullPath.split(/[\\/]/).pop() || fullPath }));
   }
 
+  function overlayImagesForRecord(record) {
+    const seen = new Set();
+    return Object.values(record?.tools || {}).map((tool) => {
+      const fullPath = String(tool?.overlayPath || '').trim();
+      const toolName = String(tool?.tool || '').trim() || 'Green Tool';
+      if (!fullPath || seen.has(fullPath.toLowerCase())) return null;
+      seen.add(fullPath.toLowerCase());
+      return { fullPath, relativePath:fullPath, name:`${toolName} Heatmap Overlay`, kind:'Heatmap Overlay', toolName };
+    }).filter(Boolean);
+  }
+
+  async function hydrateModalOverlaysFromHistory(record, modalKey) {
+    const fullPath = csvImagesForRecord(record)[0]?.fullPath || '';
+    if (!fullPath) return;
+    try {
+      const data = await agentFetch('/api/history/search', {
+        method:'POST', timeout:30000,
+        body:{ fullPath, sourceTypes:PERSISTED_HISTORY_SOURCE_TYPES, page:1, pageSize:10 }
+      });
+      if (!data?.ok || state.modalItem?.key !== modalKey) return;
+      const item = (data.items || []).find((candidate) => String(candidate.fullPath || '').toLowerCase() === fullPath.toLowerCase());
+      const overlays = (item?.tools || []).filter((tool) => tool.overlayPath).map((tool) => ({
+        fullPath:String(tool.overlayPath), relativePath:String(tool.overlayPath), name:`${tool.tool} Heatmap Overlay`, kind:'Heatmap Overlay', toolName:String(tool.tool || 'Green Tool')
+      }));
+      if (!overlays.length) return;
+      state.modalItem.overlayImages = overlays;
+      renderModal();
+    } catch (_) {
+      // CSV 단독 분석처럼 SQLite 연결이 없는 경우에도 기존 이미지 확인 기능은 그대로 유지한다.
+    }
+  }
+
   function renderModal() {
     const modal = $('#vq43-modal');
     const miss = state.modalItem;
     if (!miss) return closeModal();
     if (state.modalUrl?.startsWith('blob:')) URL.revokeObjectURL(state.modalUrl);
-    const image = miss.images[state.modalIndex];
+    const overlayImages = Array.isArray(miss.overlayImages) ? miss.overlayImages : [];
+    const selectedOverlay = overlayImages.find((candidate) => candidate.fullPath === state.modalOverlayPath);
+    const displayImages = selectedOverlay ? [selectedOverlay] : (miss.images || []);
+    const image = displayImages[selectedOverlay ? 0 : state.modalIndex];
+    if (!image) return showToast('표시할 이미지가 없습니다.', true);
     const agentImage = !!image?.fullPath && !image?.file;
+    const handleImage = !!image?.fileHandle && !image?.file;
     state.modalUrl = image?.file ? URL.createObjectURL(image.file) : '';
     state.modalImageRequestKey = `${Date.now()}-${state.modalIndex}-${Math.random().toString(36).slice(2, 8)}`;
     const modalImageRequestKey = state.modalImageRequestKey;
-    const scores = Object.values(miss.record.tools).map((tool) => `<span class="vq43-score-chip">${escapeHtml(tool.tool)}: <b style="color:${tool.result==='NG'?'#f87171':'#34d399'}">${tool.result}</b> <b>${scoreText(tool.representativeScore)}</b></span>`).join('');
-    modal.innerHTML = `<div class="vq43-modal-card"><div class="vq43-modal-head"><div><small>${escapeHtml(miss.label || 'Actual NG Image')}</small><strong>${escapeHtml(miss.cellId)} · ${miss.position}</strong></div><button class="vq43-close" data-vq-action="close-modal">×</button></div><div class="vq43-modal-image" id="vq43-modal-viewport"><img id="vq43-modal-zoom-image" draggable="false" src="${state.modalUrl}" alt="${escapeHtml(image.file?.name || image.name || image.relativePath)}"><div class="vq43-modal-zoom-tools"><span id="vq43-modal-zoom-value">100%</span><button data-vq-action="modal-reset">원위치</button></div><div class="vq43-modal-help">마우스 휠: 확대/축소 · 드래그: 이동 · 더블클릭: 원위치</div>${miss.images.length>1?`<button class="vq43-modal-nav prev" data-vq-action="modal-prev" ${state.modalIndex===0?'disabled':''}>‹</button><button class="vq43-modal-nav next" data-vq-action="modal-next" ${state.modalIndex>=miss.images.length-1?'disabled':''}>›</button>`:''}</div><div class="vq43-modal-foot"><div class="vq43-modal-path"><span>${escapeHtml(image.relativePath)}</span><b>${state.modalIndex+1} / ${miss.images.length}</b></div><div class="vq43-modal-scores">${scores}</div></div></div>`;
+    const scores = Object.values(miss.record?.tools || {}).map((tool) => `<span class="vq43-score-chip">${escapeHtml(tool.tool)}: <b style="color:${tool.result==='NG'?'#f87171':'#34d399'}">${tool.result}</b> <b>${scoreText(tool.representativeScore ?? tool.score)}</b></span>`).join('');
+    const switcher = overlayImages.length ? `<div class="vq43-modal-image-switcher"><button type="button" data-vq-action="modal-original-image" class="${selectedOverlay?'':'active'}" ${miss.images?.length?'':'disabled'}>원본 / 크롭</button>${overlayImages.map((overlay) => `<button type="button" data-vq-action="modal-overlay-image" data-vq-modal-overlay="${escapeHtml(overlay.fullPath)}" class="${selectedOverlay?.fullPath===overlay.fullPath?'active':''}">${escapeHtml(overlay.toolName || 'Tool')} Heatmap</button>`).join('')}</div>` : '';
+    const countText = selectedOverlay ? `Heatmap ${overlayImages.findIndex((candidate) => candidate.fullPath === selectedOverlay.fullPath) + 1} / ${overlayImages.length}` : `${state.modalIndex+1} / ${displayImages.length}`;
+    modal.innerHTML = `<div class="vq43-modal-card"><div class="vq43-modal-head"><div><small>${escapeHtml(miss.label || 'Actual NG Image')}</small><strong>${escapeHtml(miss.cellId)} · ${miss.position}</strong></div><button class="vq43-close" data-vq-action="close-modal">×</button></div>${switcher}<div class="vq43-modal-image" id="vq43-modal-viewport"><img id="vq43-modal-zoom-image" draggable="false" src="${state.modalUrl}" alt="${escapeHtml(image.file?.name || image.name || image.relativePath)}"><div class="vq43-modal-zoom-tools"><span id="vq43-modal-zoom-value">100%</span><button data-vq-action="modal-reset">원위치</button></div><div class="vq43-modal-help">마우스 휠: 확대/축소 · 드래그: 이동 · 더블클릭: 원위치</div>${!selectedOverlay && displayImages.length>1?`<button class="vq43-modal-nav prev" data-vq-action="modal-prev" ${state.modalIndex===0?'disabled':''}>‹</button><button class="vq43-modal-nav next" data-vq-action="modal-next" ${state.modalIndex>=displayImages.length-1?'disabled':''}>›</button>`:''}</div><div class="vq43-modal-foot"><div class="vq43-modal-path"><span>${escapeHtml(image.relativePath)}</span><b>${countText}</b></div><div class="vq43-modal-scores">${scores}</div></div></div>`;
     modal.classList.add('open');
     applyModalTransform();
     bindModalImageControls();
     if (agentImage) loadModalImageFromAgent(image, modalImageRequestKey);
+    else if (handleImage) loadModalImageFromHandle(image, modalImageRequestKey);
 
     // 모달 버튼은 body 이벤트 위임을 사용하지 않고 직접 연결합니다.
     // 이미지 드래그의 pointer capture와 무관하게 X/이전/다음/원위치가 동작합니다.
@@ -4699,6 +4794,12 @@
       event.stopPropagation();
       changeModalImage(1);
     });
+    modal.querySelector('[data-vq-action="modal-original-image"]')?.addEventListener('click', (event) => {
+      event.preventDefault(); event.stopPropagation(); selectModalOriginalImage();
+    });
+    modal.querySelectorAll('[data-vq-action="modal-overlay-image"]').forEach((button) => button.addEventListener('click', (event) => {
+      event.preventDefault(); event.stopPropagation(); selectModalOverlayImage(button.dataset.vqModalOverlay || '');
+    }));
     modal.querySelector('.vq43-modal-card')?.addEventListener('click', (event) => event.stopPropagation());
     modal.onclick = (event) => { if (event.target === modal) closeModal(); };
   }
@@ -4726,10 +4827,50 @@
     }
   }
 
+  async function loadModalImageFromHandle(image, requestKey) {
+    const viewport = $('#vq43-modal-viewport');
+    if (!viewport) return;
+    const loading = document.createElement('div');
+    loading.id = 'vq43-modal-loading';
+    loading.className = 'vq43-modal-loading';
+    loading.textContent = '선택한 실제 NG 이미지를 불러오는 중...';
+    viewport.appendChild(loading);
+    try {
+      const file = await image.fileHandle.getFile();
+      if (state.modalImageRequestKey !== requestKey) return;
+      if (state.modalUrl?.startsWith('blob:')) URL.revokeObjectURL(state.modalUrl);
+      state.modalUrl = URL.createObjectURL(file);
+      const target = $('#vq43-modal-zoom-image');
+      if (!target) return;
+      target.src = state.modalUrl;
+      target.alt = file.name || image.relativePath;
+      loading.remove();
+    } catch (error) {
+      if (state.modalImageRequestKey !== requestKey) return;
+      loading.classList.add('error');
+      loading.textContent = `실제 NG 이미지를 열지 못했습니다: ${error.message || error}`;
+    }
+  }
+
   function changeModalImage(delta) {
     const miss = state.modalItem;
     if (!miss) return;
     state.modalIndex = Math.max(0, Math.min(miss.images.length-1, state.modalIndex+delta));
+    resetModalView();
+    renderModal();
+  }
+
+  function selectModalOriginalImage() {
+    if (!state.modalItem?.images?.length) return;
+    state.modalOverlayPath = '';
+    state.modalIndex = 0;
+    resetModalView();
+    renderModal();
+  }
+
+  function selectModalOverlayImage(path) {
+    if (!path || !state.modalItem?.overlayImages?.some((image) => image.fullPath === path)) return;
+    state.modalOverlayPath = path;
     resetModalView();
     renderModal();
   }
@@ -4744,6 +4885,7 @@
     state.modalMissKey = null;
     state.modalItem = null;
     state.modalIndex = 0;
+    state.modalOverlayPath = '';
     state.modalZoom = 1;
     state.modalPanX = 0;
     state.modalPanY = 0;
@@ -4909,6 +5051,7 @@
   async function init() {
     createExtensionDom();
     installInteractionGuards();
+    installLegacyAiSuggestRuntimeBridge();
     patchReactHeader();
     const observer = new MutationObserver(() => patchReactHeader());
     const root = $('#root');

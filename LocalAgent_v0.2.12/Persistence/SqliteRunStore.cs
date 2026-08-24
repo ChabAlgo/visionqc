@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.Data.SQLite;
 using System.Globalization;
 using System.IO;
+using System.Linq;
 using VisionQC.LocalAgent;
 using VisionQC.LocalAgent.Domain;
 using VisionQC.LocalAgent.Services;
@@ -322,6 +323,19 @@ LIMIT @limit OFFSET @offset;";
             if (!string.IsNullOrWhiteSpace(request.cellId)) { conditions.Add("UPPER(IFNULL(i.cell_id,'')) LIKE @cellId"); Add(command, "@cellId", "%" + request.cellId.Trim().ToUpperInvariant() + "%"); }
             if (!string.IsNullOrWhiteSpace(request.position)) { conditions.Add("i.position_key = @position"); Add(command, "@position", request.position.Trim()); }
             if (!string.IsNullOrWhiteSpace(request.totalResult)) { conditions.Add("UPPER(IFNULL(i.total_result,'')) = @totalResult"); Add(command, "@totalResult", request.totalResult.Trim().ToUpperInvariant()); }
+            if (!string.IsNullOrWhiteSpace(request.fullPath)) { conditions.Add("LOWER(IFNULL(i.full_path,'')) = @fullPath"); Add(command, "@fullPath", request.fullPath.Trim().ToLowerInvariant()); }
+            var sourceTypes = (request.sourceTypes ?? new List<string>()).Where(x => !string.IsNullOrWhiteSpace(x)).Select(x => x.Trim()).Distinct(StringComparer.OrdinalIgnoreCase).ToList();
+            if (sourceTypes.Count > 0)
+            {
+                var names = new List<string>();
+                for (int index = 0; index < sourceTypes.Count; index++)
+                {
+                    string name = "@sourceType" + index;
+                    names.Add(name);
+                    Add(command, name, sourceTypes[index]);
+                }
+                conditions.Add("EXISTS (SELECT 1 FROM runs r WHERE r.run_id=i.run_id AND r.source_type IN (" + string.Join(",", names) + "))");
+            }
             if (!string.IsNullOrWhiteSpace(request.sourceName))
             {
                 conditions.Add("EXISTS (SELECT 1 FROM runs r WHERE r.run_id=i.run_id AND IFNULL(r.source_name,'') LIKE @sourceName)");

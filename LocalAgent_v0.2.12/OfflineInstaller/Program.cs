@@ -14,7 +14,7 @@ namespace VisionQC.AgentInstaller
     internal static class Program
     {
         private const string AgentExe = "VisionQC.LocalAgent.exe";
-        private const string ProductVersion = "1.2.0";
+        private const string ProductVersion = "1.2.1";
         private static readonly PayloadFile[] Payload =
         {
             new PayloadFile("VisionQC.AgentInstaller.Payload.Agent.VisionQC.LocalAgent.exe", AgentExe),
