@@ -40,7 +40,7 @@ test('Heatmap overlay save controls are Green-only, including Integrated mode', 
   assert.match(runtime, /!integrated/);
 });
 
-test('Actual NG folders defer original-file reads and calculate an exclusion-aware detected minimum score', () => {
+test('Actual NG folders defer original-file reads and exclude high-score other-Tool NG rows from every detected-NG score view', () => {
   const scan = js.slice(js.indexOf('async function scanNgDirectory'), js.indexOf('async function chooseNgPositionFolder'));
   const analysis = js.slice(js.indexOf('function scorePoints'), js.indexOf('function downloadScoreFilterCsv'));
   assert.match(scan, /function actualNgTargetKeys/);
@@ -48,5 +48,41 @@ test('Actual NG folders defer original-file reads and calculate an exclusion-awa
   assert.doesNotMatch(scan, /await handle\.getFile\(\)/);
   assert.match(analysis, /function actualNgMinimumScore/);
   assert.match(analysis, /otherToolNgScores/);
+  assert.match(js, /function analysisScorePointOptions/);
+  assert.match(js, /excludeOtherToolNg:true/);
   assert.match(js, /id="vq43-actual-ng-exclusion-score"/);
+
+  const start = js.indexOf('function actualNgDetectedExclusion');
+  const end = js.indexOf('function downloadScoreFilterCsv', start);
+  const state = {
+    actualNgOtherToolExclusionScore: 0.80,
+    model: {
+      actualMap: new Map([['AN(TOP)|CELL-1', [{}]]]),
+      records: [{
+        key:'AN(TOP)|CELL-1', cellId:'CELL-1', position:'AN(TOP)',
+        sourceRows:[{ totalResult:'NG', tools:{ Crack:{ result:'NG', score:0.61 }, Welding:{ result:'NG', score:0.85 } } }]
+      }]
+    }
+  };
+  const helpers = new Function('state', `const clampScore=(value,fallback=0.50)=>{const parsed=Number(value);return Number.isFinite(parsed)?Math.max(0.50,Math.min(1.00,parsed)):fallback;};${js.slice(start, end)};return {scorePoints,analysisScorePointOptions,actualNgMinimumScore};`)(state);
+  assert.equal(helpers.scorePoints('Crack', 'ACTUAL_NG_TOOL_NG', 'ALL').length, 1);
+  assert.equal(helpers.scorePoints('Crack', 'ACTUAL_NG_TOOL_NG', 'ALL', helpers.analysisScorePointOptions('ACTUAL_NG_TOOL_NG')).length, 0);
+  assert.equal(helpers.actualNgMinimumScore('Crack', 'ALL', 0.80).eligible.length, 0);
+  state.actualNgOtherToolExclusionScore = 0.90;
+  assert.equal(helpers.scorePoints('Crack', 'ACTUAL_NG_TOOL_NG', 'ALL', helpers.analysisScorePointOptions('ACTUAL_NG_TOOL_NG')).length, 1);
+});
+
+test('main date dashboard stays in the current analysis set and Auto Scroll reacts only to new log lines', () => {
+  const dashboardStart = js.indexOf('function dashboardDateFromText');
+  const dashboardEnd = js.indexOf('function mainHistoryDashboardPanel', dashboardStart);
+  const state = { model:{ records:[
+    { cellId:'CELL-1', position:'AN(TOP)', totalResult:'NG', sourceRows:[{ fullPath:'C:/images/20260203_085900_CELL-1.jpg' }] },
+    { cellId:'CELL-2', position:'CA(TOP)', totalResult:'OK', sourceRows:[{ fullPath:'C:/images/20260203_085901_CELL-2.jpg' }] }
+  ] } };
+  const currentAnalysisDashboardData = new Function('state', `${js.slice(dashboardStart, dashboardEnd)};return currentAnalysisDashboardData;`)(state);
+  assert.deepEqual(currentAnalysisDashboardData(), { totalCount:2, ngCount:1, uniqueCellCount:2, daily:[{ date:'2026-02-03', total:2, ng:1, ngRate:0.5 }] });
+  const statusDom = js.slice(js.indexOf('function updateSimulationStatusDom'), js.indexOf('function simulationModeLabel'));
+  const appendLog = js.slice(js.indexOf('function appendSimulationLog'), js.indexOf('function simulationLogLineHtml'));
+  assert.doesNotMatch(statusDom, /scrollSimulationLogToBottom/);
+  assert.match(appendLog, /scrollSimulationLogToBottom/);
 });

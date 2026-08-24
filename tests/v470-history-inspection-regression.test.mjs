@@ -11,14 +11,14 @@ const css = read('visionqc-extension.css');
 const dashboardCss = read('visionqc-v470.css');
 const html = read('index.html');
 
-test('v4.7.1 Web and Agent download targets are aligned', () => {
-  assert.match(read('VERSION.txt'), /v4\.7\.1/);
-  assert.match(html, /visionqc-extension\.js\?v=4\.7\.1/);
-  assert.match(html, /visionqc-v470\.css\?v=4\.7\.1/);
-  assert.match(js, /const VERSION = '4\.7\.1'/);
-  assert.match(js, /const EXPECTED_AGENT_VERSION = '1\.2\.1'/);
-  assert.match(js, /VisionQC_Agent_Installer_v1\.2\.1\.exe/);
-  assert.match(js, /VisionQC_Offline_v4\.7\.1\.zip/);
+test('v4.7.2 Web and Agent download targets are aligned', () => {
+  assert.match(read('VERSION.txt'), /v4\.7\.2/);
+  assert.match(html, /visionqc-extension\.js\?v=4\.7\.2/);
+  assert.match(html, /visionqc-v470\.css\?v=4\.7\.2/);
+  assert.match(js, /const VERSION = '4\.7\.2'/);
+  assert.match(js, /const EXPECTED_AGENT_VERSION = '1\.2\.2'/);
+  assert.match(js, /VisionQC_Agent_Installer_v1\.2\.2\.exe/);
+  assert.match(js, /VisionQC_Offline_v4\.7\.2\.zip/);
 });
 
 test('persistent History page has filters, server-side pagination, daily NG chart and image viewer', () => {

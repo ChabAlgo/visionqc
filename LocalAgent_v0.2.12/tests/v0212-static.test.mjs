@@ -11,10 +11,10 @@ const picker = read('NativeShellPicker.cs');
 const pickerService = read('Services/PickerService.cs');
 const program = read('Program.cs');
 
-test('Agent v1.2.1 version is consistent', () => {
-  assert.match(program, /AgentVersion = "1\.2\.1"/);
-  assert.match(read('Properties/AssemblyInfo.cs'), /AssemblyVersion\("1\.2\.1\.0"\)/);
-  assert.match(read('BUILD_RELEASE_x64.cmd'), /v1\.2\.1/);
+test('Agent v1.2.2 version is consistent', () => {
+  assert.match(program, /AgentVersion = "1\.2\.2"/);
+  assert.match(read('Properties/AssemblyInfo.cs'), /AssemblyVersion\("1\.2\.2\.0"\)/);
+  assert.match(read('BUILD_RELEASE_x64.cmd'), /v1\.2\.2/);
 });
 
 test('HTTP server delegates picker lifecycle to the isolated picker service', () => {
@@ -91,6 +91,18 @@ test('Agent keeps loopback CORS, JSON errors, and multi-root simulation support'
   assert.match(read('Engine/BlueCropCore.cs'), /ImageRoots/);
 });
 
+test('Keyword mode sends the shared input Root through every enabled Position instead of letting the first Position claim every file', () => {
+  const green = read('Engine/GreenOverlayProcessor.cs');
+  const start = green.indexOf('private static ImageJobListResult BuildImageJobs');
+  const end = green.indexOf('private static List<string> GetInputRoots', start);
+  const jobs = green.slice(start, end);
+  assert.match(jobs, /FileNameMatchesKeyword\(fileName, slot\.Keyword\)/);
+  assert.match(jobs, /string slotImageKey = \(slot\.Key \?\? ""\) \+ "\\n" \+ path/);
+  assert.match(jobs, /knownImagePaths\.Add\(slotImageKey\)/);
+  assert.ok(jobs.indexOf('FileNameMatchesKeyword') < jobs.indexOf('knownImagePaths.Add(slotImageKey)'));
+  assert.match(server, /Keyword = integrated \? "" : FirstNonEmpty\(p\.greenKeyword, p\.keyword\)/);
+});
+
 test('installer waits for the installed Agent process before replacing its executable', () => {
   const installer = read('OfflineInstaller/Program.cs');
   assert.match(installer, /StopRunningAgent\(Path\.Combine\(installDir, AgentExe\)\)/);
@@ -134,6 +146,9 @@ test('large CSV history import and server-side history search stay outside Agent
   assert.match(importer, /CaptureTimestamp/);
   assert.match(store, /AgentHistorySearchResponse Search/);
   assert.match(store, /BuildSearchWhere/);
+  assert.match(store, /BuildDeduplicatedHistoryCte/);
+  assert.match(store, /UPPER\(IFNULL\(newer\.cell_id,''\)\)=UPPER\(IFNULL\(f\.cell_id,''\)\)/);
+  assert.match(store, /UPPER\(IFNULL\(newer\.position_key,''\)\)=UPPER\(IFNULL\(f\.position_key,''\)\)/);
   assert.match(store, /idx_images_capture_result/);
 });
 

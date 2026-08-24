@@ -200,10 +200,11 @@ SELECT last_insert_rowid();";
                 using (var command = connection.CreateCommand())
                 {
                     string where = BuildSearchWhere(command, request);
-                    command.CommandText = @"SELECT COUNT(*),
-SUM(CASE WHEN UPPER(IFNULL(i.total_result,''))='NG' THEN 1 ELSE 0 END),
-COUNT(DISTINCT CASE WHEN IFNULL(i.cell_id,'')<>'' THEN i.cell_id END)
-FROM images i WHERE " + where + ";";
+                    command.CommandText = BuildDeduplicatedHistoryCte(where) + @"
+SELECT COUNT(*),
+SUM(CASE WHEN UPPER(IFNULL(d.total_result,''))='NG' THEN 1 ELSE 0 END),
+COUNT(*)
+FROM deduped_images d;";
                     using (SQLiteDataReader reader = command.ExecuteReader())
                     {
                         if (reader.Read())
@@ -218,10 +219,11 @@ FROM images i WHERE " + where + ";";
                 using (var command = connection.CreateCommand())
                 {
                     string where = BuildSearchWhere(command, request);
-                    string day = "substr(COALESCE(NULLIF(i.capture_timestamp,''), i.inspected_at_utc),1,10)";
-                    command.CommandText = @"SELECT " + day + @" AS day_text, COUNT(*) AS total_count,
-SUM(CASE WHEN UPPER(IFNULL(i.total_result,''))='NG' THEN 1 ELSE 0 END) AS ng_count
-FROM images i WHERE " + where + @"
+                    string day = "substr(COALESCE(NULLIF(d.capture_timestamp,''), d.inspected_at_utc),1,10)";
+                    command.CommandText = BuildDeduplicatedHistoryCte(where) + @"
+SELECT " + day + @" AS day_text, COUNT(*) AS total_count,
+SUM(CASE WHEN UPPER(IFNULL(d.total_result,''))='NG' THEN 1 ELSE 0 END) AS ng_count
+FROM deduped_images d
 GROUP BY " + day + @"
 ORDER BY day_text DESC LIMIT 730;";
                     using (SQLiteDataReader reader = command.ExecuteReader())
@@ -246,10 +248,11 @@ ORDER BY day_text DESC LIMIT 730;";
                 using (var command = connection.CreateCommand())
                 {
                     string where = BuildSearchWhere(command, request);
-                    command.CommandText = @"SELECT i.image_id, i.run_id, i.source_file_name, i.source_row_number, i.full_path,
-i.cell_id, i.position_key, i.total_result, i.judgement, i.capture_timestamp, i.inspected_at_utc
-FROM images i WHERE " + where + @"
-ORDER BY COALESCE(NULLIF(i.capture_timestamp,''), i.inspected_at_utc) DESC, i.image_id DESC
+                    command.CommandText = BuildDeduplicatedHistoryCte(where) + @"
+SELECT d.image_id, d.run_id, d.source_file_name, d.source_row_number, d.full_path,
+d.cell_id, d.position_key, d.total_result, d.judgement, d.capture_timestamp, d.inspected_at_utc
+FROM deduped_images d
+ORDER BY COALESCE(NULLIF(d.capture_timestamp,''), d.inspected_at_utc) DESC, d.image_id DESC
 LIMIT @limit OFFSET @offset;";
                     Add(command, "@limit", pageSize);
                     Add(command, "@offset", (long)(page - 1) * pageSize);
@@ -310,6 +313,25 @@ LIMIT @limit OFFSET @offset;";
                 }
             }
             return response;
+        }
+
+        // 원본 Run 이력은 추적 가능하도록 보존한다. 화면 조회/집계에서는 같은 Cell ID + Position을
+        // 하나의 검사 대상으로 보고 가장 마지막에 기록된 결과만 남긴다. Cell ID나 Position이 없는
+        // 행은 서로 동일하다고 판단할 근거가 없으므로 중복 제거하지 않는다.
+        private static string BuildDeduplicatedHistoryCte(string where)
+        {
+            return @"WITH filtered_images AS (
+    SELECT i.* FROM images i WHERE " + where + @"
+), deduped_images AS (
+    SELECT f.* FROM filtered_images f
+    WHERE TRIM(IFNULL(f.cell_id,''))='' OR TRIM(IFNULL(f.position_key,''))='' OR NOT EXISTS (
+        SELECT 1 FROM filtered_images newer
+        WHERE UPPER(IFNULL(newer.cell_id,''))=UPPER(IFNULL(f.cell_id,''))
+          AND UPPER(IFNULL(newer.position_key,''))=UPPER(IFNULL(f.position_key,''))
+          AND (IFNULL(newer.inspected_at_utc,'') > IFNULL(f.inspected_at_utc,'')
+               OR (IFNULL(newer.inspected_at_utc,'')=IFNULL(f.inspected_at_utc,'') AND newer.image_id > f.image_id))
+    )
+)";
         }
 
         private static string BuildSearchWhere(SQLiteCommand command, AgentHistorySearchRequest request)

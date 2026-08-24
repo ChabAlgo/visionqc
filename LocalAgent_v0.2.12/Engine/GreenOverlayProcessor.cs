@@ -492,10 +492,14 @@ namespace VpdlGreenHeatmapOverlay
                     foreach (var path in EnumerateImages(inputRoot))
                     {
                         token.ThrowIfCancellationRequested();
-                        if (!knownImagePaths.Add(path)) continue;
                         string fileName = Path.GetFileName(path);
+                        // Keyword 모드의 공통 Root는 활성화된 모든 Position이 검사한다. Keyword가 있을 때만
+                        // 그 Position의 대상 파일을 좁힌다. 따라서 중복 제거 키는 파일 경로만이 아니라
+                        // Position(Slot) + 파일 경로여야 하며, 첫 Position이 다음 Position의 작업을 선점하면 안 된다.
                         if (!FileNameMatchesKeyword(fileName, slot.Keyword))
                             continue;
+                        string slotImageKey = (slot.Key ?? "") + "\n" + path;
+                        if (!knownImagePaths.Add(slotImageKey)) continue;
                         if (cellIdFilter.Count > 0 && !MatchesCellIdFilter(fileName, cellIdFilter, config.NamingProfile))
                         {
                             skippedByCellId++;

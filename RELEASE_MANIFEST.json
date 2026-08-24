@@ -1,18 +1,18 @@
 {
-  "releaseTag": "visionqc-v4.7.1-agent-v1.2.1",
-  "webVersion": "4.7.1",
-  "agentVersion": "1.2.1",
-  "minimumAgentVersion": "1.2.1",
+  "releaseTag": "visionqc-v4.7.2-agent-v1.2.2",
+  "webVersion": "4.7.2",
+  "agentVersion": "1.2.2",
+  "minimumAgentVersion": "1.2.2",
   "compatibility": {
-    "web": "4.7.1",
-    "agent": "1.2.1"
+    "web": "4.7.2",
+    "agent": "1.2.2"
   },
   "artifacts": {
-    "agentInstaller": "downloads/VisionQC_Agent_Installer_v1.2.1.exe",
-    "offlinePackage": "downloads/VisionQC_Offline_v4.7.1.zip",
+    "agentInstaller": "downloads/VisionQC_Agent_Installer_v1.2.2.exe",
+    "offlinePackage": "downloads/VisionQC_Offline_v4.7.2.zip",
     "sha256": {
-      "agentInstaller": "3E96A98684CC9419F9CA4B25C34E521FAD98BBBB54B576E92A8B180B4DFB41DC",
-      "offlinePackage": "1D1C84896984EEA572AD0A66010D2933F2F65933EE0535E09585C964E15FEA9D"
+      "agentInstaller": "7F169EC078F1C06CB2F2B1D62F5B3BA72BDFD93663B057ACCF92E3CE7D95022B",
+      "offlinePackage": "506EC707CF1208EDDB27AAC941F3DEF69C57E54C5ED6CD5DFCA2DD4FDCDCC0F5"
     }
   },
   "notes": "Simulation·CSV 전용 SQLite 집계, Runtime 기반 AI SUGGEST, Tool Score Heatmap Viewer와 대용량 실제 NG 폴더 지연 색인을 포함한 릴리스입니다. 배포 파일은 GitHub Release와 별도 백업 저장소에 보관합니다."

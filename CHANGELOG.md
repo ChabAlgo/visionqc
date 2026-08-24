@@ -1,3 +1,15 @@
+# VisionQC v4.7.2
+
+## 현재 분석 집계 / Keyword Simulation 안정화
+
+- 메인 날짜별 NG율은 SQLite 누적 이력이 아닌 현재 Simulation 또는 현재 CSV 분석 결과만 표시하며, `Cell ID + Position` 중복을 한 번만 센다.
+- SQLite 이력 화면도 같은 중복 키의 마지막 기록만 집계해 재실행/재저장으로 NG율이 누적되지 않게 했다.
+- `NG Image를 NG로 검출한 Score`의 다른 Tool NG 제외 기준을 최소 Score뿐 아니라 차트·KPI·확대 보기·CSV에 동일 적용했다.
+- Auto Scroll은 새 로그 행이 추가될 때만 하단으로 이동한다.
+- Keyword 모드는 공통 Input Root의 파일을 모든 활성 Position에서 검사한다. Position별 Keyword는 선택적 필터이며, 중복 키는 `Position + 파일 경로`다.
+
+---
+
 # VisionQC v4.7.1
 
 ## SQLite 집계 / AI SUGGEST / 이미지 Viewer

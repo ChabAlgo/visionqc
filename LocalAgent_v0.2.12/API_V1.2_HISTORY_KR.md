@@ -1,4 +1,4 @@
-# Local Agent v1.2.1 이력/AI Suggest API
+# Local Agent v1.2.2 이력/AI Suggest API
 
 모든 API는 `http://127.0.0.1:17891`의 JSON POST 요청이다. Loopback 이외의 주소에는 바인딩하지 않는다.
 
@@ -6,6 +6,7 @@
 
 - `/api/history/search`
   - 요청: `fromDate`, `toDate`, `cellId`, `position`, `tool`, `toolResult`, `totalResult`, `sourceName`, `fullPath`, `sourceTypes[]`, `page`, `pageSize`.
+  - 응답 집계는 같은 `Cell ID + Position`이면 가장 마지막 기록 하나만 대표값으로 사용한다. 원본 Run 행은 DB에 보존된다.
   - 응답: `totalCount`, `ngCount`, `uniqueCellCount`, `daily[]`, `items[]`.
   - `items[].fullPath`, `items[].tools[].overlayPath`는 원본/Heatmap Viewer에 사용한다.
 - `/api/history/import-file/start`

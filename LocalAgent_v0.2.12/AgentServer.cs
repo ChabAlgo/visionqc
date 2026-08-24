@@ -1485,6 +1485,8 @@ namespace VisionQC.LocalAgent
                     ? Path.Combine(cropRoot, p.displayName)
                     : (opt.keywordMode ? FirstNonEmpty(GetGreenKeywordImageRoots(opt).ToArray()) : FirstNonEmpty(GetGreenImageRoots(p).ToArray())),
                 StreamName = FirstNonEmpty(p.greenStreamName, p.streamName, "기본값"),
+                // Keyword가 비어 있으면 공통 입력 Root의 모든 이미지를 이 Position으로 검사한다.
+                // Keyword를 입력한 Position만 해당 문자열이 포함된 파일로 범위를 좁힌다.
                 Keyword = integrated ? "" : FirstNonEmpty(p.greenKeyword, p.keyword),
                 Electrode = p.key != null && p.key.StartsWith("CA", StringComparison.OrdinalIgnoreCase) ? "CA" : "AN",
                 Side = p.key != null && p.key.EndsWith("TOP", StringComparison.OrdinalIgnoreCase) ? "TOP" : "BOT"
