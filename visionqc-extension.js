@@ -1,7 +1,7 @@
 (() => {
   'use strict';
 
-  const VERSION = '4.4.42';
+  const VERSION = '4.5.0';
   const DEFAULT_POSITION_DEFS = [
     { key:'CA_TOP', name:'CA(TOP)' },
     { key:'AN_TOP', name:'AN(TOP)' },
@@ -20,12 +20,13 @@
   const SIM_LEGACY_CONFIG_KEY = 'visionqc-v4424-simulation-config';
   const SIM_LEGACY_DEFAULT_KEY = 'visionqc-v4424-simulation-defaults';
   const POSITION_CONFIG_KEY = 'visionqc-v4421-position-config';
+  const NAMING_PROFILE_KEY = 'visionqc-v450-naming-profile';
   const NG_POSITION_PREFIX = 'ng-position:';
   const IMG_RE = /\.(png|jpe?g|bmp|gif|webp|tif?f)$/i;
   const LOCAL_AGENT_URL = 'http://127.0.0.1:17891';
-  const EXPECTED_AGENT_VERSION = '0.2.16';
-  const AGENT_INSTALLER_URL = './downloads/VisionQC_Agent_Installer_v0.2.16.exe';
-  const OFFLINE_PACKAGE_URL = './downloads/VisionQC_Offline_v4.4.42.zip';
+  const EXPECTED_AGENT_VERSION = '1.0.0';
+  const AGENT_INSTALLER_URL = './downloads/VisionQC_Agent_Installer_v1.0.0.exe';
+  const OFFLINE_PACKAGE_URL = './downloads/VisionQC_Offline_v4.5.0.zip';
   const PICKER_POLL_INTERVAL_MS = 600;
   const RUNTIME_PRELOAD_TIMEOUT_MS = 15 * 60 * 1000;
   const NOTIFICATION_KEY = 'visionqc-v4428-notifications';
@@ -66,9 +67,42 @@
     return out.length ? out : DEFAULT_POSITION_DEFS.map(x => ({...x}));
   };
   const initialPositions = sanitizePositionDefs(safeJsonParse(safeStorageGet(POSITION_CONFIG_KEY), DEFAULT_POSITION_DEFS));
+  const defaultNamingProfile = () => ({
+    id:'default', name:'기본 파일명 규칙', version:1, delimiter:'_',
+    cellId:{ mode:'auto', tokenIndex:3, candidateLength:18, extractLength:16, requireLetter:true },
+    date:{ mode:'auto', tokenIndex:1, format:'YYYYMMDD' },
+    time:{ mode:'auto', tokenIndex:2, format:'HHMMSS' }
+  });
+  const asRuleMode = (value) => String(value || '').toLowerCase() === 'token' ? 'token' : 'auto';
+  const safePositiveInt = (value, fallback, max = 999) => {
+    const n = Math.trunc(Number(value));
+    return Number.isFinite(n) && n > 0 ? Math.min(n, max) : fallback;
+  };
+  const sanitizeNamingProfile = (value) => {
+    const defaults = defaultNamingProfile();
+    const source = value && typeof value === 'object' ? value : {};
+    const cell = source.cellId && typeof source.cellId === 'object' ? source.cellId : {};
+    const date = source.date && typeof source.date === 'object' ? source.date : {};
+    const time = source.time && typeof source.time === 'object' ? source.time : {};
+    const candidateLength = safePositiveInt(cell.candidateLength, defaults.cellId.candidateLength, 256);
+    const extractLength = Math.min(safePositiveInt(cell.extractLength, defaults.cellId.extractLength, 256), candidateLength);
+    return {
+      id:String(source.id || defaults.id).trim() || defaults.id,
+      name:String(source.name || defaults.name).trim() || defaults.name,
+      version:safePositiveInt(source.version, defaults.version, 9999),
+      delimiter:String(source.delimiter || defaults.delimiter).slice(0, 8) || defaults.delimiter,
+      cellId:{ mode:asRuleMode(cell.mode), tokenIndex:safePositiveInt(cell.tokenIndex, defaults.cellId.tokenIndex), candidateLength, extractLength, requireLetter:cell.requireLetter !== false },
+      date:{ mode:asRuleMode(date.mode), tokenIndex:safePositiveInt(date.tokenIndex, defaults.date.tokenIndex), format:'YYYYMMDD' },
+      time:{ mode:asRuleMode(time.mode), tokenIndex:safePositiveInt(time.tokenIndex, defaults.time.tokenIndex), format:'HHMMSS' }
+    };
+  };
+  const initialNamingProfile = sanitizeNamingProfile(safeJsonParse(safeStorageGet(NAMING_PROFILE_KEY), defaultNamingProfile()));
   const state = {
     page: safeStorageGet(PAGE_KEY) || 'classification',
     positions: initialPositions,
+    namingProfile: initialNamingProfile,
+    namingPreview: null,
+    namingPreviewError: '',
     menuOpen: false,
     resultInputs: {},
     ngRootName: '',
@@ -276,7 +310,7 @@
       analysis:'<path d="M4 19V5"/><path d="M4 19h16"/><path d="m7 15 4-4 3 2 5-6"/><circle cx="7" cy="15" r="1"/><circle cx="11" cy="11" r="1"/><circle cx="14" cy="13" r="1"/><circle cx="19" cy="7" r="1"/>',
       classification:'<rect x="3" y="4" width="18" height="16" rx="2"/><circle cx="8" cy="9" r="1.5"/><path d="m5 17 4-4 3 3 2-2 5 4"/><path d="m15 7 1.5 1.5L19 6"/>',
       simulation:'<circle cx="12" cy="12" r="9"/><path d="m10 8 6 4-6 4z"/>',
-      settings:'<path d="M4 7h10"/><path d="M18 7h2"/><circle cx="16" cy="7" r="2"/><path d="M4 17h2"/><path d="M10 17h10"/><circle cx="8" cy="17" r="2"/><path d="M4 12h4"/><path d="M12 12h8"/><circle cx="10" cy="12" r="2"/>',
+      settings:'<circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 0 0 .34 1.88l.06.06-2.12 2.12-.06-.06a1.7 1.7 0 0 0-1.88-.34 1.7 1.7 0 0 0-1.03 1.56v.08h-3v-.08A1.7 1.7 0 0 0 10.68 18.66a1.7 1.7 0 0 0-1.88.34l-.06.06-2.12-2.12.06-.06A1.7 1.7 0 0 0 7.02 15a1.7 1.7 0 0 0-1.56-1.03h-.08v-3h.08A1.7 1.7 0 0 0 7.02 9.94a1.7 1.7 0 0 0-.34-1.88l-.06-.06 2.12-2.12.06.06a1.7 1.7 0 0 0 1.88.34 1.7 1.7 0 0 0 1.03-1.56v-.08h3v.08a1.7 1.7 0 0 0 1.03 1.56 1.7 1.7 0 0 0 1.88-.34l.06-.06L19.8 8l-.06.06a1.7 1.7 0 0 0-.34 1.88 1.7 1.7 0 0 0 1.56 1.03h.08v3h-.08A1.7 1.7 0 0 0 19.4 15z"/>',
       bell:'<path d="M18 8a6 6 0 0 0-12 0c0 7-3 7-3 9h18c0-2-3-2-3-9"/><path d="M10 21h4"/>',
       theme:'<circle cx="12" cy="12" r="9"/><path d="M12 3a9 9 0 0 0 0 18z"/>',
       language:'<circle cx="12" cy="12" r="9"/><path d="M3 12h18"/><path d="M12 3c3 3 4 6 4 9s-1 6-4 9c-3-3-4-6-4-9s1-6 4-9"/>',
@@ -574,6 +608,8 @@
     else if (action === 'simulation-remove-position') removeSimulationPosition(control.dataset.simKey || '');
     else if (action === 'position-add') addCustomPosition();
     else if (action === 'position-remove') removeCustomPosition(control.dataset.positionKey || '');
+    else if (action === 'naming-profile-save') saveNamingProfileFromSettings();
+    else if (action === 'naming-profile-preview') previewNamingProfile();
     else if (action === 'choose-ng-position') chooseNgPositionFolder(control.closest('[data-vq-position]')?.dataset.vqPosition);
     else if (action === 'remove-ng-position') removeNgPositionFolder(control.closest('[data-vq-position]')?.dataset.vqPosition);
     else if (action === 'simulation-save-defaults') saveSimulationDefaults();
@@ -3990,6 +4026,74 @@
   }
 
 
+  function namingRuleField(label, key, rule, options = {}) {
+    const isCell = key === 'cellId';
+    const modeOptions = `<option value="auto" ${rule.mode === 'auto' ? 'selected' : ''}>조건 자동 찾기</option><option value="token" ${rule.mode === 'token' ? 'selected' : ''}>_ 기준 위치 지정</option>`;
+    return `<fieldset class="vq43-naming-rule"><legend>${escapeHtml(label)}</legend><label><span>추출 방식</span><select data-naming-field="${key}" data-naming-key="mode">${modeOptions}</select></label><label><span>_ 기준 토큰 번호</span><input type="number" min="1" max="999" value="${escapeHtml(rule.tokenIndex)}" data-naming-field="${key}" data-naming-key="tokenIndex"></label>${isCell ? `<label><span>후보 전체 길이</span><input type="number" min="1" max="256" value="${escapeHtml(rule.candidateLength)}" data-naming-field="cellId" data-naming-key="candidateLength"></label><label><span>앞에서 추출할 길이</span><input type="number" min="1" max="256" value="${escapeHtml(rule.extractLength)}" data-naming-field="cellId" data-naming-key="extractLength"></label><label class="vq43-naming-check"><input type="checkbox" ${rule.requireLetter ? 'checked' : ''} data-naming-field="cellId" data-naming-key="requireLetter"><span>영문 포함 필수</span></label>` : `<div class="vq43-naming-hint">${options.hint || ''}</div>`}</fieldset>`;
+  }
+
+  function namingPreviewHtml() {
+    if (state.namingPreviewError) return `<div class="vq43-warning"><strong>규칙 미리보기 실패</strong><div>${escapeHtml(state.namingPreviewError)}</div></div>`;
+    const preview = state.namingPreview;
+    if (!preview) return '<p class="vq43-naming-empty">아래 입력란에 파일명을 줄마다 붙여 넣고 ‘미리보기’를 누르면 최대 200개를 검증합니다.</p>';
+    const rows = (preview.records || []).slice(0, 20).map((row) => `<tr><td title="${escapeHtml(row.fileName)}">${escapeHtml(row.fileName)}</td><td>${escapeHtml(row.cellId || '-')}</td><td>${escapeHtml(row.captureDate || '-')}</td><td>${escapeHtml(row.captureTime || '-')}</td><td><b class="vq43-naming-status ${escapeHtml(row.status)}">${escapeHtml(row.status)}</b>${(row.warnings || []).length ? `<small>${escapeHtml(row.warnings.join(' / '))}</small>` : ''}</td></tr>`).join('');
+    return `<div class="vq43-naming-summary"><span>성공 <b>${numberText(preview.successCount)}</b></span><span>부분 <b>${numberText(preview.partialCount)}</b></span><span>모호 <b>${numberText(preview.ambiguousCount)}</b></span><span>실패 <b>${numberText(preview.failedCount)}</b></span></div><div class="vq43-naming-table-wrap"><table class="vq43-naming-table"><thead><tr><th>파일명</th><th>Cell ID</th><th>날짜</th><th>시간</th><th>판정</th></tr></thead><tbody>${rows || '<tr><td colspan="5">검증할 파일명이 없습니다.</td></tr>'}</tbody></table></div>`;
+  }
+
+  function namingProfileCardHtml() {
+    const profile = state.namingProfile;
+    return `<section class="vq43-settings-card vq43-naming-card"><div class="vq43-settings-title"><span class="vq43-settings-icon cyan">⚙</span><div><h3>0. 파일명 규칙</h3><p>공정별 이미지 이름에서 Cell ID, 촬영 날짜, 촬영 시간을 추출합니다. 토큰 번호는 사람이 읽는 1부터 시작합니다.</p></div></div><div class="vq43-naming-profile-head"><label><span>규칙 이름</span><input id="vq43-naming-name" value="${escapeHtml(profile.name)}" maxlength="80"></label><label><span>구분자</span><input id="vq43-naming-delimiter" value="${escapeHtml(profile.delimiter)}" maxlength="8"></label><label><span>규칙 버전</span><input id="vq43-naming-version" type="number" min="1" max="9999" value="${escapeHtml(profile.version)}"></label></div><div class="vq43-naming-rule-grid">${namingRuleField('Cell ID', 'cellId', profile.cellId)}${namingRuleField('날짜', 'date', profile.date, { hint:'자동 모드는 유효한 YYYYMMDD 토큰을 정확히 하나 찾습니다.' })}${namingRuleField('시간', 'time', profile.time, { hint:'자동 모드는 유효한 HHMMSS 토큰을 정확히 하나 찾습니다.' })}</div><div class="vq43-naming-example">예: <code>20250219_104425_J4037F2JP611069701_TN4086_OK_CAM2_Blue</code> → 날짜 2025-02-19 · 시간 10:44:25 · Cell ID J4037F2JP6110697</div><label class="vq43-naming-samples"><span>검증할 파일명 (줄마다 하나)</span><textarea id="vq43-naming-samples" rows="4" placeholder="20250219_104425_J4037F2JP611069701_TN4086_OK_CAM2_Blue"></textarea></label><div class="vq43-naming-actions"><button class="vq43-btn" data-vq-action="naming-profile-save">규칙 저장</button><button class="vq43-btn vq43-btn-blue" data-vq-action="naming-profile-preview">Agent로 미리보기</button></div>${namingPreviewHtml()}</section>`;
+  }
+
+  function readNamingProfileFromSettings() {
+    const current = state.namingProfile;
+    const read = (selector, fallback = '') => $(selector)?.value ?? fallback;
+    const field = (name) => {
+      const prior = current[name];
+      return {
+        mode:asRuleMode($(`[data-naming-field="${name}"][data-naming-key="mode"]`)?.value),
+        tokenIndex:read(`[data-naming-field="${name}"][data-naming-key="tokenIndex"]`, prior.tokenIndex),
+        candidateLength:name === 'cellId' ? read('[data-naming-field="cellId"][data-naming-key="candidateLength"]', prior.candidateLength) : undefined,
+        extractLength:name === 'cellId' ? read('[data-naming-field="cellId"][data-naming-key="extractLength"]', prior.extractLength) : undefined,
+        requireLetter:name === 'cellId' ? !!$('[data-naming-field="cellId"][data-naming-key="requireLetter"]')?.checked : undefined,
+        format:prior.format
+      };
+    };
+    return sanitizeNamingProfile({ id:current.id, name:read('#vq43-naming-name', current.name), delimiter:read('#vq43-naming-delimiter', current.delimiter), version:read('#vq43-naming-version', current.version), cellId:field('cellId'), date:field('date'), time:field('time') });
+  }
+
+  function saveNamingProfileFromSettings({ silent = false } = {}) {
+    state.namingProfile = readNamingProfileFromSettings();
+    state.namingPreview = null;
+    state.namingPreviewError = '';
+    safeStorageSet(NAMING_PROFILE_KEY, JSON.stringify(state.namingProfile));
+    if (!silent) showToast('파일명 규칙을 이 브라우저에 저장했습니다.');
+    renderSettings(); bindPageControls();
+  }
+
+  async function previewNamingProfile() {
+    const profile = readNamingProfileFromSettings();
+    const raw = $('#vq43-naming-samples')?.value || '';
+    const fileNames = raw.split(/\r?\n/).map((value) => value.trim()).filter(Boolean).slice(0, 200);
+    state.namingProfile = profile;
+    safeStorageSet(NAMING_PROFILE_KEY, JSON.stringify(profile));
+    state.namingPreview = null;
+    state.namingPreviewError = '';
+    if (!fileNames.length) {
+      state.namingPreviewError = '미리보기할 파일명을 한 줄 이상 입력하세요.';
+      renderSettings(); bindPageControls();
+      return;
+    }
+    try {
+      const response = await agentFetch('/api/naming/preview', { method:'POST', timeout:30000, body:{ profile, fileNames } });
+      if (!response?.ok) throw new Error(response?.error || '규칙 검증에 실패했습니다.');
+      state.namingPreview = response;
+    } catch (error) {
+      state.namingPreviewError = `Local Agent 미리보기: ${error.message || error}`;
+    }
+    renderSettings(); bindPageControls();
+  }
+
   function renderSettings() {
     const model = state.model || { uniqueCellCount:0, misses:[], duplicates:[] };
     const positions = positionNames();
@@ -4004,7 +4108,8 @@
     }).join('');
     $('#vq43-page').innerHTML = `
       <div class="vq43-content"><div class="vq43-topline"><div><div class="vq43-eyebrow" style="color:#22d3ee">Input & Configuration</div><h1 class="vq43-title">분석 Input 설정</h1><p class="vq43-subtitle">Position 목록은 Simulation · Main · Analysis · 실제 NG 경로에 공통 적용됩니다.</p></div><button class="vq43-btn vq43-btn-red" data-vq-action="clear-inputs">Input 전체 초기화</button></div>
-        <section class="vq43-settings-card"><div class="vq43-settings-title"><span class="vq43-settings-icon cyan">◎</span><div><h3>0. Position 구성</h3><p>이름 변경/추가/삭제 시 모든 분석·시뮬레이션 화면에 동일하게 반영됩니다.</p></div></div><div class="vq43-position-config-list">${positionRows}</div><div class="vq43-position-add-row"><input id="vq43-new-position-name" placeholder="예: CA(MID), AN(SIDE), CUSTOM-01"><button class="vq43-btn vq43-btn-blue" data-vq-action="position-add">+ Position 추가</button></div></section>
+        ${namingProfileCardHtml()}
+        <section class="vq43-settings-card"><div class="vq43-settings-title"><span class="vq43-settings-icon cyan">⚙</span><div><h3>1. Position 구성</h3><p>이름 변경/추가/삭제 시 모든 분석·시뮬레이션 화면에 동일하게 반영됩니다.</p></div></div><div class="vq43-position-config-list">${positionRows}</div><div class="vq43-position-add-row"><input id="vq43-new-position-name" placeholder="예: CA(MID), AN(SIDE), CUSTOM-01"><button class="vq43-btn vq43-btn-blue" data-vq-action="position-add">+ Position 추가</button></div></section>
         <section class="vq43-settings-card"><div class="vq43-settings-title"><span class="vq43-settings-icon">▦</span><div><h3>1. Position별 시뮬레이션 결과 파일</h3><p>CSV 또는 XLSX · Cell ID, Total_result, Tool_result, Tool_score 열 자동 인식</p></div></div><div class="vq43-input-list">${positions.map(resultInputRow).join('')}</div></section>
         <section class="vq43-settings-card"><div class="vq43-settings-title"><span class="vq43-settings-icon amber">▣</span><div><h3>2. 실제 최종 NG 이미지 경로</h3><p>각 Position별 폴더를 독립적으로 선택/교체할 수 있습니다. 전체 루트를 한 번에 읽는 기존 방식도 유지합니다.</p></div><button class="vq43-btn vq43-btn-amber" data-vq-action="choose-ng-folder" ${state.loading?'disabled':''}>${state.loading==='ng'?'◌ 전체 루트 읽는 중...':'▣ 전체 NG 루트 선택'}</button></div><div class="vq43-ng-position-list">${ngRows}</div></section>
         <section class="vq43-settings-card"><div class="vq43-settings-title"><span class="vq43-settings-icon green">✓</span><div><h3>분석 준비 상태</h3><p>현재 입력 데이터의 집계 결과</p></div></div><div class="vq43-ready-grid"><div><span>결과 Position</span><b>${positions.filter((position)=>state.resultInputs[position]).length} / ${positions.length}</b></div><div><span>고유 Cell</span><b>${numberText(model.uniqueCellCount)}</b></div><div><span>실제 NG 고유값</span><b>${numberText(model.actualUniqueCount || 0)}</b></div><div><span>CSV 매칭</span><b class="vq43-blue">${numberText(model.matchedActualCount || 0)}</b></div><div><span>미매칭</span><b class="vq43-red">${numberText(model.unmatchedActualCount || 0)}</b></div><div><span>미검</span><b class="vq43-amber">${numberText(model.misses.length)}</b></div></div>${model.actualUniqueCount ? matchDiagnostic(model) : ''}</section>

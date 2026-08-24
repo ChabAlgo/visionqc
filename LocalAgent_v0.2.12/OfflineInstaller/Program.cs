@@ -14,7 +14,7 @@ namespace VisionQC.AgentInstaller
     internal static class Program
     {
         private const string AgentExe = "VisionQC.LocalAgent.exe";
-        private const string ProductVersion = "0.2.16";
+        private const string ProductVersion = "1.0.0";
         private static readonly PayloadFile[] Payload =
         {
             new PayloadFile("VisionQC.AgentInstaller.Payload.Agent.VisionQC.LocalAgent.exe", AgentExe),
@@ -46,7 +46,7 @@ namespace VisionQC.AgentInstaller
             try
             {
                 string installDir = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "VisionQC", "LocalAgent");
-                StopRunningAgent();
+                StopRunningAgent(Path.Combine(installDir, AgentExe));
                 ExtractPayload(installDir);
                 string agentPath = Path.Combine(installDir, AgentExe);
                 RunAndWait(agentPath, "--register", 10000);
@@ -87,7 +87,7 @@ namespace VisionQC.AgentInstaller
             }
         }
 
-        private static void StopRunningAgent()
+        private static void StopRunningAgent(string installedAgentPath)
         {
             try
             {
@@ -100,12 +100,31 @@ namespace VisionQC.AgentInstaller
                 using (var response = (HttpWebResponse)request.GetResponse()) { }
             }
             catch { }
-            for (int attempt = 0; attempt < 32; attempt++)
+            // 포트가 먼저 닫혀도 Agent EXE는 종료 정리 중일 수 있습니다.
+            // 그 상태에서 덮어쓰면 파일 잠금으로 설치가 실패하므로 설치 대상 프로세스가
+            // 실제로 끝날 때까지 기다립니다.
+            for (int attempt = 0; attempt < 60; attempt++)
             {
-                if (!IsLoopbackAgentPortOpen()) return;
+                if (!IsInstalledAgentRunning(installedAgentPath)) return;
                 Thread.Sleep(250);
             }
             throw new InvalidOperationException("기존 VisionQC Agent가 종료되지 않아 설치를 계속할 수 없습니다. 실행 중인 Agent를 종료한 뒤 다시 시도해 주세요.");
+        }
+
+        private static bool IsInstalledAgentRunning(string installedAgentPath)
+        {
+            string expected = Path.GetFullPath(installedAgentPath ?? "");
+            foreach (Process process in Process.GetProcessesByName(Path.GetFileNameWithoutExtension(AgentExe)))
+            {
+                try
+                {
+                    string processPath = process.MainModule == null ? "" : process.MainModule.FileName;
+                    if (string.Equals(Path.GetFullPath(processPath), expected, StringComparison.OrdinalIgnoreCase)) return true;
+                }
+                catch { }
+                finally { try { process.Dispose(); } catch { } }
+            }
+            return false;
         }
 
         private static bool IsLoopbackAgentPortOpen()

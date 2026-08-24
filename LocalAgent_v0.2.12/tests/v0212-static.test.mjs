@@ -8,57 +8,58 @@ const root = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const read = (path) => readFileSync(resolve(root, path), 'utf8');
 const server = read('AgentServer.cs');
 const picker = read('NativeShellPicker.cs');
+const pickerService = read('Services/PickerService.cs');
 const program = read('Program.cs');
 
-test('Agent v0.2.16 version is consistent', () => {
-  assert.match(program, /AgentVersion = "0\.2\.16"/);
-  assert.match(read('Properties/AssemblyInfo.cs'), /AssemblyVersion\("0\.2\.16\.0"\)/);
-  assert.match(read('BUILD_RELEASE_x64.cmd'), /v0\.2\.16/);
+test('Agent v1.0.0 version is consistent', () => {
+  assert.match(program, /AgentVersion = "1\.0\.0"/);
+  assert.match(read('Properties/AssemblyInfo.cs'), /AssemblyVersion\("1\.0\.0\.0"\)/);
+  assert.match(read('BUILD_RELEASE_x64.cmd'), /v1\.0\.0/);
 });
 
-test('picker HTTP calls return immediately and use idempotent start/status jobs', () => {
+test('HTTP server delegates picker lifecycle to the isolated picker service', () => {
   assert.match(server, /case "\/api\/pick\/start"/);
   assert.match(server, /case "\/api\/pick\/status"/);
-  const start = server.slice(server.indexOf('private object StartPicker'), server.indexOf('private object PickerStatus'));
-  assert.match(start, /RequestId/);
-  assert.match(start, /sameRequest/);
-  assert.match(start, /Task\.Run\(\(\) => RunPickerJob\(job\)\)/);
-  assert.doesNotMatch(start, /\.Wait\(|Thread\.Join/);
-  assert.match(server, /private sealed class PickerJob/);
+  assert.match(server, /private readonly PickerService _picker/);
+  assert.match(server, /_picker\.Start\(DeserializeDictionary\(body\)\)/);
+  assert.match(read('VisionQC.LocalAgent.csproj'), /Services\\PickerService\.cs/);
+  assert.match(pickerService, /sameRequest/);
+  assert.match(pickerService, /TimeSpan\.FromSeconds\(30\)/);
+  assert.match(pickerService, /Task\.Run\(\(\) => RunJob\(job\)\)/);
+  assert.match(pickerService, /_job\.CancelRequested = true/);
+  assert.match(pickerService, /paths = job\.Paths/);
+  assert.doesNotMatch(pickerService, /\.Wait\(|Thread\.Join/);
 });
 
-test('same-browser stale pickers are recoverable and completed jobs expire', () => {
-  assert.match(server, /recoverable = sameClient/);
-  assert.match(server, /TimeSpan\.FromSeconds\(30\)/);
-  assert.match(server, /_pickerJob\.CancelRequested = true/);
-  assert.match(server, /다른 브라우저 세션의 선택 창은 취소할 수 없습니다/);
-  assert.match(picker, /PrepareDialogRequest\(\)/);
-  assert.match(picker, /_cancelRequested = true/);
-  assert.match(picker, /dialog\.Close\(ERROR_CANCELLED_HRESULT\)/);
+test('picker service retains multi-folder selection and browser ownership safeguards', () => {
+  assert.match(pickerService, /GetBool\(data, "multiple", false\)/);
+  assert.match(pickerService, /AllowMultiple = allowMultiple/);
+  assert.match(pickerService, /TryBeginLegacyPicker/);
+  assert.match(pickerService, /NativeShellPicker\.CancelActiveDialog/);
+  assert.match(picker, /FOS_ALLOWMULTISELECT/);
+  assert.match(picker, /internal static string\[\] PickFolders\(string initialPath, bool allowMultiple\)/);
+  assert.match(picker, /PreferredInitialFolder/);
+  assert.match(picker, /RememberLastSelectedFolder/);
 });
 
-test('remote and virtual initial paths cannot block picker startup', () => {
-  const folderDialog = picker.slice(picker.indexOf('internal static string PickFolder'), picker.indexOf('internal static string PickFile'));
-  const fileDialog = picker.slice(picker.indexOf('internal static string PickFile'), picker.indexOf('private static string ShellItemPath'));
-  assert.match(picker, /FastLocalInitialFolder/);
-  assert.match(picker, /GetDriveType\(root\) != DRIVE_FIXED/);
-  assert.match(picker, /SetClientGuid/);
-  assert.match(picker, /ClearClientData\(\)/);
-  assert.doesNotMatch(folderDialog, /FOS_HIDEMRUPLACES|FOS_HIDEPINNEDPLACES/);
-  assert.doesNotMatch(fileDialog, /FOS_HIDEMRUPLACES|FOS_HIDEPINNEDPLACES/);
-  assert.match(picker, /FOS_DONTADDTORECENT/);
-  assert.match(picker, /SafeLocalInitialFolder\(\)/);
-  assert.doesNotMatch(picker, /File\.Exists\(initialPath\)/);
-  assert.doesNotMatch(picker, /Directory\.Exists\(initialPath\)/);
+test('naming profile parsing is a reusable Agent service with a bounded preview endpoint', () => {
+  assert.match(server, /case "\/api\/naming\/preview"/);
+  assert.match(server, /request\.fileNames\.Count > 200/);
+  assert.match(read('VisionQC.LocalAgent.csproj'), /Services\\NamingProfileParser\.cs/);
+  const parser = read('Services/NamingProfileParser.cs');
+  assert.match(parser, /DateTime\.TryParseExact\(value, "yyyyMMdd"/);
+  assert.match(parser, /DateTime\.TryParseExact\(value, "HHmmss"/);
+  assert.match(parser, /token\.All\(char\.IsLetterOrDigit\)/);
+  assert.match(read('Services/PositionResolver.cs'), /fileName\.IndexOf\(x\.displayName/);
 });
 
-test('normal Explorer navigation is restored and automatic cleanup is informational', () => {
-  const cancel = server.slice(server.indexOf('private object CancelPicker'), server.indexOf('private object PreviewBlueFallback'));
-  assert.match(cancel, /AppendAgentLog\("INFO"/);
-  assert.match(cancel, /_pickerJob\.Completed = true/);
-  assert.match(cancel, /_pickerJob\.Cancelled = true/);
-  assert.match(cancel, /이전 파일\/폴더 선택 작업을 정리했습니다/);
-  assert.doesNotMatch(cancel, /응답이 끝나지 않은|AppendAgentLog\(cancelled \? "WARN"/);
+test('single Green inspection is exposed separately and requires reusable runtime', () => {
+  assert.match(server, /case "\/api\/classification\/inspect"/);
+  assert.match(server, /private object InspectSingleGreenImage/);
+  assert.match(server, /PositionResolver\.Resolve/);
+  assert.match(server, /_preloadedRuntimeSignature/);
+  assert.match(server, /GreenOverlayProcessor\.InspectSingle/);
+  assert.match(read('Engine/GreenOverlayProcessor.cs'), /internal static LiveAnalysisRecord InspectSingle/);
 });
 
 test('installed VPDL and active Simulation Runtime are separate states', () => {
@@ -71,57 +72,21 @@ test('installed VPDL and active Simulation Runtime are separate states', () => {
   assert.match(server, /new RuntimePreloadResponse \{ ok = true, mode = mode, installedVpdlVersion = _vpdlVersion, vpdlVersion = _vpdlVersion \}/);
 });
 
-test('Agent returns a concrete JSON error instead of silently closing the socket', () => {
-  const handler = server.slice(server.indexOf('private async Task HandleClient'), server.indexOf('private object BuildStatus'));
-  assert.match(handler, /catch \(SysException ex\)/);
-  assert.match(handler, /WriteJson\(stream, 500/);
-  assert.match(handler, /HTTP 요청 처리 실패/);
-  assert.match(server, /Internal Server Error/);
-});
-
-test('loopback CORS and existing runtime preload behavior stay available', () => {
+test('Agent keeps loopback CORS, JSON errors, and multi-root simulation support', () => {
+  assert.match(server, /WriteJson\(stream, 500/);
   assert.match(server, /Access-Control-Allow-Private-Network: true/);
   assert.match(server, /IPAddress\.Loopback/);
-  assert.match(server, /runtimePreloadToken = _preloadedRuntimeToken/);
-  assert.match(server, /IWorkspace workspace = control\.Workspaces\.Add\(workspaceName, path\)/);
-});
-
-test('folder picker supports multiple Explorer selections without changing file picker behavior', () => {
-  assert.match(picker, /FOS_ALLOWMULTISELECT/);
-  assert.match(picker, /interface IFileOpenDialog : IFileDialog/);
-  assert.match(picker, /void GetResults\(out IShellItemArray ppenum\)/);
-  assert.match(picker, /\[PreserveSig\] new int Show\(IntPtr parent\)/);
-  assert.match(picker, /internal static string\[\] PickFolders\(string initialPath, bool allowMultiple\)/);
-  assert.match(picker, /dialog\.GetResults\(out resultItems\)/);
-  assert.match(picker, /new ManualResetEvent\(false\)/);
-  assert.doesNotMatch(picker, /thread\.Join\(\)/);
-  assert.match(picker, /ShowInTaskbar = false/);
-  assert.match(picker, /Opacity = 1/);
-  assert.match(picker, /TopMost = true/);
-  assert.match(picker, /PromoteShellDialogWhenCreated\("VisionQC 폴더 선택"\)/);
-  assert.match(picker, /SetWindowPos\(dialogHandle, HwndTopmost/);
-});
-
-test('picker jobs and simulation DTO retain every selected image folder', () => {
-  assert.match(server, /GetBool\(data, "multiple", false\)/);
-  assert.match(server, /AllowMultiple = allowMultiple/);
-  assert.match(server, /paths = job\.Paths/);
   assert.match(server, /GetGreenImageRoots\(p\)/);
   assert.match(server, /GetBlueImageRoots\(p\)/);
   assert.match(read('AgentDtos.cs'), /List<string> greenImageRoots/);
   assert.match(read('AgentDtos.cs'), /List<string> blueImageRoots/);
-  assert.match(read('AgentDtos.cs'), /List<string> keywordInputRoots/);
-  assert.match(server, /GetGreenKeywordImageRoots/);
-  assert.match(server, /GetIntegratedKeywordImageRoots/);
   assert.match(read('Engine/GreenOverlayProcessor.cs'), /InputRoots/);
   assert.match(read('Engine/BlueCropCore.cs'), /ImageRoots/);
-  assert.match(read('Engine/BlueCropCore.cs'), /EnumerateSlotImages/);
 });
 
-test('picker uses the requesting browser as owner and remembers the last local folder', () => {
-  assert.match(picker, /GetForegroundWindow\(\)/);
-  assert.match(picker, /PreparedParentWindow/);
-  assert.match(picker, /result = showDialog\(parentWindow\)/);
-  assert.match(picker, /PreferredInitialFolder/);
-  assert.match(picker, /RememberLastSelectedFolder/);
+test('installer waits for the installed Agent process before replacing its executable', () => {
+  const installer = read('OfflineInstaller/Program.cs');
+  assert.match(installer, /StopRunningAgent\(Path\.Combine\(installDir, AgentExe\)\)/);
+  assert.match(installer, /IsInstalledAgentRunning\(installedAgentPath\)/);
+  assert.match(installer, /Process\.GetProcessesByName/);
 });

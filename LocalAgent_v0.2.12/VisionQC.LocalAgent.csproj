@@ -56,6 +56,10 @@
     <Compile Include="AgentServer.cs" />
     <Compile Include="AgentDtos.cs" />
     <Compile Include="NativeShellPicker.cs" />
+    <Compile Include="Domain\NamingProfile.cs" />
+    <Compile Include="Services\NamingProfileParser.cs" />
+    <Compile Include="Services\PositionResolver.cs" />
+    <Compile Include="Services\PickerService.cs" />
     <Compile Include="Engine\Models.cs" />
     <Compile Include="Engine\GreenOverlayProcessor.cs" />
     <Compile Include="Engine\BlueCropCore.cs" />

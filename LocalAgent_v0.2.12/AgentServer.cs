@@ -13,6 +13,8 @@ using System.Threading;
 using System.Threading.Tasks;
 using System.Web.Script.Serialization;
 using System.Windows.Forms;
+using VisionQC.LocalAgent.Domain;
+using VisionQC.LocalAgent.Services;
 using VpdlGreenHeatmapOverlay;
 using SysException = System.Exception;
 using SysInvalidOperationException = System.InvalidOperationException;
@@ -27,8 +29,6 @@ namespace VisionQC.LocalAgent
         private readonly JavaScriptSerializer _json = new JavaScriptSerializer { MaxJsonLength = int.MaxValue };
         private readonly object _sync = new object();
         private readonly object _vpdlSync = new object();
-        private readonly object _pickerSync = new object();
-        private readonly object _pickerStateSync = new object();
         private readonly List<SseClient> _sse = new List<SseClient>();
         private readonly Dictionary<string, WorkspaceInspectionCacheEntry> _workspaceInspectionCache = new Dictionary<string, WorkspaceInspectionCacheEntry>(StringComparer.OrdinalIgnoreCase);
         private TcpListener _listener;
@@ -57,13 +57,13 @@ namespace VisionQC.LocalAgent
         private string _preloadedRuntimeMode = "";
         private string _lastAgentLogKey = "";
         private DateTime _lastAgentLogUtc = DateTime.MinValue;
-        private string _pickerClientId = "";
-        private PickerJob _pickerJob;
+        private readonly PickerService _picker;
 
         public AgentServer()
         {
             _vpdlVersion = DetectVpdlVersion();
             _gpuName = DetectGpuName();
+            _picker = new PickerService(AppendAgentLog);
         }
 
         public void RunUntilExit(bool openOfflinePage = false)
@@ -171,6 +171,12 @@ namespace VisionQC.LocalAgent
                     case "/api/blue/fallback/preview":
                         result = PreviewBlueFallback(request.Body);
                         break;
+                    case "/api/naming/preview":
+                        result = PreviewNamingProfile(request.Body);
+                        break;
+                    case "/api/classification/inspect":
+                        result = InspectSingleGreenImage(request.Body);
+                        break;
                     case "/api/simulation/start":
                         result = StartSimulation(request.Body);
                         break;
@@ -207,6 +213,98 @@ namespace VisionQC.LocalAgent
                 }
                 catch { }
                 try { client.Close(); } catch { }
+            }
+        }
+
+        private NamingPreviewResponse PreviewNamingProfile(string body)
+        {
+            try
+            {
+                var request = _json.Deserialize<NamingPreviewRequest>(body ?? "{}") ?? new NamingPreviewRequest();
+                // 브라우저 실수로 Agent 메모리를 점유하지 않도록 미리보기는 최대 200개 파일로 제한한다.
+                if (request.fileNames != null && request.fileNames.Count > 200)
+                    request.fileNames = request.fileNames.Take(200).ToList();
+                return NamingProfileParser.Preview(request);
+            }
+            catch (SysException ex)
+            {
+                return new NamingPreviewResponse { ok = false, error = "파일명 규칙 미리보기 실패: " + ex.Message };
+            }
+        }
+
+        private object InspectSingleGreenImage(string body)
+        {
+            AgentSingleInspectionRequest req;
+            try { req = _json.Deserialize<AgentSingleInspectionRequest>(body ?? "{}"); }
+            catch (SysException ex) { return new { ok = false, error = "단일 검사 설정 JSON 오류: " + ex.Message }; }
+
+            if (req == null || string.IsNullOrWhiteSpace(req.imagePath) || !File.Exists(req.imagePath))
+                return new { ok = false, error = "단일 검사할 이미지 파일을 찾을 수 없습니다." };
+            var resolution = PositionResolver.Resolve(req.imagePath, req.positions);
+            if (resolution.matches.Count == 0)
+                return new { ok = false, error = "파일명에서 활성 Position을 찾지 못했습니다. 파일명에 Position 문자열이 있어야 합니다." };
+            if (!resolution.IsUnique)
+                return new { ok = false, error = "파일명에 여러 Position이 동시에 일치합니다: " + string.Join(", ", resolution.matches.Select(x => x.displayName)) };
+
+            AgentPositionRequest position = resolution.Position;
+            if (string.IsNullOrWhiteSpace(FirstNonEmpty(position.greenWorkspacePath, position.workspacePath)))
+                return new { ok = false, error = position.displayName + " Green Workspace가 설정되지 않았습니다." };
+
+            LocalRuntime.Control control = null;
+            string signature = BuildRuntimePreloadSignature(req);
+            lock (_vpdlSync)
+            {
+                if (_vpdlReservedForSimulation)
+                    return new { ok = false, busy = true, error = "다른 VPDL 작업이 실행 중입니다. 단일 검사는 작업 완료 후 다시 시도하세요." };
+                if (_preloadedRuntimeControl == null || !string.Equals(_preloadedRuntimeSignature, signature, StringComparison.Ordinal))
+                    return new { ok = false, error = "현재 설정에 맞는 Runtime 사전 로드가 없습니다. Green 모드의 Runtime File Load를 먼저 실행하세요." };
+                _vpdlReservedForSimulation = true;
+                control = _preloadedRuntimeControl;
+                _preloadedRuntimeControl = null;
+                _preloadedRuntimeSignature = "";
+                _preloadedRuntimeToken = "";
+                _preloadedRuntimeMode = "";
+                DisposeInspectionControlLocked();
+            }
+
+            bool reusable = true;
+            try
+            {
+                var config = BuildGreenConfig(req, Path.GetTempPath(), null, false);
+                config.HeatmapImageSave = false;
+                config.WorkspaceSlots = config.WorkspaceSlots.Where(x => string.Equals(x.Key, position.key, StringComparison.OrdinalIgnoreCase)).ToList();
+                foreach (var tool in config.Tools) tool.PositionKeys = new List<string> { position.key };
+                LiveAnalysisRecord record = GreenOverlayProcessor.InspectSingle(config, position.key, req.imagePath, control, true, CancellationToken.None);
+                AppendAgentLog("INFO", "단일 Green 검사 완료 | " + position.displayName + " | " + Path.GetFileName(req.imagePath) + " | " + record.TotalResult);
+                return new { ok = true, position = position.displayName, key = position.key, record = record };
+            }
+            catch (SysException ex)
+            {
+                reusable = false;
+                AppendAgentLog("ERROR", "단일 Green 검사 실패: " + ex.Message);
+                return new { ok = false, error = "단일 Green 검사 실패: " + ex.Message };
+            }
+            finally
+            {
+                lock (_vpdlSync)
+                {
+                    if (reusable && control != null)
+                    {
+                        DisposePreloadedRuntimeLocked();
+                        _preloadedRuntimeControl = control;
+                        _preloadedRuntimeSignature = signature;
+                        _preloadedRuntimeToken = Guid.NewGuid().ToString("N");
+                        _preloadedRuntimeMode = (req.mode ?? "green").Trim().ToLowerInvariant();
+                        _licenseStatus = "Runtime Ready";
+                        _runtimeMessage = "단일 Green 검사 완료 · 사전 로드 Runtime 재사용 가능";
+                        control = null;
+                    }
+                    if (control != null)
+                    {
+                        try { RuntimeWorkspaceRegistry.Remove(control); control.Dispose(); } catch { }
+                    }
+                    _vpdlReservedForSimulation = false;
+                }
             }
         }
 
@@ -726,283 +824,11 @@ namespace VisionQC.LocalAgent
             return result;
         }
 
-        private object StartPicker(string body)
-        {
-            var data = DeserializeDictionary(body);
-            string clientId = GetString(data, "clientId", "");
-            string requestId = GetString(data, "requestId", "");
-            string kind = GetString(data, "kind", "folder").Trim().ToLowerInvariant();
-            string initial = GetString(data, "initialPath", "");
-            string fileType = GetString(data, "fileType", kind == "file" ? "workspace" : "folder");
-            bool allowMultiple = kind == "folder" && GetBool(data, "multiple", false);
-            if (string.IsNullOrWhiteSpace(clientId))
-                return new { ok = false, pending = false, error = "브라우저 선택 세션 ID가 없습니다." };
-            if (string.IsNullOrWhiteSpace(requestId)) requestId = Guid.NewGuid().ToString("N");
-            if (kind != "file" && kind != "folder")
-                return new { ok = false, pending = false, error = "지원하지 않는 선택 종류입니다." };
-
-            PickerJob job;
-            lock (_pickerStateSync)
-            {
-                if (_pickerJob != null)
-                {
-                    bool sameRequest = string.Equals(_pickerJob.ClientId, clientId, StringComparison.Ordinal) &&
-                        string.Equals(_pickerJob.RequestId, requestId, StringComparison.Ordinal);
-                    bool sameClient = string.Equals(_pickerJob.ClientId, clientId, StringComparison.Ordinal);
-                    if (sameRequest) return PickerJobResponse(_pickerJob);
-                    bool expiredCompleted = _pickerJob.Completed && _pickerJob.CompletedUtc != DateTime.MinValue &&
-                        DateTime.UtcNow - _pickerJob.CompletedUtc > TimeSpan.FromSeconds(30);
-                    bool replaceable = _pickerJob.Completed && (_pickerJob.Delivered || sameClient || expiredCompleted);
-                    if (!replaceable)
-                    {
-                        bool recoverable = sameClient;
-                        return new
-                        {
-                            ok = false,
-                            pending = false,
-                            busy = true,
-                            recoverable = recoverable,
-                            requestId = _pickerJob.RequestId,
-                            error = recoverable
-                                ? "이 브라우저의 이전 파일/폴더 선택 작업이 남아 있습니다. Agent가 기존 작업을 정리한 뒤 다시 시도합니다."
-                                : "다른 브라우저에서 파일/폴더 선택 창을 사용 중입니다."
-                        };
-                    }
-                }
-
-                job = new PickerJob
-                {
-                    ClientId = clientId,
-                    RequestId = requestId,
-                    Kind = kind,
-                    FileType = fileType,
-                    InitialPath = initial,
-                    AllowMultiple = allowMultiple
-                };
-                _pickerJob = job;
-            }
-
-            // HTTP 응답은 즉시 반환하고 실제 Windows Dialog는 별도 STA 작업에서 실행합니다.
-            // 따라서 사용자가 선택하는 동안 브라우저 요청이나 Agent 소켓을 붙잡지 않습니다.
-            NativeShellPicker.PrepareDialogRequest();
-            _ = Task.Run(() => RunPickerJob(job));
-            return PickerJobResponse(job);
-        }
-
-        private object PickerStatus(string body)
-        {
-            var data = DeserializeDictionary(body);
-            string clientId = GetString(data, "clientId", "");
-            string requestId = GetString(data, "requestId", "");
-            lock (_pickerStateSync)
-            {
-                if (_pickerJob == null)
-                    return new { ok = false, pending = false, requestId = requestId, error = "Agent에 해당 선택 작업이 없습니다. 다시 선택하세요." };
-                if (!string.Equals(_pickerJob.ClientId, clientId, StringComparison.Ordinal) ||
-                    !string.Equals(_pickerJob.RequestId, requestId, StringComparison.Ordinal))
-                    return new { ok = false, pending = false, requestId = requestId, error = "다른 브라우저 선택 작업의 결과는 조회할 수 없습니다." };
-
-                object response = PickerJobResponse(_pickerJob);
-                if (_pickerJob.Completed) _pickerJob.Delivered = true;
-                return response;
-            }
-        }
-
-        private void RunPickerJob(PickerJob job)
-        {
-            var selectedPaths = new List<string>();
-            string error = "";
-            try
-            {
-                lock (_pickerStateSync)
-                {
-                    if (job.CancelRequested)
-                    {
-                        job.Completed = true;
-                        job.Cancelled = true;
-                        job.CompletedUtc = DateTime.UtcNow;
-                        return;
-                    }
-                }
-
-                AppendAgentLog("INFO", job.Kind == "file" ? "파일 선택 창 열림: " + job.FileType : (job.AllowMultiple ? "다중 폴더 선택 창 열림" : "폴더 선택 창 열림"));
-                if (job.Kind == "file")
-                {
-                    string selected = NativeShellPicker.PickFile(job.InitialPath, job.FileType);
-                    if (!string.IsNullOrWhiteSpace(selected)) selectedPaths.Add(selected);
-                }
-                else selectedPaths.AddRange(NativeShellPicker.PickFolders(job.InitialPath, job.AllowMultiple));
-
-                AppendAgentLog("INFO", selectedPaths.Count == 0
-                    ? (job.Kind == "file" ? "파일 선택 취소" : "폴더 선택 취소")
-                    : (job.Kind == "file" ? "파일 선택 완료: " : "폴더 선택 완료: ") + string.Join(" | ", selectedPaths));
-            }
-            catch (SysException ex)
-            {
-                error = ex.Message;
-                AppendAgentLog("ERROR", (job.Kind == "file" ? "파일" : "폴더") + " 선택 실패: " + ex.Message);
-            }
-            finally
-            {
-                lock (_pickerStateSync)
-                {
-                    if (!(job.Completed && job.CancelRequested))
-                    {
-                        job.Paths = selectedPaths;
-                        job.Path = selectedPaths.Count == 0 ? "" : selectedPaths[0];
-                        job.Error = error;
-                        job.Cancelled = selectedPaths.Count == 0 && string.IsNullOrWhiteSpace(error);
-                        job.Completed = true;
-                        job.CompletedUtc = DateTime.UtcNow;
-                    }
-                }
-            }
-        }
-
-        private static object PickerJobResponse(PickerJob job)
-        {
-            if (!job.Completed)
-                return new { ok = true, pending = true, requestId = job.RequestId, started = true };
-            return new
-            {
-                ok = string.IsNullOrWhiteSpace(job.Error) && !job.Cancelled && !string.IsNullOrWhiteSpace(job.Path),
-                pending = false,
-                requestId = job.RequestId,
-                path = job.Path ?? "",
-                paths = job.Paths ?? new List<string>(),
-                cancelled = job.Cancelled,
-                error = job.Error ?? ""
-            };
-        }
-
-        private object PickFolder(string body)
-        {
-            var data = DeserializeDictionary(body);
-            string initial = GetString(data, "initialPath", "");
-            string clientId = GetString(data, "clientId", "");
-            bool recoverable;
-            if (!TryBeginPicker(clientId, out recoverable))
-                return PickerBusy(recoverable);
-            try
-            {
-                AppendAgentLog("INFO", "폴더 선택 창 열림");
-                NativeShellPicker.PrepareDialogRequest();
-                string selected = NativeShellPicker.PickFolder(initial);
-                AppendAgentLog("INFO", string.IsNullOrWhiteSpace(selected) ? "폴더 선택 취소" : "폴더 선택 완료: " + selected);
-                return new { ok = !string.IsNullOrWhiteSpace(selected), path = selected ?? "" };
-            }
-            catch (SysException ex)
-            {
-                AppendAgentLog("ERROR", "폴더 선택 실패: " + ex.Message);
-                return new { ok = false, path = "", error = ex.Message };
-            }
-            finally { EndPicker(clientId); }
-        }
-
-        private object PickFile(string body)
-        {
-            var data = DeserializeDictionary(body);
-            string initial = GetString(data, "initialPath", "");
-            string fileType = GetString(data, "fileType", "workspace");
-            string clientId = GetString(data, "clientId", "");
-            bool recoverable;
-            if (!TryBeginPicker(clientId, out recoverable))
-                return PickerBusy(recoverable);
-            try
-            {
-                AppendAgentLog("INFO", "파일 선택 창 열림: " + fileType);
-                NativeShellPicker.PrepareDialogRequest();
-                string selected = NativeShellPicker.PickFile(initial, fileType);
-                AppendAgentLog("INFO", string.IsNullOrWhiteSpace(selected) ? "파일 선택 취소" : "파일 선택 완료: " + selected);
-                return new { ok = !string.IsNullOrWhiteSpace(selected), path = selected ?? "" };
-            }
-            catch (SysException ex)
-            {
-                AppendAgentLog("ERROR", "파일 선택 실패: " + ex.Message);
-                return new { ok = false, path = "", error = ex.Message };
-            }
-            finally { EndPicker(clientId); }
-        }
-
-        private bool TryBeginPicker(string clientId, out bool recoverable)
-        {
-            if (!Monitor.TryEnter(_pickerSync))
-            {
-                lock (_pickerStateSync)
-                {
-                    recoverable = !string.IsNullOrWhiteSpace(clientId) &&
-                        string.Equals(_pickerClientId, clientId, StringComparison.Ordinal);
-                }
-                return false;
-            }
-            lock (_pickerStateSync) _pickerClientId = clientId ?? "";
-            recoverable = false;
-            return true;
-        }
-
-        private void EndPicker(string clientId)
-        {
-            lock (_pickerStateSync)
-            {
-                if (string.Equals(_pickerClientId, clientId ?? "", StringComparison.Ordinal))
-                    _pickerClientId = "";
-            }
-            Monitor.Exit(_pickerSync);
-        }
-
-        private static object PickerBusy(bool recoverable)
-        {
-            return new
-            {
-                ok = false,
-                busy = true,
-                recoverable = recoverable,
-                path = "",
-                error = "다른 파일/폴더 선택 창이 이미 열려 있습니다. 열린 창을 완료하거나 취소하세요."
-            };
-        }
-
-        private object CancelPicker(string body)
-        {
-            var data = DeserializeDictionary(body);
-            string clientId = GetString(data, "clientId", "");
-            string requestId = GetString(data, "requestId", "");
-            bool asyncPicker = false;
-            string activeClientId;
-            lock (_pickerStateSync)
-            {
-                if (_pickerJob != null && !_pickerJob.Completed)
-                {
-                    asyncPicker = true;
-                    activeClientId = _pickerJob.ClientId;
-                    if (!string.Equals(activeClientId, clientId, StringComparison.Ordinal) ||
-                        (!string.IsNullOrWhiteSpace(requestId) && !string.Equals(_pickerJob.RequestId, requestId, StringComparison.Ordinal)))
-                        return new { ok = false, cancelled = false, error = "다른 브라우저 세션의 선택 창은 취소할 수 없습니다." };
-                    _pickerJob.CancelRequested = true;
-                    // Explorer가 초기화 중이거나 종료 신호를 늦게 처리해도 브라우저는
-                    // 즉시 대기 상태에서 벗어납니다. 늦게 끝난 이전 작업의 결과는
-                    // RunPickerJob에서 이 취소 결과를 덮어쓰지 않습니다.
-                    _pickerJob.Path = "";
-                    _pickerJob.Paths = new List<string>();
-                    _pickerJob.Error = "";
-                    _pickerJob.Cancelled = true;
-                    _pickerJob.Completed = true;
-                    _pickerJob.CompletedUtc = DateTime.UtcNow;
-                }
-                else activeClientId = _pickerClientId;
-            }
-
-            if (string.IsNullOrWhiteSpace(activeClientId))
-                return new { ok = true, cancelled = false, message = "열린 선택 창이 없습니다." };
-            if (!asyncPicker && (string.IsNullOrWhiteSpace(clientId) || !string.Equals(activeClientId, clientId, StringComparison.Ordinal)))
-                return new { ok = false, cancelled = false, error = "다른 브라우저 세션의 선택 창은 취소할 수 없습니다." };
-
-            bool cancelled = NativeShellPicker.CancelActiveDialog();
-            AppendAgentLog("INFO", cancelled
-                ? "이전 파일/폴더 선택 작업을 정리했습니다."
-                : "파일/폴더 선택 창 닫기 요청 시 활성 Shell Dialog가 없었습니다.");
-            return new { ok = true, cancelled = cancelled };
-        }
+        private object StartPicker(string body) { return _picker.Start(DeserializeDictionary(body)); }
+        private object PickerStatus(string body) { return _picker.Status(DeserializeDictionary(body)); }
+        private object PickFolder(string body) { return _picker.PickFolder(DeserializeDictionary(body)); }
+        private object PickFile(string body) { return _picker.PickFile(DeserializeDictionary(body)); }
+        private object CancelPicker(string body) { return _picker.Cancel(DeserializeDictionary(body)); }
 
         private object PreviewBlueFallback(string body)
         {
@@ -2055,7 +1881,7 @@ namespace VisionQC.LocalAgent
 
         public void Dispose()
         {
-            try { NativeShellPicker.CancelActiveDialog(); } catch { }
+            try { _picker.Dispose(); } catch { }
             try { _simulationCts?.Cancel(); } catch { }
             try { _serverCts.Cancel(); } catch { }
             try { _listener?.Stop(); } catch { }
@@ -2070,24 +1896,6 @@ namespace VisionQC.LocalAgent
                 DisposePreloadedRuntimeLocked();
                 _workspaceInspectionCache.Clear();
             }
-        }
-
-        private sealed class PickerJob
-        {
-            public string ClientId = "";
-            public string RequestId = "";
-            public string Kind = "folder";
-            public string FileType = "folder";
-            public string InitialPath = "";
-            public string Path = "";
-            public List<string> Paths = new List<string>();
-            public string Error = "";
-            public bool AllowMultiple;
-            public bool Completed;
-            public bool Cancelled;
-            public bool CancelRequested;
-            public bool Delivered;
-            public DateTime CompletedUtc;
         }
 
         private sealed class WorkspaceInspectionCacheEntry

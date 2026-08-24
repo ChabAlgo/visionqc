@@ -1,10 +1,10 @@
 {
   "name": "visionqc-browser-regression",
   "private": true,
-  "version": "4.4.42",
+  "version": "4.5.0",
   "type": "module",
   "scripts": {
-    "test": "node --test tests/v4434-regression.test.mjs tests/picker-multi-folder-regression.test.mjs tests/offline-package.test.mjs LocalAgent_v0.2.12/tests/v0212-static.test.mjs",
+    "test": "node --test tests/v4434-regression.test.mjs tests/picker-multi-folder-regression.test.mjs tests/offline-package.test.mjs tests/naming-profile-regression.test.mjs LocalAgent_v0.2.12/tests/v0212-static.test.mjs",
     "test:browser": "playwright test"
   },
   "devDependencies": {

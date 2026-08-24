@@ -319,6 +319,54 @@ namespace VpdlGreenHeatmapOverlay
             return live;
         }
 
+        // 결과 CSV나 Heatmap 파일을 만들지 않는 단일 이미지 검사 진입점이다.
+        // 분류 화면과 향후 Image Viewer는 이 메서드를 통해 대량 Simulation과 같은 Green 판단 규칙을 재사용한다.
+        internal static LiveAnalysisRecord InspectSingle(AppConfig config, string slotKey, string imagePath, LocalRuntime.Control sharedControl, bool reusePreloadedWorkspaces, CancellationToken token)
+        {
+            if (config == null) throw new ArgumentNullException(nameof(config));
+            if (string.IsNullOrWhiteSpace(slotKey)) throw new ArgumentException("Position Key가 비어 있습니다.", nameof(slotKey));
+            if (string.IsNullOrWhiteSpace(imagePath) || !File.Exists(imagePath)) throw new FileNotFoundException("검사할 이미지 파일이 없습니다.", imagePath);
+
+            var slot = config.WorkspaceSlots.FirstOrDefault(x => x != null && x.Enabled && string.Equals(x.Key, slotKey, StringComparison.OrdinalIgnoreCase));
+            if (slot == null) throw new System.InvalidOperationException("단일 검사 Position을 찾지 못했습니다: " + slotKey);
+
+            bool ownsControl = sharedControl == null;
+            LocalRuntime.Control control = sharedControl;
+            if (control == null)
+            {
+                var gpuMode = config.UseGpu ? GpuMode.SingleDevicePerTool : GpuMode.NoSupport;
+                control = new LocalRuntime.Control(gpuMode, config.UseGpu ? config.GpuDevices : new List<int>());
+            }
+            try
+            {
+                var contexts = LoadWorkspaceContexts(config, control, null, reusePreloadedWorkspaces);
+                WorkspaceContext context;
+                if (!contexts.TryGetValue(slotKey, out context)) throw new System.InvalidOperationException("단일 검사 Workspace Context를 찾지 못했습니다: " + slotKey);
+
+                var judgementPriority = config.Judgements
+                    .GroupBy(j => j.Name, StringComparer.OrdinalIgnoreCase)
+                    .ToDictionary(g => g.Key, g => g.Min(x => x.Priority), StringComparer.OrdinalIgnoreCase);
+                if (!judgementPriority.ContainsKey("ERROR")) judgementPriority["ERROR"] = int.MaxValue - 1;
+
+                var result = ProcessOneImage(config, context, new ImageJob
+                {
+                    ImagePath = imagePath,
+                    WorkspaceKey = slotKey,
+                    InputRoot = slot.InputRoot,
+                    SlotDisplayName = slot.DisplayName
+                }, new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase), judgementPriority, token);
+                return ToLiveRecord(result);
+            }
+            finally
+            {
+                if (ownsControl)
+                {
+                    RuntimeWorkspaceRegistry.Remove(control);
+                    control.Dispose();
+                }
+            }
+        }
+
         private static void WriteIntegratedSummaryHeader(StreamWriter csv)
         {
             var header = new List<string>

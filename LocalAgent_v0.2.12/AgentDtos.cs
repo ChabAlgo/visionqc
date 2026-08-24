@@ -3,7 +3,7 @@ using System.Collections.Generic;
 
 namespace VisionQC.LocalAgent
 {
-    public sealed class AgentStartRequest
+    public class AgentStartRequest
     {
         public string mode { get; set; }
         public string outputRoot { get; set; }
@@ -20,6 +20,12 @@ namespace VisionQC.LocalAgent
         public bool keepSubfolders { get; set; }
         public bool heatmapImageSave { get; set; }
         public bool keepCropImages { get; set; }
+    }
+
+    // 분류 화면의 VPDL Inspect는 시뮬레이션 설정을 재사용하되, 현재 이미지 한 장만 처리한다.
+    public sealed class AgentSingleInspectionRequest : AgentStartRequest
+    {
+        public string imagePath { get; set; }
     }
 
     public sealed class AgentGreenOptions

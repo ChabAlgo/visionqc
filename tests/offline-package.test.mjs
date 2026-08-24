@@ -15,8 +15,8 @@ const installerProject = read('LocalAgent_v0.2.12/OfflineInstaller/VisionQC.Agen
 test('download controls point to the versioned single-exe and offline package', () => {
   assert.match(web, /simulation-agent-download/);
   assert.match(web, /simulation-offline-download/);
-  assert.match(web, /VisionQC_Agent_Installer_v0\.2\.16\.exe/);
-  assert.match(web, /VisionQC_Offline_v4\.4\.42\.zip/);
+  assert.match(web, /VisionQC_Agent_Installer_v1\.0\.0\.exe/);
+  assert.match(web, /VisionQC_Offline_v4\.5\.0\.zip/);
   assert.match(web, /function downloadAgentInstaller/);
   assert.match(web, /function downloadOfflinePackage/);
 });

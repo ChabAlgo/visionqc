@@ -9,7 +9,7 @@ namespace VisionQC.LocalAgent
 {
     internal static class Program
     {
-        internal const string AgentVersion = "0.2.16";
+        internal const string AgentVersion = "1.0.0";
 
         [STAThread]
         private static void Main(string[] args)

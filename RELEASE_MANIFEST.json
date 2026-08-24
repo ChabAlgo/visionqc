@@ -1,0 +1,19 @@
+{
+  "releaseTag": "visionqc-v4.5.0-agent-v1.0.0",
+  "webVersion": "4.5.0",
+  "agentVersion": "1.0.0",
+  "minimumAgentVersion": "1.0.0",
+  "compatibility": {
+    "web": "4.5.0",
+    "agent": "1.0.0"
+  },
+  "artifacts": {
+    "agentInstaller": "downloads/VisionQC_Agent_Installer_v1.0.0.exe",
+    "offlinePackage": "downloads/VisionQC_Offline_v4.5.0.zip",
+    "sha256": {
+      "agentInstaller": "EDEB26A4E7EBC10906A5A0275B75FE16ED38E77863656C0ABBC6DDD5E846B01A",
+      "offlinePackage": "2047581E48D1D3393431F324CBB853C981E81590F480EE662E532477BF9E4763"
+    }
+  },
+  "notes": "구조 개선의 기준 릴리스입니다. 배포 파일은 GitHub Release와 별도 백업 저장소에 보관합니다."
+}
