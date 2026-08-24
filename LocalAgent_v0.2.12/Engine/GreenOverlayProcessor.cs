@@ -12,6 +12,7 @@ using ViDi2;
 using Runtime = ViDi2.Runtime;
 using LocalRuntime = ViDi2.Runtime.Local;
 using LocalImages = ViDi2.Local;
+using VisionQC.LocalAgent.Services;
 
 namespace VpdlGreenHeatmapOverlay
 {
@@ -39,6 +40,7 @@ namespace VpdlGreenHeatmapOverlay
         {
             public string Decision { get; set; }
             public double Score { get; set; }
+            public string OverlayPath { get; set; }
         }
 
         private sealed class ProcessOneResult
@@ -314,7 +316,7 @@ namespace VpdlGreenHeatmapOverlay
             foreach (var pair in result.ToolResults)
             {
                 double? score = double.IsNaN(pair.Value.Score) ? (double?)null : pair.Value.Score;
-                live.Tools[pair.Key] = new LiveToolResult { Tool = pair.Key, Result = pair.Value.Decision, Score = score };
+                live.Tools[pair.Key] = new LiveToolResult { Tool = pair.Key, Result = pair.Value.Decision, Score = score, OverlayPath = pair.Value.OverlayPath };
             }
             return live;
         }
@@ -494,7 +496,7 @@ namespace VpdlGreenHeatmapOverlay
                         string fileName = Path.GetFileName(path);
                         if (!FileNameMatchesKeyword(fileName, slot.Keyword))
                             continue;
-                        if (cellIdFilter.Count > 0 && !MatchesCellIdFilter(fileName, cellIdFilter))
+                        if (cellIdFilter.Count > 0 && !MatchesCellIdFilter(fileName, cellIdFilter, config.NamingProfile))
                         {
                             skippedByCellId++;
                             continue;
@@ -543,7 +545,7 @@ namespace VpdlGreenHeatmapOverlay
         private static ProcessOneResult ProcessOneImage(AppConfig config, WorkspaceContext context, ImageJob job, Dictionary<string, int> ngCountByTool, Dictionary<string, int> judgementPriority, CancellationToken token)
         {
             string fileName = Path.GetFileName(job.ImagePath);
-            string cellId = ExtractCellId(fileName);
+            string cellId = ExtractCellId(config.NamingProfile, job.ImagePath);
             var judgementCandidates = new List<string>();
             bool allOk = true;
             var result = new ProcessOneResult
@@ -611,6 +613,7 @@ namespace VpdlGreenHeatmapOverlay
                             judgementCandidates.Add("ERROR");
                         }
 
+                        string overlayPath = null;
                         if (decision == "NG" && config.HeatmapImageSave && heatmapBmp != null)
                         {
                             if (sourceBitmap == null)
@@ -619,13 +622,13 @@ namespace VpdlGreenHeatmapOverlay
                             {
                                 SD.Rectangle? overlayRoi = ResolveRuntimeOverlayRoi(tool, view, heatmapBmp, sourceBitmap.Width, sourceBitmap.Height);
                                 if (overlayRoi.HasValue)
-                                    SaveOverlayImage(config, context.Slot, job, cfg.ToolName, sourceBitmap, heatmapBmp, overlayRoi.Value);
+                                    overlayPath = SaveOverlayImage(config, context.Slot, job, cfg.ToolName, sourceBitmap, heatmapBmp, overlayRoi.Value);
                                 else
                                     SaveRoiReadFailDiagnostic(config, context.Slot, job, cfg.ToolName, sourceBitmap, heatmapBmp, tool, view);
                             }
                         }
                         if (heatmapBmp != null) heatmapBmp.Dispose();
-                        result.ToolResults[cfg.ToolName] = new ToolResult { Decision = decision, Score = score };
+                        result.ToolResults[cfg.ToolName] = new ToolResult { Decision = decision, Score = score, OverlayPath = overlayPath };
                     }
                 }
                 finally
@@ -788,7 +791,7 @@ namespace VpdlGreenHeatmapOverlay
                     if (string.Equals(s.Key, slotKey, StringComparison.OrdinalIgnoreCase)) { slotCfg = s; break; }
                 if (slotCfg != null && !FileNameMatchesKeyword(fileName, slotCfg.Keyword))
                     return false;
-                if (_cellIdFilter.Count > 0 && !MatchesCellIdFilter(fileName, _cellIdFilter))
+                if (_cellIdFilter.Count > 0 && !MatchesCellIdFilter(fileName, _cellIdFilter, _config.NamingProfile))
                 {
                     _skippedByCellIdCount++;
                     return false;
@@ -967,9 +970,9 @@ namespace VpdlGreenHeatmapOverlay
             if (v.Length > 0) set.Add(v);
         }
 
-        private static bool MatchesCellIdFilter(string fileName, HashSet<string> filter)
+        private static bool MatchesCellIdFilter(string fileName, HashSet<string> filter, VisionQC.LocalAgent.Domain.NamingProfile profile = null)
         {
-            string cellId = ExtractCellId(fileName);
+            string cellId = ExtractCellId(profile, fileName);
             return cellId.Length > 0 && filter.Contains(cellId);
         }
 
@@ -1435,10 +1438,10 @@ namespace VpdlGreenHeatmapOverlay
             }
         }
 
-        private static void SaveOverlayImage(AppConfig config, WorkspaceSlotConfig slot, ImageJob job, string toolName, SD.Bitmap source, SD.Bitmap heatmap, SD.Rectangle roi)
+        private static string SaveOverlayImage(AppConfig config, WorkspaceSlotConfig slot, ImageJob job, string toolName, SD.Bitmap source, SD.Bitmap heatmap, SD.Rectangle roi)
         {
             var safeRoi = ClampRoi(roi, source.Width, source.Height);
-            if (safeRoi.Width <= 0 || safeRoi.Height <= 0) return;
+            if (safeRoi.Width <= 0 || safeRoi.Height <= 0) return null;
 
             using (var outBmp = (SD.Bitmap)source.Clone())
             using (var heatResized = new SD.Bitmap(heatmap, new SD.Size(safeRoi.Width, safeRoi.Height)))
@@ -1452,6 +1455,7 @@ namespace VpdlGreenHeatmapOverlay
                 string stem = Path.GetFileNameWithoutExtension(job.ImagePath);
                 string outPath = Path.Combine(saveDir, stem + ".jpg");
                 SaveJpeg(outBmp, outPath, config.JpegQuality);
+                return outPath;
             }
         }
 
@@ -1625,6 +1629,20 @@ namespace VpdlGreenHeatmapOverlay
             }
 
             return "";
+        }
+
+        private static string ExtractCellId(VisionQC.LocalAgent.Domain.NamingProfile profile, string pathOrFileName)
+        {
+            try
+            {
+                if (profile != null)
+                {
+                    var parsed = NamingProfileParser.Parse(profile, pathOrFileName);
+                    if (!string.IsNullOrWhiteSpace(parsed.cellId)) return parsed.cellId;
+                }
+            }
+            catch { }
+            return ExtractCellId(pathOrFileName);
         }
 
         private static string EscapeCsv(string s)

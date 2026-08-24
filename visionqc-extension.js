@@ -1,7 +1,7 @@
 (() => {
   'use strict';
 
-  const VERSION = '4.5.0';
+  const VERSION = '4.6.0';
   const DEFAULT_POSITION_DEFS = [
     { key:'CA_TOP', name:'CA(TOP)' },
     { key:'AN_TOP', name:'AN(TOP)' },
@@ -24,9 +24,9 @@
   const NG_POSITION_PREFIX = 'ng-position:';
   const IMG_RE = /\.(png|jpe?g|bmp|gif|webp|tif?f)$/i;
   const LOCAL_AGENT_URL = 'http://127.0.0.1:17891';
-  const EXPECTED_AGENT_VERSION = '1.0.0';
-  const AGENT_INSTALLER_URL = './downloads/VisionQC_Agent_Installer_v1.0.0.exe';
-  const OFFLINE_PACKAGE_URL = './downloads/VisionQC_Offline_v4.5.0.zip';
+  const EXPECTED_AGENT_VERSION = '1.1.0';
+  const AGENT_INSTALLER_URL = './downloads/VisionQC_Agent_Installer_v1.1.0.exe';
+  const OFFLINE_PACKAGE_URL = './downloads/VisionQC_Offline_v4.6.0.zip';
   const PICKER_POLL_INTERVAL_MS = 600;
   const RUNTIME_PRELOAD_TIMEOUT_MS = 15 * 60 * 1000;
   const NOTIFICATION_KEY = 'visionqc-v4428-notifications';
@@ -119,6 +119,7 @@
     analysisScoreCompare: 'GTE',
     analysisPoints: [],
     analysisPointMap: new Map(),
+    historyImporting: false,
     simulationMode: 'integrated',
     simulationAgent: { status: 'idle', version: '-', vpdl: '-', license: '-', gpu: '-', message: 'Local Agent 연결 전' },
     simulationAgentPollInFlight: false,
@@ -150,6 +151,7 @@
     modalItem: null,
     modalIndex: 0,
     modalUrl: '',
+    modalImageRequestKey: '',
     modalZoom: 1,
     modalPanX: 0,
     modalPanY: 0,
@@ -310,7 +312,7 @@
       analysis:'<path d="M4 19V5"/><path d="M4 19h16"/><path d="m7 15 4-4 3 2 5-6"/><circle cx="7" cy="15" r="1"/><circle cx="11" cy="11" r="1"/><circle cx="14" cy="13" r="1"/><circle cx="19" cy="7" r="1"/>',
       classification:'<rect x="3" y="4" width="18" height="16" rx="2"/><circle cx="8" cy="9" r="1.5"/><path d="m5 17 4-4 3 3 2-2 5 4"/><path d="m15 7 1.5 1.5L19 6"/>',
       simulation:'<circle cx="12" cy="12" r="9"/><path d="m10 8 6 4-6 4z"/>',
-      settings:'<circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 0 0 .34 1.88l.06.06-2.12 2.12-.06-.06a1.7 1.7 0 0 0-1.88-.34 1.7 1.7 0 0 0-1.03 1.56v.08h-3v-.08A1.7 1.7 0 0 0 10.68 18.66a1.7 1.7 0 0 0-1.88.34l-.06.06-2.12-2.12.06-.06A1.7 1.7 0 0 0 7.02 15a1.7 1.7 0 0 0-1.56-1.03h-.08v-3h.08A1.7 1.7 0 0 0 7.02 9.94a1.7 1.7 0 0 0-.34-1.88l-.06-.06 2.12-2.12.06.06a1.7 1.7 0 0 0 1.88.34 1.7 1.7 0 0 0 1.03-1.56v-.08h3v.08a1.7 1.7 0 0 0 1.03 1.56 1.7 1.7 0 0 0 1.88-.34l.06-.06L19.8 8l-.06.06a1.7 1.7 0 0 0-.34 1.88 1.7 1.7 0 0 0 1.56 1.03h.08v3h-.08A1.7 1.7 0 0 0 19.4 15z"/>',
+      settings:'<rect x="3" y="4" width="18" height="16" rx="2.5"/><path d="M7 9h7"/><circle cx="16.5" cy="9" r="1.5"/><path d="M17 15h-7"/><circle cx="7.5" cy="15" r="1.5"/>',
       bell:'<path d="M18 8a6 6 0 0 0-12 0c0 7-3 7-3 9h18c0-2-3-2-3-9"/><path d="M10 21h4"/>',
       theme:'<circle cx="12" cy="12" r="9"/><path d="M12 3a9 9 0 0 0 0 18z"/>',
       language:'<circle cx="12" cy="12" r="9"/><path d="M3 12h18"/><path d="M12 3c3 3 4 6 4 9s-1 6-4 9c-3-3-4-6-4-9s1-6 4-9"/>',
@@ -628,6 +630,7 @@
     else if (action === 'simulation-log-clear') clearSimulationLogs();
     else if (action === 'choose-result') chooseResultFile(control.closest('[data-vq-position]')?.dataset.vqPosition);
     else if (action === 'remove-result') removeResultInput(control.closest('[data-vq-position]')?.dataset.vqPosition);
+    else if (action === 'save-csv-history') saveCsvAnalysisHistory();
     else if (action === 'choose-ng-folder') chooseNgFolder();
     else if (action === 'clear-inputs') clearAnalysisInputs();
     else if (action === 'miss-tab') {
@@ -833,7 +836,7 @@
     jpegQuality:'저장 JPEG 품질입니다. 1~100 범위입니다.',
     printEvery:'이 수만큼 처리할 때마다 상세 결과와 진행률을 Web으로 전송합니다.',
     keepSubfolders:'입력 폴더의 하위 디렉터리 구조를 출력에도 유지합니다.',
-    heatmapImageSave:'Green HeatMap 합성 이미지를 결과 폴더에 저장합니다.',
+    heatmapImageSave:'Green 단독 검사에서만 NG 원본 위에 HeatMap을 합성해 결과 폴더에 저장합니다. 원본 파일은 변경하지 않습니다.',
     forceJet:'회색 HeatMap을 Jet 컬러맵으로 변환해 표시합니다.',
     heatmapAlpha:'원본 이미지 위 HeatMap의 투명도 비율입니다.',
     heatmapAlphaCut:'이 밝기보다 낮은 HeatMap 픽셀을 투명하게 처리합니다.',
@@ -1142,6 +1145,17 @@
     throw new Error('CSV 또는 XLSX 파일만 지원합니다.');
   }
 
+  function csvFullPathValue(value) {
+    const path = String(value ?? '').trim().replace(/^"|"$/g, '');
+    // 드라이브 경로와 UNC만 FullPath로 인정한다. 일반적인 "Path" 열의 짧은 값은 오인하지 않는다.
+    return /^[a-z]:[\\/]/i.test(path) || /^\\\\[^\\]+\\[^\\]+/.test(path) ? path : '';
+  }
+
+  function findFullPathColumn(keys) {
+    const aliases = new Set(['fullpath','imagepath','filepath','sourceimagepath','sourcefilepath']);
+    return keys.findIndex((key) => aliases.has(key));
+  }
+
   async function parsePositionFile(file, selectedPosition, handle) {
     const table = await parseTableFile(file);
     const headerRow = table.findIndex((row) => row.some((value) => normalizeHeaderKey(value) === 'cellid') && row.some((value) => normalizeHeaderKey(value) === 'total_result'));
@@ -1151,6 +1165,7 @@
     const cellIndex = keys.indexOf('cellid');
     const positionIndex = keys.indexOf('position');
     const totalIndex = keys.indexOf('total_result');
+    const fullPathIndex = findFullPathColumn(keys);
     const resultColumns = [];
     const scoreMap = new Map();
     headers.forEach((header, index) => {
@@ -1174,7 +1189,7 @@
         const scoreIndex = scoreMap.get(column.tool.toLowerCase());
         tools[column.tool] = { tool: column.tool, result: normalizeResult(row[column.index]), score: scoreIndex === undefined ? null : parseNumber(row[scoreIndex]) };
       });
-      rows.push({ sourceFileName: file.name, sourceRowNumber: headerRow + offset + 2, cellId, position: selectedPosition, totalResult: normalizeResult(row[totalIndex]), tools });
+      rows.push({ sourceFileName: file.name, sourceRowNumber: headerRow + offset + 2, fullPath: fullPathIndex >= 0 ? csvFullPathValue(row[fullPathIndex]) : '', cellId, position: selectedPosition, totalResult: normalizeResult(row[totalIndex]), tools });
     });
     if (invalidCell) warnings.push(`Cell ID 추출 실패 ${numberText(invalidCell)}행 제외`);
     if (mismatch) warnings.push(`Position 불일치 ${numberText(mismatch)}행을 ${selectedPosition}으로 처리`);
@@ -1226,6 +1241,51 @@
     try { await deleteHandle(`${RESULT_PREFIX}${position}`); } catch (error) { console.error(error); }
     rebuildModel();
     renderSettings();
+  }
+
+  async function saveCsvAnalysisHistory() {
+    if (state.historyImporting) return;
+    const inputs = Object.values(state.resultInputs || {}).filter((input) => Array.isArray(input?.rows) && input.rows.length);
+    const total = inputs.reduce((sum, input) => sum + input.rows.length, 0);
+    if (!total) return showToast('SQLite에 저장할 CSV 분석 행이 없습니다.', true);
+
+    const importId = `csv-${Date.now()}-${Math.random().toString(36).slice(2, 10)}`;
+    const sourceName = inputs.map((input) => input.fileName || input.position || 'CSV').join(' / ').slice(0, 500);
+    const toRecord = (row) => ({
+      sourceFileName:String(row.sourceFileName || ''), sourceRowNumber:Number(row.sourceRowNumber || 0),
+      fullPath:String(row.fullPath || ''), cellId:String(row.cellId || ''), position:String(row.position || ''),
+      totalResult:String(row.totalResult || ''), judgement:String(row.judgement || ''),
+      tools:Object.values(row.tools || {}).map((tool) => ({ tool:String(tool.tool || ''), result:String(tool.result || ''), score:Number.isFinite(tool.score) ? tool.score : null, overlayPath:String(tool.overlayPath || '') }))
+    });
+    let saved = 0;
+    let started = false;
+    state.historyImporting = true;
+    renderSettings();
+    try {
+      let batch = [];
+      const send = async (records, complete = false) => {
+        const response = await agentFetch('/api/history/import', {
+          method:'POST', timeout:60000,
+          body:{ importId, begin:!started, complete, sourceName, mode:'csv-analysis', webVersion:VERSION, namingProfile:state.namingProfile, records }
+        });
+        started = true;
+        saved = Number(response.saved || saved + records.length);
+      };
+      for (const input of inputs) {
+        for (const row of input.rows) {
+          batch.push(toRecord(row));
+          if (batch.length >= 200) { await send(batch); batch = []; }
+        }
+      }
+      await send(batch, true);
+      showToast(`CSV 분석 이력 ${numberText(saved)}행을 SQLite에 저장했습니다. 원본 이미지는 복사하지 않고 경로만 기록합니다.`);
+    } catch (error) {
+      console.error(error);
+      showToast(`SQLite 이력 저장 실패: ${error.message || error}`, true);
+    } finally {
+      state.historyImporting = false;
+      renderSettings();
+    }
   }
 
   async function chooseNgFolder() {
@@ -1858,7 +1918,7 @@
         if (scope === 'ACTUAL_NG_TOOL_NG' && observation.result !== 'NG') return;
         if (scope === 'ACTUAL_NG_TOOL_OK' && observation.result !== 'OK') return;
         const key = `${record.key}|${tool}|${index}`;
-        points.push({ key, recordKey: record.key, cellId: record.cellId, position: record.position, result: observation.result, score: observation.score, hasActualImage, sourceFileName: row.sourceFileName || '', sourceRowNumber: row.sourceRowNumber || '' });
+        points.push({ key, recordKey: record.key, cellId: record.cellId, position: record.position, result: observation.result, score: observation.score, hasActualImage, hasCsvImage:!!row.fullPath, fullPath:row.fullPath || '', sourceFileName: row.sourceFileName || '', sourceRowNumber: row.sourceRowNumber || '' });
       });
     });
     return points;
@@ -1870,9 +1930,9 @@
     const points = scorePoints(state.analysisTool, state.analysisScope, state.analysisPosition);
     const filtered = points.filter((point) => state.analysisScoreCompare === 'LTE' ? point.score <= state.analysisScoreCutoff : point.score >= state.analysisScoreCutoff);
     if (!filtered.length) return showToast('조건에 맞는 Score 데이터가 없습니다.', true);
-    const lines = [['Cell ID', 'Position', 'Tool', 'Result', 'Score', 'Condition', 'Source_File', 'Source_Row'].map(csvCell).join(',')];
+    const lines = [['Cell ID', 'Position', 'Tool', 'Result', 'Score', 'Condition', 'FullPath', 'Source_File', 'Source_Row'].map(csvCell).join(',')];
     const condition = `Score ${state.analysisScoreCompare === 'LTE' ? '<=' : '>='} ${state.analysisScoreCutoff.toFixed(2)}`;
-    filtered.forEach((point) => lines.push([point.cellId, point.position, state.analysisTool, point.result, point.score.toFixed(4), condition, point.sourceFileName, point.sourceRowNumber].map(csvCell).join(',')));
+    filtered.forEach((point) => lines.push([point.cellId, point.position, state.analysisTool, point.result, point.score.toFixed(4), condition, point.fullPath || '', point.sourceFileName, point.sourceRowNumber].map(csvCell).join(',')));
     const scopeLabel = state.analysisScope === 'TOOL_OK' ? 'TOOL_OK' : state.analysisScope === 'TOOL_NG' ? 'TOOL_NG' : state.analysisScope === 'ACTUAL_NG_TOOL_NG' ? 'ACTUAL_NG_DETECTED' : 'ACTUAL_NG_MISSED';
     saveCsvFile(`VisionQC_${state.analysisTool}_${scopeLabel}_${state.analysisScoreCompare}_${state.analysisScoreCutoff.toFixed(2)}_${filtered.length}건.csv`, lines, `Score 조건 ${numberText(filtered.length)}건 CSV 저장 완료`);
   }
@@ -3116,7 +3176,7 @@
       toolName:String(tool.toolName || ''), threshold:Number(tool.threshold), judgement:String(tool.judgement || '')
     }));
     return {
-      mode:state.simulationMode || 'integrated', outputRoot:form.outputRoot,
+      mode:state.simulationMode || 'integrated', outputRoot:form.outputRoot, namingProfile:state.namingProfile,
       green, blue:cloneSimulation(form.blue), integrated:cloneSimulation(form.integrated),
       positions:simulationActivePositions(state.simulationMode || 'integrated', form).map(key => {
         const p = form.positions[key];
@@ -3214,11 +3274,12 @@
       Object.entries(sourceTools).forEach(([name, value]) => {
         const toolName = String(value?.Tool ?? value?.tool ?? name).trim();
         if (!toolName) return;
-        tools[toolName] = { tool:toolName, result:normalizeResult(value?.Result ?? value?.result), score:parseNumber(value?.Score ?? value?.score) };
+        tools[toolName] = { tool:toolName, result:normalizeResult(value?.Result ?? value?.result), score:parseNumber(value?.Score ?? value?.score), overlayPath:String(value?.OverlayPath ?? value?.overlayPath ?? '') };
       });
       state.resultInputs[position].rows.push({
         sourceFileName:String(record.FileName ?? record.fileName ?? 'LIVE'),
         sourceRowNumber:state.simulationLiveRows + offset + 1,
+        fullPath:String(record.FullPath ?? record.fullPath ?? ''),
         cellId, position,
         totalResult:normalizeResult(record.TotalResult ?? record.totalResult),
         tools
@@ -3803,17 +3864,17 @@
       ${simPathField(scope,'','cellIdCsvPath','Cell ID CSV','비워두면 전체 검사','file','csv')}
       ${simulationCheck(scope,'keywordMode','Keyword 모드')}
       ${simPathField(scope,'','keywordInputRoot','Keyword Input Root','Keyword 모드 공통 이미지 입력 폴더','folder','folder',!obj.keywordMode)}
-      ${integrated?`${simulationCheck('integrated','keepCropImages','Blue Crop 이미지 저장')}${simulationCheck('integrated','heatmapImageSave','HeatMap 이미지 저장')}`:''}
+      ${integrated?`${simulationCheck('integrated','keepCropImages','Blue Crop 이미지 저장')}`:''}
     </section>`;
   }
 
-  function greenRuntimeOptions() {
+  function greenRuntimeOptions(integrated=false) {
     return `<section class="vq43-sim-option-section"><h3>Green Runtime / HeatMap</h3><div class="vq43-sim-option-grid">
       ${simulationCheck('green','useGpu','GPU 사용')}${simulationText('green','gpuDevices','GPU Devices','0')}
       ${simulationNumber('green','jpegQuality','JPEG Quality',1,100)}${simulationNumber('green','printEvery','Progress Update',1,1000000)}
-      ${simulationCheck('green','keepSubfolders','하위 폴더 구조 유지')}${simulationCheck('green','heatmapImageSave','HeatMap Image Save')}
-      ${simulationCheck('green','forceJet','Gray HeatMap → Jet 변환')}${simulationNumber('green','heatmapAlpha','HeatMap Alpha %',0,100)}
-      ${simulationNumber('green','heatmapAlphaCut','Alpha Cut',0,255)}
+      ${simulationCheck('green','keepSubfolders','하위 폴더 구조 유지')}${!integrated?simulationCheck('green','heatmapImageSave','NG 원본 위 Heatmap Overlay 저장'):''}
+      ${!integrated?`${simulationCheck('green','forceJet','Gray HeatMap → Jet 변환')}${simulationNumber('green','heatmapAlpha','HeatMap Alpha %',0,100)}`:''}
+      ${!integrated?simulationNumber('green','heatmapAlphaCut','Alpha Cut',0,255):''}
     </div><p class="vq43-sim-option-note">Progress Update 수만큼 상세 결과를 Agent가 메모리에 모아서 Web 분석 모델로 한 번에 전송합니다.</p></section>`;
   }
 
@@ -3899,7 +3960,7 @@
     let body = '';
     if (mode === 'green') body = greenFilterOptions(false) + greenRuntimeOptions() + toolSettingsOptions() + judgementOptions();
     else if (mode === 'blue') body = blueRuntimeOptions() + blueCropOptions() + fallbackOptions();
-    else body = greenFilterOptions(true) + greenRuntimeOptions() + toolSettingsOptions() + judgementOptions() + blueRuntimeOptions() + blueCropOptions() + fallbackOptions();
+    else body = greenFilterOptions(true) + greenRuntimeOptions(true) + toolSettingsOptions() + judgementOptions() + blueRuntimeOptions() + blueCropOptions() + fallbackOptions();
     return `<aside class="vq43-sim-options"><div class="vq43-sim-options-head"><div><strong>Simulation Options</strong><span>DL_Simulation v1.13 상세 설정</span></div><div><button data-vq-action="simulation-save-defaults">기본값 저장</button><button data-vq-action="simulation-restore-defaults">기본값 복원</button></div></div><div class="vq43-sim-options-scroll">${body}</div></aside>`;
   }
 
@@ -4042,7 +4103,7 @@
 
   function namingProfileCardHtml() {
     const profile = state.namingProfile;
-    return `<section class="vq43-settings-card vq43-naming-card"><div class="vq43-settings-title"><span class="vq43-settings-icon cyan">⚙</span><div><h3>0. 파일명 규칙</h3><p>공정별 이미지 이름에서 Cell ID, 촬영 날짜, 촬영 시간을 추출합니다. 토큰 번호는 사람이 읽는 1부터 시작합니다.</p></div></div><div class="vq43-naming-profile-head"><label><span>규칙 이름</span><input id="vq43-naming-name" value="${escapeHtml(profile.name)}" maxlength="80"></label><label><span>구분자</span><input id="vq43-naming-delimiter" value="${escapeHtml(profile.delimiter)}" maxlength="8"></label><label><span>규칙 버전</span><input id="vq43-naming-version" type="number" min="1" max="9999" value="${escapeHtml(profile.version)}"></label></div><div class="vq43-naming-rule-grid">${namingRuleField('Cell ID', 'cellId', profile.cellId)}${namingRuleField('날짜', 'date', profile.date, { hint:'자동 모드는 유효한 YYYYMMDD 토큰을 정확히 하나 찾습니다.' })}${namingRuleField('시간', 'time', profile.time, { hint:'자동 모드는 유효한 HHMMSS 토큰을 정확히 하나 찾습니다.' })}</div><div class="vq43-naming-example">예: <code>20250219_104425_J4037F2JP611069701_TN4086_OK_CAM2_Blue</code> → 날짜 2025-02-19 · 시간 10:44:25 · Cell ID J4037F2JP6110697</div><label class="vq43-naming-samples"><span>검증할 파일명 (줄마다 하나)</span><textarea id="vq43-naming-samples" rows="4" placeholder="20250219_104425_J4037F2JP611069701_TN4086_OK_CAM2_Blue"></textarea></label><div class="vq43-naming-actions"><button class="vq43-btn" data-vq-action="naming-profile-save">규칙 저장</button><button class="vq43-btn vq43-btn-blue" data-vq-action="naming-profile-preview">Agent로 미리보기</button></div>${namingPreviewHtml()}</section>`;
+    return `<section class="vq43-settings-card vq43-naming-card"><div class="vq43-settings-title"><span class="vq43-settings-icon cyan">${railIconSvg('settings')}</span><div><h3>0. 파일명 규칙</h3><p>공정별 이미지 이름에서 Cell ID, 촬영 날짜, 촬영 시간을 추출합니다. 토큰 번호는 사람이 읽는 1부터 시작합니다.</p></div></div><div class="vq43-naming-profile-head"><label><span>규칙 이름</span><input id="vq43-naming-name" value="${escapeHtml(profile.name)}" maxlength="80"></label><label><span>구분자</span><input id="vq43-naming-delimiter" value="${escapeHtml(profile.delimiter)}" maxlength="8"></label><label><span>규칙 버전</span><input id="vq43-naming-version" type="number" min="1" max="9999" value="${escapeHtml(profile.version)}"></label></div><div class="vq43-naming-rule-grid">${namingRuleField('Cell ID', 'cellId', profile.cellId)}${namingRuleField('날짜', 'date', profile.date, { hint:'자동 모드는 유효한 YYYYMMDD 토큰을 정확히 하나 찾습니다.' })}${namingRuleField('시간', 'time', profile.time, { hint:'자동 모드는 유효한 HHMMSS 토큰을 정확히 하나 찾습니다.' })}</div><div class="vq43-naming-example">예: <code>20250219_104425_J4037F2JP611069701_TN4086_OK_CAM2_Blue</code> → 날짜 2025-02-19 · 시간 10:44:25 · Cell ID J4037F2JP6110697</div><label class="vq43-naming-samples"><span>검증할 파일명 (줄마다 하나)</span><textarea id="vq43-naming-samples" rows="4" placeholder="20250219_104425_J4037F2JP611069701_TN4086_OK_CAM2_Blue"></textarea></label><div class="vq43-naming-actions"><button class="vq43-btn" data-vq-action="naming-profile-save">규칙 저장</button><button class="vq43-btn vq43-btn-blue" data-vq-action="naming-profile-preview">Agent로 미리보기</button></div>${namingPreviewHtml()}</section>`;
   }
 
   function readNamingProfileFromSettings() {
@@ -4113,6 +4174,7 @@
         <section class="vq43-settings-card"><div class="vq43-settings-title"><span class="vq43-settings-icon">▦</span><div><h3>1. Position별 시뮬레이션 결과 파일</h3><p>CSV 또는 XLSX · Cell ID, Total_result, Tool_result, Tool_score 열 자동 인식</p></div></div><div class="vq43-input-list">${positions.map(resultInputRow).join('')}</div></section>
         <section class="vq43-settings-card"><div class="vq43-settings-title"><span class="vq43-settings-icon amber">▣</span><div><h3>2. 실제 최종 NG 이미지 경로</h3><p>각 Position별 폴더를 독립적으로 선택/교체할 수 있습니다. 전체 루트를 한 번에 읽는 기존 방식도 유지합니다.</p></div><button class="vq43-btn vq43-btn-amber" data-vq-action="choose-ng-folder" ${state.loading?'disabled':''}>${state.loading==='ng'?'◌ 전체 루트 읽는 중...':'▣ 전체 NG 루트 선택'}</button></div><div class="vq43-ng-position-list">${ngRows}</div></section>
         <section class="vq43-settings-card"><div class="vq43-settings-title"><span class="vq43-settings-icon green">✓</span><div><h3>분석 준비 상태</h3><p>현재 입력 데이터의 집계 결과</p></div></div><div class="vq43-ready-grid"><div><span>결과 Position</span><b>${positions.filter((position)=>state.resultInputs[position]).length} / ${positions.length}</b></div><div><span>고유 Cell</span><b>${numberText(model.uniqueCellCount)}</b></div><div><span>실제 NG 고유값</span><b>${numberText(model.actualUniqueCount || 0)}</b></div><div><span>CSV 매칭</span><b class="vq43-blue">${numberText(model.matchedActualCount || 0)}</b></div><div><span>미매칭</span><b class="vq43-red">${numberText(model.unmatchedActualCount || 0)}</b></div><div><span>미검</span><b class="vq43-amber">${numberText(model.misses.length)}</b></div></div>${model.actualUniqueCount ? matchDiagnostic(model) : ''}</section>
+        <section class="vq43-settings-card"><div class="vq43-settings-title"><span class="vq43-settings-icon green">▤</span><div><h3>SQLite 분석 이력</h3><p>CSV 분석 결과를 명시적으로 영구 저장합니다. 원본 이미지 파일은 복사하지 않고 FullPath·Cell ID·결과·Tool Score·파일명 규칙만 보관합니다.</p></div><button class="vq43-btn vq43-btn-green" data-vq-action="save-csv-history" ${state.historyImporting || !Object.values(state.resultInputs || {}).some(input=>input?.rows?.length)?'disabled':''}>${state.historyImporting?'SQLite 저장 중...':'현재 CSV 이력 저장'}</button></div></section>
         ${(warningList.length || model.duplicates.length) ? `<section class="vq43-warning"><strong>⚠ 확인 필요</strong>${warningList.map((warning)=>`<div>• ${escapeHtml(warning)}</div>`).join('')}${model.duplicates.length?`<div>• 중복 Cell ID + Position ${numberText(model.duplicates.length)}건: 하나라도 NG이면 NG로 통합하고 Score 원본 행은 유지합니다.</div>`:''}</section>`:''}
       </div>`;
   }
@@ -4200,7 +4262,7 @@
       const show = (event) => {
         const point = state.analysisPointMap.get(dot.dataset.vqPointKey || '');
         if (!point || !tooltip) return;
-        tooltip.innerHTML = `<strong>${escapeHtml(point.cellId)}</strong><span>${escapeHtml(point.position)} · ${point.result} · Score ${point.score.toFixed(4)}</span>${point.hasActualImage?'<em>클릭하면 실제 NG 이미지 표시</em>':'<em>매칭 실제 NG 이미지 없음</em>'}`;
+        tooltip.innerHTML = `<strong>${escapeHtml(point.cellId)}</strong><span>${escapeHtml(point.position)} · ${point.result} · Score ${point.score.toFixed(4)}</span>${point.hasCsvImage?'<em>클릭하면 CSV FullPath 원본 이미지 표시</em>':point.hasActualImage?'<em>클릭하면 실제 NG 이미지 표시</em>':'<em>CSV 경로·매칭 실제 NG 이미지 없음</em>'}`;
         tooltip.style.left = `${event.clientX - viewport.getBoundingClientRect().left + 14}px`;
         tooltip.style.top = `${event.clientY - viewport.getBoundingClientRect().top + 14}px`;
         tooltip.classList.add('show');
@@ -4290,29 +4352,45 @@
   function openScorePointImage(pointKey) {
     const point = state.analysisPointMap.get(pointKey);
     if (!point) return;
-    const images = state.model?.actualMap.get(point.recordKey) || [];
-    if (!images.length) return showToast('이 Cell ID + Position에 매칭된 실제 NG 이미지가 없습니다.', true);
     const record = state.model?.recordMap.get(point.recordKey);
     if (!record) return;
+    const csvImages = csvImagesForRecord(record);
+    const actualImages = state.model?.actualMap.get(point.recordKey) || [];
+    const images = [...csvImages, ...actualImages];
+    if (!images.length) return showToast('CSV FullPath 또는 매칭된 실제 NG 이미지가 없습니다.', true);
     state.modalMissKey = null;
-    state.modalItem = { key: point.recordKey, cellId: point.cellId, position: point.position, record, images, label: 'Actual NG Image' };
+    state.modalItem = { key: point.recordKey, cellId: point.cellId, position: point.position, record, images, label: csvImages.length ? 'CSV FullPath Image' : 'Actual NG Image' };
     state.modalIndex = 0;
     resetModalView();
     renderModal();
+  }
+
+  function csvImagesForRecord(record) {
+    const paths = new Set();
+    return (record?.sourceRows || []).map((row) => String(row.fullPath || '').trim()).filter((fullPath) => {
+      const key = fullPath.toLowerCase();
+      if (!fullPath || paths.has(key)) return false;
+      paths.add(key);
+      return true;
+    }).map((fullPath) => ({ fullPath, relativePath:fullPath, name:fullPath.split(/[\\/]/).pop() || fullPath }));
   }
 
   function renderModal() {
     const modal = $('#vq43-modal');
     const miss = state.modalItem;
     if (!miss) return closeModal();
-    if (state.modalUrl) URL.revokeObjectURL(state.modalUrl);
+    if (state.modalUrl?.startsWith('blob:')) URL.revokeObjectURL(state.modalUrl);
     const image = miss.images[state.modalIndex];
-    state.modalUrl = URL.createObjectURL(image.file);
+    const agentImage = !!image?.fullPath && !image?.file;
+    state.modalUrl = image?.file ? URL.createObjectURL(image.file) : '';
+    state.modalImageRequestKey = `${Date.now()}-${state.modalIndex}-${Math.random().toString(36).slice(2, 8)}`;
+    const modalImageRequestKey = state.modalImageRequestKey;
     const scores = Object.values(miss.record.tools).map((tool) => `<span class="vq43-score-chip">${escapeHtml(tool.tool)}: <b style="color:${tool.result==='NG'?'#f87171':'#34d399'}">${tool.result}</b> <b>${scoreText(tool.representativeScore)}</b></span>`).join('');
-    modal.innerHTML = `<div class="vq43-modal-card"><div class="vq43-modal-head"><div><small>${escapeHtml(miss.label || 'Actual NG Image')}</small><strong>${escapeHtml(miss.cellId)} · ${miss.position}</strong></div><button class="vq43-close" data-vq-action="close-modal">×</button></div><div class="vq43-modal-image" id="vq43-modal-viewport"><img id="vq43-modal-zoom-image" draggable="false" src="${state.modalUrl}" alt="${escapeHtml(image.file.name || image.relativePath)}"><div class="vq43-modal-zoom-tools"><span id="vq43-modal-zoom-value">100%</span><button data-vq-action="modal-reset">원위치</button></div><div class="vq43-modal-help">마우스 휠: 확대/축소 · 드래그: 이동 · 더블클릭: 원위치</div>${miss.images.length>1?`<button class="vq43-modal-nav prev" data-vq-action="modal-prev" ${state.modalIndex===0?'disabled':''}>‹</button><button class="vq43-modal-nav next" data-vq-action="modal-next" ${state.modalIndex>=miss.images.length-1?'disabled':''}>›</button>`:''}</div><div class="vq43-modal-foot"><div class="vq43-modal-path"><span>${escapeHtml(image.relativePath)}</span><b>${state.modalIndex+1} / ${miss.images.length}</b></div><div class="vq43-modal-scores">${scores}</div></div></div>`;
+    modal.innerHTML = `<div class="vq43-modal-card"><div class="vq43-modal-head"><div><small>${escapeHtml(miss.label || 'Actual NG Image')}</small><strong>${escapeHtml(miss.cellId)} · ${miss.position}</strong></div><button class="vq43-close" data-vq-action="close-modal">×</button></div><div class="vq43-modal-image" id="vq43-modal-viewport"><img id="vq43-modal-zoom-image" draggable="false" src="${state.modalUrl}" alt="${escapeHtml(image.file?.name || image.name || image.relativePath)}"><div class="vq43-modal-zoom-tools"><span id="vq43-modal-zoom-value">100%</span><button data-vq-action="modal-reset">원위치</button></div><div class="vq43-modal-help">마우스 휠: 확대/축소 · 드래그: 이동 · 더블클릭: 원위치</div>${miss.images.length>1?`<button class="vq43-modal-nav prev" data-vq-action="modal-prev" ${state.modalIndex===0?'disabled':''}>‹</button><button class="vq43-modal-nav next" data-vq-action="modal-next" ${state.modalIndex>=miss.images.length-1?'disabled':''}>›</button>`:''}</div><div class="vq43-modal-foot"><div class="vq43-modal-path"><span>${escapeHtml(image.relativePath)}</span><b>${state.modalIndex+1} / ${miss.images.length}</b></div><div class="vq43-modal-scores">${scores}</div></div></div>`;
     modal.classList.add('open');
     applyModalTransform();
     bindModalImageControls();
+    if (agentImage) loadModalImageFromAgent(image, modalImageRequestKey);
 
     // 모달 버튼은 body 이벤트 위임을 사용하지 않고 직접 연결합니다.
     // 이미지 드래그의 pointer capture와 무관하게 X/이전/다음/원위치가 동작합니다.
@@ -4340,6 +4418,29 @@
     modal.onclick = (event) => { if (event.target === modal) closeModal(); };
   }
 
+  async function loadModalImageFromAgent(image, requestKey) {
+    const viewport = $('#vq43-modal-viewport');
+    if (!viewport) return;
+    const loading = document.createElement('div');
+    loading.id = 'vq43-modal-loading';
+    loading.className = 'vq43-modal-loading';
+    loading.textContent = 'Local Agent에서 원본 이미지를 불러오는 중...';
+    viewport.appendChild(loading);
+    try {
+      const response = await agentFetch('/api/image/preview', { method:'POST', timeout:60000, body:{ imagePath:image.fullPath, maxDimension:2560 } });
+      if (state.modalImageRequestKey !== requestKey) return;
+      const target = $('#vq43-modal-zoom-image');
+      if (!target) return;
+      target.src = response.dataUrl || '';
+      target.alt = image.name || image.fullPath;
+      loading.remove();
+    } catch (error) {
+      if (state.modalImageRequestKey !== requestKey) return;
+      loading.classList.add('error');
+      loading.textContent = `이미지를 열지 못했습니다: ${error.message || error}`;
+    }
+  }
+
   function changeModalImage(delta) {
     const miss = state.modalItem;
     if (!miss) return;
@@ -4352,8 +4453,9 @@
     const modal = $('#vq43-modal');
     modal?.classList.remove('open');
     if (modal) modal.innerHTML = '';
-    if (state.modalUrl) URL.revokeObjectURL(state.modalUrl);
+    if (state.modalUrl?.startsWith('blob:')) URL.revokeObjectURL(state.modalUrl);
     state.modalUrl = '';
+    state.modalImageRequestKey = '';
     state.modalMissKey = null;
     state.modalItem = null;
     state.modalIndex = 0;

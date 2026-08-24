@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.Drawing;
 using System.Linq;
 using System.Runtime.CompilerServices;
+using VisionQC.LocalAgent.Domain;
 using Runtime = ViDi2.Runtime;
 using LocalRuntime = ViDi2.Runtime.Local;
 
@@ -51,6 +52,7 @@ namespace VpdlGreenHeatmapOverlay
         public string CellIdCsvPath { get; set; }
         public bool KeywordMode { get; set; } = false;
         public string KeywordInputRoot { get; set; }
+        public NamingProfile NamingProfile { get; set; }
 
         public long JpegQuality { get; set; } = 80L;
         public float HeatmapAlpha { get; set; } = 0.55f;
@@ -163,6 +165,7 @@ namespace VpdlGreenHeatmapOverlay
         public string Tool { get; set; }
         public string Result { get; set; }
         public double? Score { get; set; }
+        public string OverlayPath { get; set; }
     }
 
     internal class LiveAnalysisRecord

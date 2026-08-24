@@ -34,6 +34,8 @@
   <ItemGroup>
     <EmbeddedResource Include="..\bin\x64\Release\VisionQC.LocalAgent.exe"><LogicalName>VisionQC.AgentInstaller.Payload.Agent.VisionQC.LocalAgent.exe</LogicalName></EmbeddedResource>
     <EmbeddedResource Include="..\bin\x64\Release\VisionQC.LocalAgent.exe.config"><LogicalName>VisionQC.AgentInstaller.Payload.Agent.VisionQC.LocalAgent.exe.config</LogicalName></EmbeddedResource>
+    <EmbeddedResource Include="..\bin\x64\Release\System.Data.SQLite.dll"><LogicalName>VisionQC.AgentInstaller.Payload.Agent.System.Data.SQLite.dll</LogicalName></EmbeddedResource>
+    <EmbeddedResource Include="..\bin\x64\Release\x64\SQLite.Interop.dll"><LogicalName>VisionQC.AgentInstaller.Payload.Agent.x64.SQLite.Interop.dll</LogicalName></EmbeddedResource>
     <EmbeddedResource Include="..\bin\x64\Release\System.Drawing.Common.dll"><LogicalName>VisionQC.AgentInstaller.Payload.Agent.System.Drawing.Common.dll</LogicalName></EmbeddedResource>
     <EmbeddedResource Include="..\..\index.html"><LogicalName>VisionQC.AgentInstaller.Payload.Web.index.html</LogicalName></EmbeddedResource>
     <EmbeddedResource Include="..\..\visionqc-extension.js"><LogicalName>VisionQC.AgentInstaller.Payload.Web.visionqc-extension.js</LogicalName></EmbeddedResource>

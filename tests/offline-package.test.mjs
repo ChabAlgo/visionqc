@@ -15,8 +15,8 @@ const installerProject = read('LocalAgent_v0.2.12/OfflineInstaller/VisionQC.Agen
 test('download controls point to the versioned single-exe and offline package', () => {
   assert.match(web, /simulation-agent-download/);
   assert.match(web, /simulation-offline-download/);
-  assert.match(web, /VisionQC_Agent_Installer_v1\.0\.0\.exe/);
-  assert.match(web, /VisionQC_Offline_v4\.5\.0\.zip/);
+  assert.match(web, /VisionQC_Agent_Installer_v1\.1\.0\.exe/);
+  assert.match(web, /VisionQC_Offline_v4\.6\.0\.zip/);
   assert.match(web, /function downloadAgentInstaller/);
   assert.match(web, /function downloadOfflinePackage/);
 });
@@ -48,5 +48,7 @@ test('single installer embeds the local UI, registers protocol, and launches off
   assert.match(installerProject, /Payload\.Web\.index\.html/);
   assert.match(installerProject, /Payload\.Web\.assets\.index-v4\.4\.33\.js/);
   assert.match(installerProject, /Payload\.Web\.assets\.fonts\.inter-latin-400-normal\.woff2/);
+  assert.match(installerProject, /Payload\.Agent\.System\.Data\.SQLite\.dll/);
+  assert.match(installerProject, /Payload\.Agent\.x64\.SQLite\.Interop\.dll/);
   assert.match(installer, /Web\\\\assets\\\\fonts\\\\inter-latin-400-normal\.woff2/);
 });

@@ -11,10 +11,10 @@ const picker = read('NativeShellPicker.cs');
 const pickerService = read('Services/PickerService.cs');
 const program = read('Program.cs');
 
-test('Agent v1.0.0 version is consistent', () => {
-  assert.match(program, /AgentVersion = "1\.0\.0"/);
-  assert.match(read('Properties/AssemblyInfo.cs'), /AssemblyVersion\("1\.0\.0\.0"\)/);
-  assert.match(read('BUILD_RELEASE_x64.cmd'), /v1\.0\.0/);
+test('Agent v1.1.0 version is consistent', () => {
+  assert.match(program, /AgentVersion = "1\.1\.0"/);
+  assert.match(read('Properties/AssemblyInfo.cs'), /AssemblyVersion\("1\.1\.0\.0"\)/);
+  assert.match(read('BUILD_RELEASE_x64.cmd'), /v1\.1\.0/);
 });
 
 test('HTTP server delegates picker lifecycle to the isolated picker service', () => {
@@ -72,6 +72,13 @@ test('installed VPDL and active Simulation Runtime are separate states', () => {
   assert.match(server, /new RuntimePreloadResponse \{ ok = true, mode = mode, installedVpdlVersion = _vpdlVersion, vpdlVersion = _vpdlVersion \}/);
 });
 
+test('installed Agent adds the Cognex native bin folder before loading VPDL Runtime', () => {
+  assert.match(program, /ConfigureVpdlNativeSearchPath\(\)/);
+  assert.match(program, /SetDllDirectory\(nativeBin\)/);
+  assert.match(program, /Path\.Combine\(root, "bin"\)/);
+  assert.match(program, /VisionPro Deep Learning\\4\.0/);
+});
+
 test('Agent keeps loopback CORS, JSON errors, and multi-root simulation support', () => {
   assert.match(server, /WriteJson\(stream, 500/);
   assert.match(server, /Access-Control-Allow-Private-Network: true/);
@@ -89,4 +96,23 @@ test('installer waits for the installed Agent process before replacing its execu
   assert.match(installer, /StopRunningAgent\(Path\.Combine\(installDir, AgentExe\)\)/);
   assert.match(installer, /IsInstalledAgentRunning\(installedAgentPath\)/);
   assert.match(installer, /Process\.GetProcessesByName/);
+});
+
+test('SQLite history and CSV FullPath preview stay in dedicated services', () => {
+  assert.match(server, /case "\/api\/image\/preview"/);
+  assert.match(server, /case "\/api\/history\/import"/);
+  assert.match(server, /new SqliteRunStore/);
+  assert.match(read('VisionQC.LocalAgent.csproj'), /System\.Data\.SQLite\.Core/);
+  assert.match(read('VisionQC.LocalAgent.csproj'), /Persistence\\SqliteRunStore\.cs/);
+  const preview = read('Services/ImagePreviewService.cs');
+  assert.match(preview, /MaxSourceBytes/);
+  assert.match(preview, /maxDimension/);
+  const store = read('Persistence/SqliteRunStore.cs');
+  assert.match(store, /PRAGMA journal_mode=WAL/);
+  assert.match(store, /CommitBatchSize = 200/);
+  assert.match(store, /capture_timestamp/);
+  assert.match(store, /overlay_path/);
+  const green = read('Engine/GreenOverlayProcessor.cs');
+  assert.match(green, /OverlayPath/);
+  assert.match(server, /HeatmapImageSave = !integrated/);
 });

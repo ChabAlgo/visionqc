@@ -1,5 +1,6 @@
 ﻿using System;
 using System.Collections.Generic;
+using VisionQC.LocalAgent.Domain;
 
 namespace VisionQC.LocalAgent
 {
@@ -11,6 +12,7 @@ namespace VisionQC.LocalAgent
         public AgentBlueOptions blue { get; set; }
         public AgentIntegratedOptions integrated { get; set; }
         public List<AgentPositionRequest> positions { get; set; }
+        public NamingProfile namingProfile { get; set; }
 
         // v0.1.x compatibility fields
         public bool useGpu { get; set; }
@@ -26,6 +28,56 @@ namespace VisionQC.LocalAgent
     public sealed class AgentSingleInspectionRequest : AgentStartRequest
     {
         public string imagePath { get; set; }
+    }
+
+    public sealed class AgentImagePreviewRequest
+    {
+        public string imagePath { get; set; }
+        public int maxDimension { get; set; }
+    }
+
+    public sealed class AgentImagePreviewResponse
+    {
+        public bool ok { get; set; }
+        public string error { get; set; }
+        public string imagePath { get; set; }
+        public string dataUrl { get; set; }
+        public int width { get; set; }
+        public int height { get; set; }
+        public bool resized { get; set; }
+    }
+
+    // CSV는 브라우저가 보관하고, 사용자가 명시적으로 저장을 누를 때만 이 DTO로 SQLite 이력을 적재한다.
+    public sealed class AgentHistoryImportRequest
+    {
+        public string importId { get; set; }
+        public bool begin { get; set; }
+        public bool complete { get; set; }
+        public string sourceName { get; set; }
+        public string mode { get; set; }
+        public string webVersion { get; set; }
+        public NamingProfile namingProfile { get; set; }
+        public List<AgentHistoryRecordRequest> records { get; set; }
+    }
+
+    public sealed class AgentHistoryRecordRequest
+    {
+        public string sourceFileName { get; set; }
+        public int sourceRowNumber { get; set; }
+        public string fullPath { get; set; }
+        public string cellId { get; set; }
+        public string position { get; set; }
+        public string totalResult { get; set; }
+        public string judgement { get; set; }
+        public List<AgentHistoryToolResultRequest> tools { get; set; }
+    }
+
+    public sealed class AgentHistoryToolResultRequest
+    {
+        public string tool { get; set; }
+        public string result { get; set; }
+        public double? score { get; set; }
+        public string overlayPath { get; set; }
     }
 
     public sealed class AgentGreenOptions

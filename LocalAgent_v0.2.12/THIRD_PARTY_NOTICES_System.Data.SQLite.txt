@@ -1,0 +1,11 @@
+System.Data.SQLite.Core 1.0.119.0
+Copyright © 2004-2008 Hipp, Wyrick & Company, Inc.
+
+This Agent distributes the official System.Data.SQLite ADO.NET provider and
+SQLite.Interop native library for its SQLite inspection-history store.
+
+The package metadata identifies the SQLite copyright/public-domain notice at:
+https://www.sqlite.org/copyright.html
+
+SQLite itself is in the public domain. This notice is retained with the
+project so offline-package maintainers can identify the bundled dependency.

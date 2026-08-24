@@ -13,5 +13,6 @@ Desktop.ini
 /test-results/
 /LocalAgent_v*/obj/
 /LocalAgent_v*/.cache/
+/LocalAgent_v*/bin/**/x86/
 /LocalAgent_v*/OfflineInstaller/bin/
 /LocalAgent_v*/OfflineInstaller/obj/

@@ -14,11 +14,13 @@ namespace VisionQC.AgentInstaller
     internal static class Program
     {
         private const string AgentExe = "VisionQC.LocalAgent.exe";
-        private const string ProductVersion = "1.0.0";
+        private const string ProductVersion = "1.1.0";
         private static readonly PayloadFile[] Payload =
         {
             new PayloadFile("VisionQC.AgentInstaller.Payload.Agent.VisionQC.LocalAgent.exe", AgentExe),
             new PayloadFile("VisionQC.AgentInstaller.Payload.Agent.VisionQC.LocalAgent.exe.config", AgentExe + ".config"),
+            new PayloadFile("VisionQC.AgentInstaller.Payload.Agent.System.Data.SQLite.dll", "System.Data.SQLite.dll"),
+            new PayloadFile("VisionQC.AgentInstaller.Payload.Agent.x64.SQLite.Interop.dll", "x64\\SQLite.Interop.dll"),
             new PayloadFile("VisionQC.AgentInstaller.Payload.Agent.System.Drawing.Common.dll", "System.Drawing.Common.dll"),
             new PayloadFile("VisionQC.AgentInstaller.Payload.Web.index.html", "Web\\index.html"),
             new PayloadFile("VisionQC.AgentInstaller.Payload.Web.visionqc-extension.js", "Web\\visionqc-extension.js"),
