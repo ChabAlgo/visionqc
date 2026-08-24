@@ -10,7 +10,7 @@ namespace VisionQC.LocalAgent
 {
     internal static class Program
     {
-        internal const string AgentVersion = "1.2.2";
+        internal const string AgentVersion = "1.2.3";
         private static readonly string VpdlStudioDirectory = FindVpdlStudioDirectory();
 
         [DllImport("kernel32.dll", SetLastError = true)]

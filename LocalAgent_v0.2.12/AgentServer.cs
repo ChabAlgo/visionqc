@@ -58,6 +58,10 @@ namespace VisionQC.LocalAgent
         private string _preloadedRuntimeSignature = "";
         private string _preloadedRuntimeToken = "";
         private string _preloadedRuntimeMode = "";
+        // Runtime Control 생성 조건과 Green Workspace 집합을 별도로 보관한다.
+        // Integrated Runtime은 같은 GPU 조건·Green Workspace 집합의 Green 단독 실행에서 재사용할 수 있다.
+        private string _preloadedRuntimeControlSignature = "";
+        private string _preloadedGreenWorkspaceSignature = "";
         private string _lastAgentLogKey = "";
         private DateTime _lastAgentLogUtc = DateTime.MinValue;
         private readonly PickerService _picker;
@@ -319,6 +323,8 @@ namespace VisionQC.LocalAgent
                 _preloadedRuntimeSignature = "";
                 _preloadedRuntimeToken = "";
                 _preloadedRuntimeMode = "";
+                _preloadedRuntimeControlSignature = "";
+                _preloadedGreenWorkspaceSignature = "";
                 DisposeInspectionControlLocked();
             }
 
@@ -347,10 +353,7 @@ namespace VisionQC.LocalAgent
                     if (reusable && control != null)
                     {
                         DisposePreloadedRuntimeLocked();
-                        _preloadedRuntimeControl = control;
-                        _preloadedRuntimeSignature = signature;
-                        _preloadedRuntimeToken = Guid.NewGuid().ToString("N");
-                        _preloadedRuntimeMode = (req.mode ?? "green").Trim().ToLowerInvariant();
+                        RememberPreloadedRuntimeLocked(control, req, signature);
                         _licenseStatus = "Runtime Ready";
                         _runtimeMessage = "단일 Green 검사 완료 · 사전 로드 Runtime 재사용 가능";
                         control = null;
@@ -439,6 +442,8 @@ namespace VisionQC.LocalAgent
                 runtimePreloadMode = _preloadedRuntimeMode,
                 runtimePreloadToken = _preloadedRuntimeToken,
                 runtimePreloadSignature = _preloadedRuntimeSignature,
+                runtimePreloadControlSignature = _preloadedRuntimeControlSignature,
+                runtimePreloadGreenWorkspaceSignature = _preloadedGreenWorkspaceSignature,
                 historyDatabasePath = _historyStore.DatabasePath,
                 state = state
             };
@@ -549,15 +554,14 @@ namespace VisionQC.LocalAgent
                         }
                     }
 
-                    _preloadedRuntimeControl = control;
+                    RememberPreloadedRuntimeLocked(control, req, signature);
                     control = null;
-                    _preloadedRuntimeSignature = signature;
-                    _preloadedRuntimeToken = Guid.NewGuid().ToString("N");
-                    _preloadedRuntimeMode = mode;
                     _licenseStatus = "Runtime Ready";
                     _runtimeMessage = "Runtime File Load 완료 · Simulation 시작 대기";
                     response.token = _preloadedRuntimeToken;
                     response.signature = _preloadedRuntimeSignature;
+                    response.controlSignature = _preloadedRuntimeControlSignature;
+                    response.greenWorkspaceSignature = _preloadedGreenWorkspaceSignature;
                     response.workspaceCount = response.items.Count;
                     sw.Stop();
                     response.elapsedMs = sw.ElapsedMilliseconds;
@@ -644,6 +648,51 @@ namespace VisionQC.LocalAgent
             return sb.ToString();
         }
 
+        private string BuildRuntimeControlSignature(AgentStartRequest req)
+        {
+            string mode = (req.mode ?? "green").Trim().ToLowerInvariant();
+            if (mode == "green")
+            {
+                AgentGreenOptions green = GetGreenOptions(req);
+                return green.useGpu + "|" + (green.gpuDevices ?? "");
+            }
+            AgentBlueOptions blue = GetBlueOptions(req);
+            return blue.useGpu + "|" + (blue.gpuDevices ?? "");
+        }
+
+        private string BuildGreenWorkspaceSignature(AgentStartRequest req)
+        {
+            var sb = new StringBuilder();
+            foreach (var p in EnabledPositions(req).OrderBy(x => x.key, StringComparer.OrdinalIgnoreCase))
+            {
+                sb.Append('|').Append(p.key ?? "");
+                sb.Append("|G:").Append(NormalizeRuntimePath(FirstNonEmpty(p.greenWorkspacePath, p.workspacePath)));
+            }
+            return sb.ToString();
+        }
+
+        private bool HasCompatiblePreloadedRuntime(AgentStartRequest req, string requestedSignature)
+        {
+            if (_preloadedRuntimeControl == null) return false;
+            if (string.Equals(_preloadedRuntimeSignature, requestedSignature, StringComparison.Ordinal)) return true;
+
+            string requestedMode = (req.mode ?? "green").Trim().ToLowerInvariant();
+            return requestedMode == "green"
+                && string.Equals(_preloadedRuntimeMode, "integrated", StringComparison.Ordinal)
+                && string.Equals(_preloadedRuntimeControlSignature, BuildRuntimeControlSignature(req), StringComparison.Ordinal)
+                && string.Equals(_preloadedGreenWorkspaceSignature, BuildGreenWorkspaceSignature(req), StringComparison.Ordinal);
+        }
+
+        private void RememberPreloadedRuntimeLocked(LocalRuntime.Control control, AgentStartRequest req, string signature)
+        {
+            _preloadedRuntimeControl = control;
+            _preloadedRuntimeSignature = signature;
+            _preloadedRuntimeToken = Guid.NewGuid().ToString("N");
+            _preloadedRuntimeMode = (req.mode ?? "green").Trim().ToLowerInvariant();
+            _preloadedRuntimeControlSignature = BuildRuntimeControlSignature(req);
+            _preloadedGreenWorkspaceSignature = BuildGreenWorkspaceSignature(req);
+        }
+
         private static string NormalizeRuntimePath(string path)
         {
             try { return Path.GetFullPath(path ?? "").TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar).ToUpperInvariant(); }
@@ -665,6 +714,8 @@ namespace VisionQC.LocalAgent
             _preloadedRuntimeSignature = "";
             _preloadedRuntimeToken = "";
             _preloadedRuntimeMode = "";
+            _preloadedRuntimeControlSignature = "";
+            _preloadedGreenWorkspaceSignature = "";
         }
 
         private WorkspaceInspectionResponse InspectWorkspace(string body)
@@ -1010,7 +1061,7 @@ namespace VisionQC.LocalAgent
                 if (_vpdlReservedForSimulation)
                     return new { ok = false, error = "다른 VPDL 작업이 실행 중입니다. 잠시 후 다시 시도하세요." };
                 string signature = BuildRuntimePreloadSignature(req);
-                if (_preloadedRuntimeControl == null || !string.Equals(_preloadedRuntimeSignature, signature, StringComparison.Ordinal))
+                if (!HasCompatiblePreloadedRuntime(req, signature))
                     return new { ok = false, error = "현재 설정에 맞는 Runtime 사전 로드가 없습니다. Workspace Runtime Structure의 Runtime File Load를 다시 실행하세요." };
                 _vpdlReservedForSimulation = true;
                 simulationControl = _preloadedRuntimeControl;
@@ -1018,6 +1069,8 @@ namespace VisionQC.LocalAgent
                 _preloadedRuntimeSignature = "";
                 _preloadedRuntimeToken = "";
                 _preloadedRuntimeMode = "";
+                _preloadedRuntimeControlSignature = "";
+                _preloadedGreenWorkspaceSignature = "";
                 DisposeInspectionControlLocked();
             }
 
@@ -1169,10 +1222,7 @@ namespace VisionQC.LocalAgent
                     if (runtimeReusable && simulationControl != null)
                     {
                         DisposePreloadedRuntimeLocked();
-                        _preloadedRuntimeControl = simulationControl;
-                        _preloadedRuntimeSignature = BuildRuntimePreloadSignature(req);
-                        _preloadedRuntimeToken = Guid.NewGuid().ToString("N");
-                        _preloadedRuntimeMode = (req.mode ?? "green").Trim().ToLowerInvariant();
+                        RememberPreloadedRuntimeLocked(simulationControl, req, BuildRuntimePreloadSignature(req));
                         _licenseStatus = "Runtime Ready";
                         _runtimeMessage = "Simulation 완료 · 사전 로드 Runtime 재사용 가능";
                         simulationControl = null;

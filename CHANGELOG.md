@@ -1,3 +1,11 @@
+# VisionQC v4.7.3
+
+## Runtime 재사용 / 다크·화이트 테마
+- Integrated Runtime이 동일 GPU 조건 및 Green Workspace·Position 집합의 Green 단독 Simulation을 재사용할 수 있도록 Web·Agent 검증을 함께 보완했습니다.
+- Web GUI에 다크·화이트 모드 전환과 저장 기능을 추가하고, 테마 아이콘을 흰색·어두운색 반반 원형으로 교체했습니다.
+
+---
+
 # VisionQC v4.7.2
 
 ## 현재 분석 집계 / Keyword Simulation 안정화

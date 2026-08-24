@@ -1,4 +1,4 @@
-# Local Agent v1.2.2 이력/AI Suggest API
+# Local Agent v1.2.3 이력/AI Suggest API
 
 모든 API는 `http://127.0.0.1:17891`의 JSON POST 요청이다. Loopback 이외의 주소에는 바인딩하지 않는다.
 

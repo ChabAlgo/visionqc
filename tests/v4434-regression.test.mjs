@@ -11,11 +11,11 @@ const html = read('index.html');
 const js = read('visionqc-extension.js');
 const css = read('visionqc-v4433-clean.css');
 
-test('v4.7.2 assets and the supplied TOPTEC logo are exact', () => {
-  assert.match(html, /VisionQC DirectExport v4\.7\.2/);
+test('v4.7.3 assets and the supplied TOPTEC logo are exact', () => {
+  assert.match(html, /VisionQC DirectExport v4\.7\.3/);
   assert.match(html, /assets\/index-v4\.4\.33\.js/);
-  assert.match(html, /visionqc-v4433-clean\.css\?v=4\.7\.2/);
-  assert.match(html, /visionqc-extension\.js\?v=4\.7\.2/);
+  assert.match(html, /visionqc-v4433-clean\.css\?v=4\.7\.3/);
+  assert.match(html, /visionqc-extension\.js\?v=4\.7\.3/);
   assert.ok(existsSync(resolve(root, 'assets/index-v4.4.33.js')));
   const logo = readFileSync(resolve(root, 'assets/toptec-logo.png'));
   assert.equal(createHash('sha256').update(logo).digest('hex'), 'ab35afda21bd2d40052b79ca46b75613096f60a7b8a84d6112ccd25daa5aa4a4');
@@ -175,7 +175,7 @@ test('Agent disconnect clears loaded Workspace memory and UI data but keeps chos
 test('Simulation Start is single-flight and verifies the live preload identity', () => {
   const start = js.slice(js.indexOf('async function startSimulation()'), js.indexOf('async function stopSimulation()'));
   assert.match(start, /simulationStartPending/);
-  assert.match(start, /simulationRuntimeSignature\(request\)/);
+  assert.match(start, /isCompatiblePreloadedRuntime\(request\)/);
   assert.match(start, /simulationRuntimeToken/);
   assert.match(start, /simulationRuntimeAgentInstance/);
   assert.match(start, /Runtime File Load를 다시 실행하세요/);

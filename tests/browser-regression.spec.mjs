@@ -196,4 +196,24 @@ test.describe('VisionQC v4.4.38 FHD interaction regression', () => {
     const settingSvg = await page.locator('[data-vq-page="settings"] .vq43-icon-svg').count();
     expect(settingSvg).toBeGreaterThan(0);
   });
+
+  test('split dark-white icon switches to a persisted white theme without rerendering state', async ({ page }) => {
+    await page.goto('/index.html?vqDebug=1&browserRegression=1', { waitUntil: 'domcontentloaded' });
+    await page.waitForFunction(() => Boolean(window.__VISIONQC_DEBUG__), null, { timeout: 15000 });
+    const toggle = page.locator('[data-vq-action="theme-toggle"]');
+    await expect(toggle).toBeVisible();
+    await toggle.click();
+    await expect(page.locator('body')).toHaveClass(/vq43-theme-light/);
+    await expect(toggle).toHaveAttribute('aria-pressed', 'true');
+    const palette = await page.evaluate(() => ({
+      drawer:getComputedStyle(document.querySelector('#vq43-drawer')).backgroundColor,
+      shell:getComputedStyle(document.querySelector('#vq43-shell')).color,
+      stored:localStorage.getItem('visionqc-v472-theme')
+    }));
+    expect(palette.drawer).toBe('rgb(255, 255, 255)');
+    expect(palette.shell).toBe('rgb(23, 32, 51)');
+    expect(palette.stored).toBe('light');
+    await toggle.click();
+    await expect(page.locator('body')).not.toHaveClass(/vq43-theme-light/);
+  });
 });

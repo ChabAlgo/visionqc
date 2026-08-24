@@ -311,6 +311,8 @@ namespace VisionQC.LocalAgent
         public string error { get; set; }
         public string token { get; set; }
         public string signature { get; set; }
+        public string controlSignature { get; set; }
+        public string greenWorkspaceSignature { get; set; }
         public string mode { get; set; }
         public string installedVpdlVersion { get; set; }
         public string vpdlVersion { get; set; }

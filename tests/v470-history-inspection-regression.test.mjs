@@ -9,16 +9,17 @@ const read = (path) => readFileSync(resolve(root, path), 'utf8');
 const js = read('visionqc-extension.js');
 const css = read('visionqc-extension.css');
 const dashboardCss = read('visionqc-v470.css');
+const cleanCss = read('visionqc-v4433-clean.css');
 const html = read('index.html');
 
-test('v4.7.2 Web and Agent download targets are aligned', () => {
-  assert.match(read('VERSION.txt'), /v4\.7\.2/);
-  assert.match(html, /visionqc-extension\.js\?v=4\.7\.2/);
-  assert.match(html, /visionqc-v470\.css\?v=4\.7\.2/);
-  assert.match(js, /const VERSION = '4\.7\.2'/);
-  assert.match(js, /const EXPECTED_AGENT_VERSION = '1\.2\.2'/);
-  assert.match(js, /VisionQC_Agent_Installer_v1\.2\.2\.exe/);
-  assert.match(js, /VisionQC_Offline_v4\.7\.2\.zip/);
+test('v4.7.3 Web and Agent download targets are aligned', () => {
+  assert.match(read('VERSION.txt'), /v4\.7\.3/);
+  assert.match(html, /visionqc-extension\.js\?v=4\.7\.3/);
+  assert.match(html, /visionqc-v470\.css\?v=4\.7\.3/);
+  assert.match(js, /const VERSION = '4\.7\.3'/);
+  assert.match(js, /const EXPECTED_AGENT_VERSION = '1\.2\.3'/);
+  assert.match(js, /VisionQC_Agent_Installer_v1\.2\.3\.exe/);
+  assert.match(js, /VisionQC_Offline_v4\.7\.3\.zip/);
 });
 
 test('persistent History page has filters, server-side pagination, daily NG chart and image viewer', () => {
@@ -57,4 +58,24 @@ test('settings uses an SVG cog icon rather than an emoji glyph', () => {
   assert.match(icon, /<svg class="vq43-icon-svg" viewBox="0 0 24 24"/);
   assert.match(js, /railIconSvg\('settings'\)/);
   assert.doesNotMatch(icon, /⚙/);
+});
+
+test('theme toggle persists a true light mode and uses a split dark-white icon', () => {
+  assert.match(js, /const THEME_KEY = 'visionqc-v472-theme'/);
+  assert.match(js, /data-vq-action="theme-toggle"/);
+  assert.match(js, /function applyTheme\(\)/);
+  assert.match(js, /function toggleTheme\(\)/);
+  assert.match(js, /theme:'<circle[^>]*fill="#f8fafc"/);
+  assert.match(js, /fill="#111827"/);
+  assert.match(cleanCss, /body\.vq43-theme-light/);
+  assert.match(cleanCss, /\.vq43-theme-toggle\[aria-pressed="true"\]/);
+});
+
+test('Web accepts an Integrated Runtime only for the same GPU and Green Workspace set', () => {
+  assert.match(js, /function isCompatiblePreloadedRuntime\(/);
+  assert.match(js, /function simulationRuntimeControlSignature\(/);
+  assert.match(js, /function simulationGreenWorkspaceSignature\(/);
+  assert.match(js, /runtimePreloadMode === 'integrated'/);
+  assert.match(js, /runtimePreloadControlSignature === simulationRuntimeControlSignature\(request\)/);
+  assert.match(js, /runtimePreloadGreenWorkspaceSignature === simulationGreenWorkspaceSignature\(request\)/);
 });

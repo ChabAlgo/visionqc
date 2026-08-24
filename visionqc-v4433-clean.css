@@ -91,6 +91,47 @@ body.vq43-menu-expanded[data-vq-page="classification"] #root>div>main{margin-lef
 @media(max-width:1100px){body.vq43-menu-expanded #vq43-shell{left:var(--vq-rail-closed)!important;width:calc(100% - var(--vq-rail-closed))!important;max-width:calc(100% - var(--vq-rail-closed))!important}body.vq43-menu-expanded[data-vq-page="classification"] #root>div>header.vq43-host-header,body.vq43-menu-expanded[data-vq-page="classification"] #root>div>main{margin-left:var(--vq-rail-closed)!important;width:calc(100% - var(--vq-rail-closed))!important;max-width:calc(100% - var(--vq-rail-closed))!important}}
 @media(max-width:760px){.vq43-sim-option-grid,.vq43-sim-runtime-metrics{grid-template-columns:minmax(0,1fr)!important}.vq43-fallback-metrics{grid-template-columns:repeat(2,minmax(0,1fr))!important}.vq43-workspace-card-grid,.vq43-workspace-kind-grid{grid-template-columns:minmax(0,1fr)!important}}
 
+/* Theme: the selected theme is persisted by visionqc-extension.js.  The rail icon is deliberately
+   split into a white and a dark half so the switching purpose is visible in either theme. */
+.vq43-theme-toggle .vq43-icon-svg{transition:transform .2s ease,filter .2s ease}.vq43-theme-toggle[aria-pressed="true"] .vq43-icon-svg{transform:rotate(180deg)}
+body.vq43-theme-light{color-scheme:light;background:#edf2f7!important;color:#172033!important}
+body.vq43-theme-light #vq43-shell{background:radial-gradient(circle at 18% 0%,rgba(37,99,235,.09),transparent 34%),#f4f7fb!important;color:#172033!important}
+body.vq43-theme-light #vq43-drawer.vq43-side-rail{background:#ffffff!important;border-right-color:#d7e0eb!important;box-shadow:8px 0 28px rgba(15,23,42,.07)!important}
+body.vq43-theme-light .vq43-rail-head,body.vq43-theme-light .vq43-rail-bottom,body.vq43-theme-light .vq43-rail-version{border-color:#dbe4ef!important}
+body.vq43-theme-light .vq43-rail-brand>strong,body.vq43-theme-light .vq43-nav-item,body.vq43-theme-light .vq43-rail-placeholder{color:#334155!important}
+body.vq43-theme-light .vq43-rail-brand small,body.vq43-theme-light .vq43-rail-version{color:#64748b!important}
+body.vq43-theme-light .vq43-nav-item:hover,body.vq43-theme-light .vq43-rail-placeholder:hover{background:#eef4f9!important}
+body.vq43-theme-light .vq43-nav-item.active{color:#07121c!important}
+body.vq43-theme-light #vq43-notification-count{border-color:#fff!important}
+body.vq43-theme-light #root>div>header.vq43-host-header{background:#fff!important;border-color:#d9e2ec!important;color:#172033!important}
+body.vq43-theme-light #root>div>header.vq43-host-header .vq43-brand-display>strong{color:#172033!important}
+body.vq43-theme-light #root>div>header.vq43-host-header .vq43-brand-display>small{color:#64748b!important}
+body.vq43-theme-light #root>div>main{background:#f4f7fb!important;color:#172033!important}
+body.vq43-theme-light #vq43-shell .vq43-content{color:#172033!important}
+body.vq43-theme-light #vq43-shell :is(.vq43-section,.vq43-sim-panel,.vq43-sim-options,.vq43-sim-option-section,.vq43-sim-agent-card,.vq43-workspace-panel,.vq43-history-filter,.vq43-history-kpis>div,.vq43-history-table,.vq43-inspection-config,.vq43-inspection-result,.vq43-workspace-card,.vq43-workspace-position-card,.vq43-workspace-kind-card,.vq43-fallback-card,.vq43-tool-position-card,.vq43-match-status,.vq43-main-history-kpis span,.vq43-sim-runtime-metrics>div){background:#fff!important;border-color:#d7e1ec!important;box-shadow:0 1px 2px rgba(15,23,42,.025)}
+body.vq43-theme-light #vq43-shell :is(.vq43-title,.vq43-section-title h3,.vq43-sim-panel-head strong,.vq43-sim-options-head strong,.vq43-history-kpis strong,.vq43-history-row>strong,.vq43-workspace-card header b,.vq43-workspace-position-card>header strong,.vq43-workspace-kind-card>header b,.vq43-fallback-card>header strong,.vq43-inspection-result header h3,.vq43-inspection-tool b,.vq43-main-history-kpis b,.vq43-tool-donut-item>b,.vq43-donut strong){color:#172033!important}
+body.vq43-theme-light #vq43-shell :is(.vq43-subtitle,.vq43-section-title p,.vq43-sim-panel-head span,.vq43-sim-option-note,.vq43-history-status,.vq43-history-filter label,.vq43-history-kpis span,.vq43-workspace-card header small,.vq43-workspace-kind-card header small,.vq43-workspace-kind-card p,.vq43-fallback-card>header span,.vq43-sim-runtime-metrics span,.vq43-sim-log-line,.vq43-main-history-kpis span,.vq43-naming-hint,.vq43-naming-example){color:#526174!important}
+body.vq43-theme-light #vq43-shell :is(input,select,textarea){background:#fff!important;color:#172033!important;border-color:#bccada!important}
+body.vq43-theme-light #vq43-shell :is(input,select,textarea)::placeholder{color:#8796a9!important}
+body.vq43-theme-light #vq43-shell :is(.vq43-btn,.vq43-modal-image-switcher button,.vq43-sim-options-head button,.vq43-log-controls button){background:#f8fafc!important;color:#243449!important;border-color:#c7d4e2!important}
+body.vq43-theme-light #vq43-shell .vq43-btn:hover,body.vq43-theme-light #vq43-shell .vq43-modal-image-switcher button:hover{background:#eaf1f8!important}
+body.vq43-theme-light #vq43-shell .vq43-btn-blue{background:#e8f1ff!important;color:#1d4ed8!important;border-color:#8bb5ef!important}
+body.vq43-theme-light #vq43-shell .vq43-btn-amber{background:#fff7df!important;color:#a16207!important;border-color:#f1cd78!important}
+body.vq43-theme-light #vq43-shell .vq43-btn-red{background:#fff0f2!important;color:#be123c!important;border-color:#f1a6b4!important}
+body.vq43-theme-light #vq43-shell :is(.vq43-sim-detail-log,.vq43-history-bars,.vq43-inspection-preview){background:#f8fafc!important;border-color:#d5e0eb!important}
+body.vq43-theme-light #vq43-shell .vq43-history-row{background:#fff!important;border-color:#e0e8f0!important;color:#334155!important}
+body.vq43-theme-light #vq43-shell .vq43-history-row.head{background:#eef4fa!important;color:#475569!important}
+body.vq43-theme-light #vq43-shell .vq43-sim-log-line time{color:#64748b!important}
+body.vq43-theme-light #vq43-shell .vq43-donut:before{background:#fff!important;border-color:#d7e1ec!important}
+body.vq43-theme-light #vq43-shell .vq43-donut{background:conic-gradient(#fb7185 calc(var(--vq-rate)*1%),#e8eef5 0)!important}
+body.vq43-theme-light #vq43-modal,body.vq43-theme-light #vq43-chart-modal{color:#172033!important}
+body.vq43-theme-light #vq43-notification-panel{background:#fff!important;color:#172033!important;border-color:#cbd7e5!important;box-shadow:0 28px 80px rgba(15,23,42,.18)!important}
+body.vq43-theme-light #vq43-notification-panel>header,body.vq43-theme-light .vq43-notification-row{background:#f8fafc!important;border-color:#dce5ef!important}
+body.vq43-theme-light #vq43-notification-panel>header strong,body.vq43-theme-light .vq43-notification-row p{color:#172033!important}
+body.vq43-theme-light #vq43-notification-panel button{background:#fff!important;color:#334155!important;border-color:#c7d4e2!important}
+body.vq43-theme-light #vq43-toast{background:#fff!important;color:#172033!important;border-color:#bfcee0!important;box-shadow:0 18px 44px rgba(15,23,42,.18)!important}
+body.vq43-theme-light #vq43-toast.error{background:#fff5f6!important;color:#9f1239!important;border-color:#f3a3b4!important}
+
 /* v4.4.30 notifications, actionable toast, and parameter help. */
 #vq43-toast{right:28px!important;bottom:28px!important;width:min(620px,calc(100vw - 112px))!important;max-width:620px!important;min-height:58px!important;padding:16px 20px!important;border-width:1px!important;border-radius:15px!important;font-size:14px!important;line-height:1.6!important;display:flex!important;align-items:center!important;box-shadow:0 22px 64px rgba(0,0,0,.58)!important}
 #vq43-toast.error{background:#172034!important;border-color:#b9384d!important;color:#fecaca!important;box-shadow:0 22px 64px rgba(0,0,0,.6),0 0 0 1px rgba(239,68,68,.16)!important}

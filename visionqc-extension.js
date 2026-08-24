@@ -1,7 +1,7 @@
 (() => {
   'use strict';
 
-  const VERSION = '4.7.2';
+  const VERSION = '4.7.3';
   const DEFAULT_POSITION_DEFS = [
     { key:'CA_TOP', name:'CA(TOP)' },
     { key:'AN_TOP', name:'AN(TOP)' },
@@ -19,14 +19,15 @@
   const SIM_DEFAULT_KEY = 'visionqc-v4425-simulation-defaults';
   const SIM_LEGACY_CONFIG_KEY = 'visionqc-v4424-simulation-config';
   const SIM_LEGACY_DEFAULT_KEY = 'visionqc-v4424-simulation-defaults';
+  const THEME_KEY = 'visionqc-v472-theme';
   const POSITION_CONFIG_KEY = 'visionqc-v4421-position-config';
   const NAMING_PROFILE_KEY = 'visionqc-v450-naming-profile';
   const NG_POSITION_PREFIX = 'ng-position:';
   const IMG_RE = /\.(png|jpe?g|bmp|gif|webp|tif?f)$/i;
   const LOCAL_AGENT_URL = 'http://127.0.0.1:17891';
-  const EXPECTED_AGENT_VERSION = '1.2.2';
-  const AGENT_INSTALLER_URL = './downloads/VisionQC_Agent_Installer_v1.2.2.exe';
-  const OFFLINE_PACKAGE_URL = './downloads/VisionQC_Offline_v4.7.2.zip';
+  const EXPECTED_AGENT_VERSION = '1.2.3';
+  const AGENT_INSTALLER_URL = './downloads/VisionQC_Agent_Installer_v1.2.3.exe';
+  const OFFLINE_PACKAGE_URL = './downloads/VisionQC_Offline_v4.7.3.zip';
   // SQLite에는 사용자가 명시적으로 남기려는 두 종류의 결과만 표시한다.
   // 이전 버전의 단발 검사(single-inspection) 이력은 보존하되 화면 집계에서는 제외한다.
   const PERSISTED_HISTORY_SOURCE_TYPES = ['simulation', 'csv-import', 'csv-file-stream'];
@@ -102,6 +103,7 @@
   const initialNamingProfile = sanitizeNamingProfile(safeJsonParse(safeStorageGet(NAMING_PROFILE_KEY), defaultNamingProfile()));
   const state = {
     page: safeStorageGet(PAGE_KEY) || 'classification',
+    theme: safeStorageGet(THEME_KEY) === 'light' ? 'light' : 'dark',
     positions: initialPositions,
     namingProfile: initialNamingProfile,
     namingPreview: null,
@@ -325,7 +327,7 @@
       simulation:'<circle cx="12" cy="12" r="9"/><path d="m10 8 6 4-6 4z"/>',
       settings:'<circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 0 0 .34 1.88l.06.06-2.12 2.12-.06-.06a1.7 1.7 0 0 0-1.88-.34 1.7 1.7 0 0 0-1.03 1.55V20.3h-3v-.09A1.7 1.7 0 0 0 10.68 18.66a1.7 1.7 0 0 0-1.88.34l-.06.06-2.12-2.12.06-.06A1.7 1.7 0 0 0 7.02 15a1.7 1.7 0 0 0-1.55-1.03H5.4v-3h.07A1.7 1.7 0 0 0 7.02 9.94a1.7 1.7 0 0 0-.34-1.88l-.06-.06 2.12-2.12.06.06a1.7 1.7 0 0 0 1.88.34A1.7 1.7 0 0 0 11.71 4.73V4.65h3v.08a1.7 1.7 0 0 0 1.03 1.55 1.7 1.7 0 0 0 1.88-.34l.06-.06L19.8 8l-.06.06a1.7 1.7 0 0 0-.34 1.88 1.7 1.7 0 0 0 1.55 1.03h.08v3h-.08A1.7 1.7 0 0 0 19.4 15z"/>',
       bell:'<path d="M18 8a6 6 0 0 0-12 0c0 7-3 7-3 9h18c0-2-3-2-3-9"/><path d="M10 21h4"/>',
-      theme:'<circle cx="12" cy="12" r="9"/><path d="M12 3a9 9 0 0 0 0 18z"/>',
+      theme:'<circle cx="12" cy="12" r="8.6" fill="#f8fafc" stroke="currentColor"/><path d="M12 3.4a8.6 8.6 0 0 0 0 17.2z" fill="#111827" stroke="currentColor"/><path d="M12 4v16" stroke="#64748b" stroke-width=".8"/>',
       language:'<circle cx="12" cy="12" r="9"/><path d="M3 12h18"/><path d="M12 3c3 3 4 6 4 9s-1 6-4 9c-3-3-4-6-4-9s1-6 4-9"/>',
       login:'<circle cx="12" cy="8" r="4"/><path d="M4 21a8 8 0 0 1 16 0"/>'
     };
@@ -350,7 +352,7 @@
           </nav>
           <div class="vq43-rail-bottom" aria-label="향후 기능">
             <button type="button" class="vq43-rail-placeholder vq43-notification-item" data-vq-action="notifications-open" title="오류·경고 알림"><span class="vq43-rail-icon">${railIconSvg('bell')}<i id="vq43-notification-count" class="vq43-notification-count" hidden>0</i></span><b>알림</b></button>
-            <button type="button" class="vq43-rail-placeholder" title="Dark / Light Mode (추후 지원)"><span class="vq43-rail-icon">${railIconSvg('theme')}</span><b>Light / Dark Mode</b></button>
+            <button type="button" class="vq43-rail-placeholder vq43-theme-toggle" data-vq-action="theme-toggle" aria-pressed="${state.theme === 'light'}" title="${state.theme === 'light' ? '다크 모드로 전환' : '화이트 모드로 전환'}"><span class="vq43-rail-icon">${railIconSvg('theme')}</span><b data-vq-theme-label>${state.theme === 'light' ? '다크 모드' : '화이트 모드'}</b></button>
             <button type="button" class="vq43-rail-placeholder" title="Language (추후 지원)"><span class="vq43-rail-icon">${railIconSvg('language')}</span><b>Language</b></button>
             <button type="button" class="vq43-rail-placeholder" title="Login (추후 지원)"><span class="vq43-rail-icon">${railIconSvg('login')}</span><b>Login</b></button>
             <div class="vq43-rail-version" title="VisionQC Web ${VERSION} · Local Agent ${EXPECTED_AGENT_VERSION}"><span>v${VERSION}</span><b>Web v${VERSION} · Agent v${EXPECTED_AGENT_VERSION}</b></div>
@@ -413,7 +415,28 @@
       window.addEventListener('visionqc:navigate', (event) => setPage(event.detail?.page || 'classification'));
     }
     toggleMenu(state.menuOpen);
+    applyTheme();
     renderNotificationCenter();
+  }
+
+  function applyTheme() {
+    const light = state.theme === 'light';
+    document.body.classList.toggle('vq43-theme-light', light);
+    document.body.dataset.vqTheme = light ? 'light' : 'dark';
+    const button = $('[data-vq-action="theme-toggle"]');
+    if (button) {
+      button.setAttribute('aria-pressed', String(light));
+      button.title = light ? '다크 모드로 전환' : '화이트 모드로 전환';
+      const label = $('[data-vq-theme-label]', button);
+      if (label) label.textContent = light ? '다크 모드' : '화이트 모드';
+    }
+  }
+
+  function toggleTheme() {
+    state.theme = state.theme === 'light' ? 'dark' : 'light';
+    safeStorageSet(THEME_KEY, state.theme);
+    applyTheme();
+    showToast(state.theme === 'light' ? '화이트 모드로 변경했습니다.' : '다크 모드로 변경했습니다.');
   }
 
   function installInteractionGuards() {
@@ -603,6 +626,7 @@
       return;
     }
     if (action === 'close-menu') toggleMenu(false);
+    else if (action === 'theme-toggle') toggleTheme();
     else if (action === 'open-settings') setPage('settings');
     else if (action === 'simulation-mode') {
       if (state.simulationProgress?.running) return showToast('Simulation 실행 중에는 모드를 변경할 수 없습니다.', true);
@@ -2955,6 +2979,8 @@
         runtimePreloadMode:String(data.runtimePreloadMode || ''),
         runtimePreloadToken:String(data.runtimePreloadToken || ''),
         runtimePreloadSignature:String(data.runtimePreloadSignature || ''),
+        runtimePreloadControlSignature:String(data.runtimePreloadControlSignature || ''),
+        runtimePreloadGreenWorkspaceSignature:String(data.runtimePreloadGreenWorkspaceSignature || ''),
         message:versionMismatch
           ? `Agent ${detectedVersion} 실행 중 · 현재 Web 권장 ${EXPECTED_AGENT_VERSION}. 새 Agent의 REGISTER_PROTOCOL.cmd를 다시 실행하세요.`
           : `${data.runtimeMessage || '실시간 연결됨'} · Engine ${data.engineVersion || '-'}`
@@ -2968,10 +2994,10 @@
       }
       const nowRunning = !!data.state?.running;
       if (!nowRunning && data.runtimePreloaded && data.runtimePreloadToken) {
-        const currentSignature = simulationRuntimeSignature(buildSimulationRequest());
-        if (!data.runtimePreloadSignature || data.runtimePreloadSignature === currentSignature) {
+        const request = buildSimulationRequest();
+        if (isCompatiblePreloadedRuntime(request, state.simulationAgent)) {
           state.simulationRuntimeToken = String(data.runtimePreloadToken);
-          state.simulationRuntimeSignature = currentSignature;
+          state.simulationRuntimeSignature = String(data.runtimePreloadSignature || simulationRuntimeSignature(request));
           state.simulationRuntimeAgentInstance = newInstance;
         } else {
           clearSimulationRuntimeReadiness();
@@ -3556,6 +3582,31 @@
     return signature;
   }
 
+  function simulationRuntimeControlSignature(request) {
+    const mode = String(request?.mode || 'green').trim().toLowerCase();
+    const options = mode === 'green' ? request?.green || {} : request?.blue || {};
+    return `${options.useGpu ? 'True' : 'False'}|${String(options.gpuDevices || '')}`;
+  }
+
+  function simulationGreenWorkspaceSignature(request) {
+    const positions = Array.isArray(request?.positions) ? [...request.positions] : [];
+    positions.sort((left, right) => {
+      const a = String(left?.key || '').toUpperCase(), b = String(right?.key || '').toUpperCase();
+      return a < b ? -1 : a > b ? 1 : 0;
+    });
+    return positions.map((position) => `|${String(position?.key || '')}|G:${runtimeSignaturePath(position?.greenWorkspacePath)}`).join('');
+  }
+
+  function isCompatiblePreloadedRuntime(request, runtime = state.simulationAgent) {
+    if (!runtime?.runtimePreloaded) return false;
+    const expectedSignature = simulationRuntimeSignature(request);
+    if (runtime.runtimePreloadSignature === expectedSignature) return true;
+    return String(request?.mode || '').toLowerCase() === 'green'
+      && runtime.runtimePreloadMode === 'integrated'
+      && runtime.runtimePreloadControlSignature === simulationRuntimeControlSignature(request)
+      && runtime.runtimePreloadGreenWorkspaceSignature === simulationGreenWorkspaceSignature(request);
+  }
+
   function clearSimulationRuntimeReadiness() {
     state.simulationRuntimeToken = '';
     state.simulationRuntimeSignature = '';
@@ -3573,6 +3624,8 @@
       state.simulationAgent.runtimePreloadMode = '';
       state.simulationAgent.runtimePreloadToken = '';
       state.simulationAgent.runtimePreloadSignature = '';
+      state.simulationAgent.runtimePreloadControlSignature = '';
+      state.simulationAgent.runtimePreloadGreenWorkspaceSignature = '';
       if (state.simulationAgent.status === 'connected') state.simulationAgent.vpdl = '미로드';
     }
     workspaceInspectCache.clear();
@@ -3652,9 +3705,8 @@
       if (notReady.length) throw new Error(`Runtime File Load를 먼저 완료하세요: ${notReady.map((target) => `${target.displayName} ${target.kind.toUpperCase()}`).join(', ')}`);
       const request = buildSimulationRequest();
       if (!request.positions.length) throw new Error('현재 시뮬레이션 모드에서 사용할 Position을 1개 이상 체크하세요.');
-      const currentSignature = simulationRuntimeSignature(request);
       const runtimeReady = !!state.simulationRuntimeToken &&
-        state.simulationRuntimeSignature === currentSignature &&
+        isCompatiblePreloadedRuntime(request) &&
         state.simulationRuntimeAgentInstance === String(state.simulationAgent.instanceId || '') &&
         state.simulationAgent.runtimePreloaded !== false &&
         (!state.simulationAgent.runtimePreloadToken || state.simulationAgent.runtimePreloadToken === state.simulationRuntimeToken);
@@ -3854,6 +3906,8 @@
       state.simulationAgent.runtimePreloadMode = String(data.mode || state.simulationMode || '');
       state.simulationAgent.runtimePreloadToken = state.simulationRuntimeToken;
       state.simulationAgent.runtimePreloadSignature = state.simulationRuntimeSignature;
+      state.simulationAgent.runtimePreloadControlSignature = String(data.controlSignature || simulationRuntimeControlSignature(request));
+      state.simulationAgent.runtimePreloadGreenWorkspaceSignature = String(data.greenWorkspaceSignature || simulationGreenWorkspaceSignature(request));
       state.simulationAgent.installedVpdl = data.installedVpdlVersion || data.vpdlVersion || state.simulationAgent.installedVpdl || '-';
       state.simulationAgent.vpdl = data.vpdlVersion || state.simulationAgent.installedVpdl;
       persistSimulationForm();
@@ -5055,6 +5109,7 @@
   }
 
   async function init() {
+    applyTheme();
     createExtensionDom();
     installInteractionGuards();
     installLegacyAiSuggestRuntimeBridge();

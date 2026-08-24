@@ -11,10 +11,10 @@ const picker = read('NativeShellPicker.cs');
 const pickerService = read('Services/PickerService.cs');
 const program = read('Program.cs');
 
-test('Agent v1.2.2 version is consistent', () => {
-  assert.match(program, /AgentVersion = "1\.2\.2"/);
-  assert.match(read('Properties/AssemblyInfo.cs'), /AssemblyVersion\("1\.2\.2\.0"\)/);
-  assert.match(read('BUILD_RELEASE_x64.cmd'), /v1\.2\.2/);
+test('Agent v1.2.3 version is consistent', () => {
+  assert.match(program, /AgentVersion = "1\.2\.3"/);
+  assert.match(read('Properties/AssemblyInfo.cs'), /AssemblyVersion\("1\.2\.3\.0"\)/);
+  assert.match(read('BUILD_RELEASE_x64.cmd'), /v1\.2\.3/);
 });
 
 test('HTTP server delegates picker lifecycle to the isolated picker service', () => {
@@ -70,6 +70,18 @@ test('installed VPDL and active Simulation Runtime are separate states', () => {
   assert.match(runtimeCheck, /DisposeInspectionControlLocked\(\)/);
   assert.match(runtimeCheck, /vpdlVersion = "-"/);
   assert.match(server, /new RuntimePreloadResponse \{ ok = true, mode = mode, installedVpdlVersion = _vpdlVersion, vpdlVersion = _vpdlVersion \}/);
+});
+
+test('Integrated Runtime is reusable for a compatible Green-only Simulation', () => {
+  assert.match(server, /private bool HasCompatiblePreloadedRuntime/);
+  assert.match(server, /requestedMode == "green"/);
+  assert.match(server, /_preloadedRuntimeMode, "integrated"/);
+  assert.match(server, /BuildRuntimeControlSignature\(req\)/);
+  assert.match(server, /BuildGreenWorkspaceSignature\(req\)/);
+  assert.match(server, /runtimePreloadControlSignature/);
+  assert.match(server, /runtimePreloadGreenWorkspaceSignature/);
+  assert.match(read('AgentDtos.cs'), /public string controlSignature/);
+  assert.match(read('AgentDtos.cs'), /public string greenWorkspaceSignature/);
 });
 
 test('installed Agent adds the Cognex native bin folder before loading VPDL Runtime', () => {

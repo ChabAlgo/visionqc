@@ -1,6 +1,6 @@
-# VisionQC Local Agent v1.2.2
+# VisionQC Local Agent v1.2.3
 
-## v1.2.2 유지보수 기준
+## v1.2.3 유지보수 기준
 
 - `Services/HistoryService.cs`: 이력 HTTP 요청과 비동기 import 작업 관리.
 - `Services/CsvHistoryFileImporter.cs`: CSV 한 줄씩 SQLite에 직접 적재.
@@ -8,7 +8,8 @@
 - `API_V1.2_HISTORY_KR.md`, `Services/HISTORY_SERVICE_KR.md`, `Persistence/HISTORY_STORE_KR.md`를 새 작업 전에 확인합니다.
 - Keyword 모드는 공통 Root를 모든 활성 Position에 전달하며, 중복 제거 키는 `Position + 파일 경로`입니다.
 - SQLite 조회 집계는 같은 `Cell ID + Position`의 마지막 기록을 대표값으로 사용합니다.
-- 배포 파일은 `VisionQC_Agent_Installer_v1.2.2.exe`, `VisionQC_Offline_v4.7.2.zip`입니다.
+- Integrated Runtime은 동일 GPU 조건 및 Green Workspace·Position 집합이면 Green 단독 Simulation에서 재사용합니다.
+- 배포 파일은 `VisionQC_Agent_Installer_v1.2.3.exe`, `VisionQC_Offline_v4.7.3.zip`입니다.
 
 # 이전 변경 이력
 
