@@ -14,7 +14,7 @@ namespace VisionQC.AgentInstaller
     internal static class Program
     {
         private const string AgentExe = "VisionQC.LocalAgent.exe";
-        private const string ProductVersion = "1.1.0";
+        private const string ProductVersion = "1.2.0";
         private static readonly PayloadFile[] Payload =
         {
             new PayloadFile("VisionQC.AgentInstaller.Payload.Agent.VisionQC.LocalAgent.exe", AgentExe),
@@ -25,6 +25,7 @@ namespace VisionQC.AgentInstaller
             new PayloadFile("VisionQC.AgentInstaller.Payload.Web.index.html", "Web\\index.html"),
             new PayloadFile("VisionQC.AgentInstaller.Payload.Web.visionqc-extension.js", "Web\\visionqc-extension.js"),
             new PayloadFile("VisionQC.AgentInstaller.Payload.Web.visionqc-extension.css", "Web\\visionqc-extension.css"),
+            new PayloadFile("VisionQC.AgentInstaller.Payload.Web.visionqc-v470.css", "Web\\visionqc-v470.css"),
             new PayloadFile("VisionQC.AgentInstaller.Payload.Web.visionqc-v4433-clean.css", "Web\\visionqc-v4433-clean.css"),
             new PayloadFile("VisionQC.AgentInstaller.Payload.Web.assets.index-v4.4.33.js", "Web\\assets\\index-v4.4.33.js"),
             new PayloadFile("VisionQC.AgentInstaller.Payload.Web.assets.jszip.min.js", "Web\\assets\\jszip.min.js"),

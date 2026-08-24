@@ -11,10 +11,10 @@ const picker = read('NativeShellPicker.cs');
 const pickerService = read('Services/PickerService.cs');
 const program = read('Program.cs');
 
-test('Agent v1.1.0 version is consistent', () => {
-  assert.match(program, /AgentVersion = "1\.1\.0"/);
-  assert.match(read('Properties/AssemblyInfo.cs'), /AssemblyVersion\("1\.1\.0\.0"\)/);
-  assert.match(read('BUILD_RELEASE_x64.cmd'), /v1\.1\.0/);
+test('Agent v1.2.0 version is consistent', () => {
+  assert.match(program, /AgentVersion = "1\.2\.0"/);
+  assert.match(read('Properties/AssemblyInfo.cs'), /AssemblyVersion\("1\.2\.0\.0"\)/);
+  assert.match(read('BUILD_RELEASE_x64.cmd'), /v1\.2\.0/);
 });
 
 test('HTTP server delegates picker lifecycle to the isolated picker service', () => {
@@ -115,4 +115,33 @@ test('SQLite history and CSV FullPath preview stay in dedicated services', () =>
   const green = read('Engine/GreenOverlayProcessor.cs');
   assert.match(green, /OverlayPath/);
   assert.match(server, /HeatmapImageSave = !integrated/);
+});
+
+test('large CSV history import and server-side history search stay outside AgentServer', () => {
+  assert.match(server, /case "\/api\/history\/search"/);
+  assert.match(server, /case "\/api\/history\/import-file\/start"/);
+  assert.match(server, /case "\/api\/history\/import-file\/status"/);
+  assert.match(server, /new HistoryService\(_historyStore, _json\)/);
+  assert.match(server, /VISIONQC_HISTORY_DB_PATH/);
+  assert.match(read('VisionQC.LocalAgent.csproj'), /Services\\HistoryService\.cs/);
+  assert.match(read('VisionQC.LocalAgent.csproj'), /Services\\CsvHistoryFileImporter\.cs/);
+  const history = read('Services/HistoryService.cs');
+  const importer = read('Services/CsvHistoryFileImporter.cs');
+  const store = read('Persistence/SqliteRunStore.cs');
+  assert.match(history, /Task\.Run\(\(\) => RunFileImport/);
+  assert.match(importer, /StreamReader/);
+  assert.match(importer, /ReadLine\(\)/);
+  assert.match(importer, /CaptureTimestamp/);
+  assert.match(store, /AgentHistorySearchResponse Search/);
+  assert.match(store, /BuildSearchWhere/);
+  assert.match(store, /idx_images_capture_result/);
+});
+
+test('AI Suggest auto-selects one filename Position and can save Green heatmap overlays', () => {
+  assert.match(server, /case "\/api\/classification\/inspect\/auto"/);
+  assert.match(server, /private object InspectSingleGreenImageAuto/);
+  assert.match(server, /PositionResolver\.Resolve/);
+  assert.match(server, /RuntimePreloadResponse preload = PreloadRuntime/);
+  assert.match(server, /config\.HeatmapImageSave = req\.green != null && req\.green\.heatmapImageSave/);
+  assert.match(read('AgentDtos.cs'), /bool heatmapImageSave/);
 });

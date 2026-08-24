@@ -63,6 +63,8 @@
     <Compile Include="Services\PositionResolver.cs" />
     <Compile Include="Services\PickerService.cs" />
     <Compile Include="Services\ImagePreviewService.cs" />
+    <Compile Include="Services\HistoryService.cs" />
+    <Compile Include="Services\CsvHistoryFileImporter.cs" />
     <Compile Include="Persistence\SqliteRunStore.cs" />
     <Compile Include="Engine\Models.cs" />
     <Compile Include="Engine\GreenOverlayProcessor.cs" />

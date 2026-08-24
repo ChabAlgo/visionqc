@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.Data.SQLite;
 using System.Globalization;
 using System.IO;
+using VisionQC.LocalAgent;
 using VisionQC.LocalAgent.Domain;
 using VisionQC.LocalAgent.Services;
 using VpdlGreenHeatmapOverlay;
@@ -91,6 +92,7 @@ VALUES (@run_id, @source_type, @mode, @source_name, @started_at_utc, 'running', 
                 Position = record.position,
                 TotalResult = record.totalResult,
                 Judgement = record.judgement,
+                CaptureTimestamp = record.captureTimestamp,
                 Tools = tools
             });
         }
@@ -133,7 +135,7 @@ VALUES (@run_id, @source_type, @mode, @source_name, @started_at_utc, 'running', 
             }
             catch { }
             string cellId = FirstNonEmpty(parsed == null ? "" : parsed.cellId, record.CellId);
-            string captureTimestamp = parsed == null ? "" : (parsed.captureTimestamp ?? "");
+            string captureTimestamp = FirstNonEmpty(record.CaptureTimestamp, parsed == null ? "" : (parsed.captureTimestamp ?? ""));
             long imageId;
             using (var command = session.Connection.CreateCommand())
             {
@@ -175,6 +177,185 @@ SELECT last_insert_rowid();";
             if (session.PendingCount >= CommitBatchSize) CommitAndContinue(session);
         }
 
+        // 조회는 SQLite 안에서 필터링/집계한 뒤 한 페이지의 이미지 행만 반환한다.
+        // 따라서 이력 수가 수십만 건이어도 브라우저에 전체 이력이나 파일 경로를 적재하지 않는다.
+        internal AgentHistorySearchResponse Search(AgentHistorySearchRequest request)
+        {
+            request = request ?? new AgentHistorySearchRequest();
+            EnsureSchema();
+            int page = Math.Max(1, request.page);
+            int pageSize = Math.Max(10, Math.Min(100, request.pageSize <= 0 ? 50 : request.pageSize));
+            var response = new AgentHistorySearchResponse
+            {
+                ok = true,
+                page = page,
+                pageSize = pageSize,
+                databasePath = DatabasePath
+            };
+
+            using (var connection = new SQLiteConnection("Data Source=" + _databasePath + ";Version=3;Foreign Keys=True;Read Only=False;"))
+            {
+                connection.Open();
+                using (var command = connection.CreateCommand())
+                {
+                    string where = BuildSearchWhere(command, request);
+                    command.CommandText = @"SELECT COUNT(*),
+SUM(CASE WHEN UPPER(IFNULL(i.total_result,''))='NG' THEN 1 ELSE 0 END),
+COUNT(DISTINCT CASE WHEN IFNULL(i.cell_id,'')<>'' THEN i.cell_id END)
+FROM images i WHERE " + where + ";";
+                    using (SQLiteDataReader reader = command.ExecuteReader())
+                    {
+                        if (reader.Read())
+                        {
+                            response.totalCount = ReadLong(reader, 0);
+                            response.ngCount = ReadLong(reader, 1);
+                            response.uniqueCellCount = ReadLong(reader, 2);
+                        }
+                    }
+                }
+
+                using (var command = connection.CreateCommand())
+                {
+                    string where = BuildSearchWhere(command, request);
+                    string day = "substr(COALESCE(NULLIF(i.capture_timestamp,''), i.inspected_at_utc),1,10)";
+                    command.CommandText = @"SELECT " + day + @" AS day_text, COUNT(*) AS total_count,
+SUM(CASE WHEN UPPER(IFNULL(i.total_result,''))='NG' THEN 1 ELSE 0 END) AS ng_count
+FROM images i WHERE " + where + @"
+GROUP BY " + day + @"
+ORDER BY day_text DESC LIMIT 730;";
+                    using (SQLiteDataReader reader = command.ExecuteReader())
+                    {
+                        while (reader.Read())
+                        {
+                            long total = ReadLong(reader, 1);
+                            long ng = ReadLong(reader, 2);
+                            response.daily.Add(new AgentHistoryDailySummary
+                            {
+                                date = ReadString(reader, 0),
+                                total = total,
+                                ng = ng,
+                                ngRate = total == 0 ? 0 : (double)ng / total
+                            });
+                        }
+                    }
+                    response.daily.Reverse();
+                }
+
+                var records = new Dictionary<long, AgentHistoryImageRecord>();
+                using (var command = connection.CreateCommand())
+                {
+                    string where = BuildSearchWhere(command, request);
+                    command.CommandText = @"SELECT i.image_id, i.run_id, i.source_file_name, i.source_row_number, i.full_path,
+i.cell_id, i.position_key, i.total_result, i.judgement, i.capture_timestamp, i.inspected_at_utc
+FROM images i WHERE " + where + @"
+ORDER BY COALESCE(NULLIF(i.capture_timestamp,''), i.inspected_at_utc) DESC, i.image_id DESC
+LIMIT @limit OFFSET @offset;";
+                    Add(command, "@limit", pageSize);
+                    Add(command, "@offset", (long)(page - 1) * pageSize);
+                    using (SQLiteDataReader reader = command.ExecuteReader())
+                    {
+                        while (reader.Read())
+                        {
+                            var item = new AgentHistoryImageRecord
+                            {
+                                imageId = ReadLong(reader, 0),
+                                runId = ReadString(reader, 1),
+                                sourceFileName = ReadString(reader, 2),
+                                sourceRowNumber = Convert.ToInt32(ReadLong(reader, 3)),
+                                fullPath = ReadString(reader, 4),
+                                cellId = ReadString(reader, 5),
+                                position = ReadString(reader, 6),
+                                totalResult = ReadString(reader, 7),
+                                judgement = ReadString(reader, 8),
+                                captureTimestamp = ReadString(reader, 9),
+                                inspectedAtUtc = ReadString(reader, 10)
+                            };
+                            records[item.imageId] = item;
+                            response.items.Add(item);
+                        }
+                    }
+                }
+
+                if (records.Count > 0)
+                {
+                    using (var command = connection.CreateCommand())
+                    {
+                        var names = new List<string>();
+                        int index = 0;
+                        foreach (long imageId in records.Keys)
+                        {
+                            string name = "@image" + index++;
+                            names.Add(name);
+                            Add(command, name, imageId);
+                        }
+                        command.CommandText = "SELECT image_id, tool_name, result, score, overlay_path FROM tool_results WHERE image_id IN (" + string.Join(",", names) + ") ORDER BY tool_name;";
+                        using (SQLiteDataReader reader = command.ExecuteReader())
+                        {
+                            while (reader.Read())
+                            {
+                                long imageId = ReadLong(reader, 0);
+                                AgentHistoryImageRecord item;
+                                if (!records.TryGetValue(imageId, out item)) continue;
+                                item.tools.Add(new AgentHistoryToolResultRequest
+                                {
+                                    tool = ReadString(reader, 1),
+                                    result = ReadString(reader, 2),
+                                    score = reader.IsDBNull(3) ? (double?)null : Convert.ToDouble(reader.GetValue(3), CultureInfo.InvariantCulture),
+                                    overlayPath = ReadString(reader, 4)
+                                });
+                            }
+                        }
+                    }
+                }
+            }
+            return response;
+        }
+
+        private static string BuildSearchWhere(SQLiteCommand command, AgentHistorySearchRequest request)
+        {
+            var conditions = new List<string> { "1=1" };
+            string fromDate = NormalizeDate(request.fromDate);
+            string toDate = NormalizeDate(request.toDate);
+            string dateExpression = "substr(COALESCE(NULLIF(i.capture_timestamp,''), i.inspected_at_utc),1,10)";
+            if (!string.IsNullOrWhiteSpace(fromDate)) { conditions.Add(dateExpression + " >= @fromDate"); Add(command, "@fromDate", fromDate); }
+            if (!string.IsNullOrWhiteSpace(toDate)) { conditions.Add(dateExpression + " <= @toDate"); Add(command, "@toDate", toDate); }
+            if (!string.IsNullOrWhiteSpace(request.cellId)) { conditions.Add("UPPER(IFNULL(i.cell_id,'')) LIKE @cellId"); Add(command, "@cellId", "%" + request.cellId.Trim().ToUpperInvariant() + "%"); }
+            if (!string.IsNullOrWhiteSpace(request.position)) { conditions.Add("i.position_key = @position"); Add(command, "@position", request.position.Trim()); }
+            if (!string.IsNullOrWhiteSpace(request.totalResult)) { conditions.Add("UPPER(IFNULL(i.total_result,'')) = @totalResult"); Add(command, "@totalResult", request.totalResult.Trim().ToUpperInvariant()); }
+            if (!string.IsNullOrWhiteSpace(request.sourceName))
+            {
+                conditions.Add("EXISTS (SELECT 1 FROM runs r WHERE r.run_id=i.run_id AND IFNULL(r.source_name,'') LIKE @sourceName)");
+                Add(command, "@sourceName", "%" + request.sourceName.Trim() + "%");
+            }
+            if (!string.IsNullOrWhiteSpace(request.tool) || !string.IsNullOrWhiteSpace(request.toolResult))
+            {
+                var toolWhere = new List<string> { "tr.image_id=i.image_id" };
+                if (!string.IsNullOrWhiteSpace(request.tool)) { toolWhere.Add("tr.tool_name=@tool"); Add(command, "@tool", request.tool.Trim()); }
+                if (!string.IsNullOrWhiteSpace(request.toolResult)) { toolWhere.Add("UPPER(IFNULL(tr.result,''))=@toolResult"); Add(command, "@toolResult", request.toolResult.Trim().ToUpperInvariant()); }
+                conditions.Add("EXISTS (SELECT 1 FROM tool_results tr WHERE " + string.Join(" AND ", toolWhere) + ")");
+            }
+            return string.Join(" AND ", conditions);
+        }
+
+        private static string NormalizeDate(string value)
+        {
+            string text = (value ?? "").Trim();
+            if (text.Length >= 10) text = text.Substring(0, 10);
+            DateTime parsed;
+            return DateTime.TryParseExact(text, "yyyy-MM-dd", CultureInfo.InvariantCulture, DateTimeStyles.None, out parsed)
+                ? parsed.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture) : "";
+        }
+
+        private static long ReadLong(SQLiteDataReader reader, int ordinal)
+        {
+            return reader.IsDBNull(ordinal) ? 0L : Convert.ToInt64(reader.GetValue(ordinal), CultureInfo.InvariantCulture);
+        }
+
+        private static string ReadString(SQLiteDataReader reader, int ordinal)
+        {
+            return reader.IsDBNull(ordinal) ? "" : Convert.ToString(reader.GetValue(ordinal), CultureInfo.InvariantCulture) ?? "";
+        }
+
         private void EnsureSchema()
         {
             lock (_schemaSync)
@@ -210,6 +391,7 @@ CREATE TABLE IF NOT EXISTS tool_results (
 CREATE INDEX IF NOT EXISTS idx_images_run_sequence ON images(run_id, sequence_no);
 CREATE INDEX IF NOT EXISTS idx_images_cell_capture ON images(cell_id, capture_timestamp);
 CREATE INDEX IF NOT EXISTS idx_images_full_path ON images(full_path);
+CREATE INDEX IF NOT EXISTS idx_images_capture_result ON images(capture_timestamp, total_result);
 CREATE INDEX IF NOT EXISTS idx_tool_results_run_tool ON tool_results(run_id, tool_name);";
                         command.ExecuteNonQuery();
                     }
@@ -271,6 +453,7 @@ CREATE INDEX IF NOT EXISTS idx_tool_results_run_tool ON tool_results(run_id, too
             internal string Position;
             internal string TotalResult;
             internal string Judgement;
+            internal string CaptureTimestamp;
             internal List<HistoryToolValue> Tools;
         }
 

@@ -33,12 +33,35 @@
 - Web GUI는 GitHub Pages와 오프라인 Local Agent 페이지 모두에서 동작한다. 외부 CDN 의존성은 없다.
 - 설치 EXE 하나로 Agent 설치, 프로토콜 등록, Agent 실행, 오프라인 UI 열기를 처리한다.
 
-## 보류/후속 기능
+## 미완료 기능 · 다음 작업 우선순위
 
-- SQLite 이력 조회 화면(날짜별 NG율 그래프, Cell/기간/Tool 검색, Dashboard 연결).
-- Green Heatmap을 이미지 Viewer에서 켜고 끄는 상호작용 Overlay.
-- AI Suggest가 파일명 Position을 기준으로 적절한 Runtime Workspace를 자동 선택하여 단일 검사를 수행하는 고도화.
-- 전체 UI 글자 크기 확대 및 세부 레이아웃 조정(사용자가 “지금 바로는 말고”라고 보류).
+> 이 목록은 v4.6.0 시점의 미완료 상태를 보존한 기록입니다. 아래 항목은 v4.7.0 / Agent v1.2.0에서 구현되었으며, 현재 기준은 `USER_REQUESTS_V4.7.0_KR.md`를 따릅니다.
+
+아래는 이번 v4.6.0에서 **구현하지 않은 항목**이다. SQLite 파일과 저장 API가 생겼다고 해서 조회/대시보드까지 완료된 것은 아니다.
+
+1. **SQLite 이력 조회 화면과 날짜별 NG율 Dashboard**
+   - 기간/Cell ID/Position/Tool 검색, 페이지네이션 API, 날짜별 NG율 그래프, 기존 Dashboard 연결은 아직 없다.
+   - 현재는 Simulation/단일 검사 자동 기록과 사용자가 누르는 CSV 저장만 가능하다.
+2. **대량 CSV(수십만~100만 행) 메모리 구조 개선**
+   - 현재 CSV 분석은 여전히 브라우저 메모리에서 파싱·집계한다.
+   - SQLite 저장은 영구 보관을 위한 것이며, 대형 CSV를 처음부터 메모리 없이 분석하는 스트리밍/Worker/서버 인덱싱 구조는 다음 단계다.
+3. **전체 Cell 이미지 탐색 화면**
+   - 현재는 Score 차트 점을 클릭했을 때 CSV `FullPath` 원본을 연다.
+   - Cell 검색 결과·미검 목록·Dashboard에서 모든 검사 이미지와 Overlay를 탐색하는 전용 Image Viewer는 아직 없다.
+4. **Green Heatmap Viewer On/Off**
+   - 현재는 Green 단독 NG의 Overlay JPEG 저장만 구현했다.
+   - 원본/Overlay 전환, 투명도 변경, Tool별 Overlay 선택은 아직 구현하지 않았다.
+5. **AI Suggest 자동 Workspace 검사**
+   - 현재 단일 Green 검사는 파일명 Position 매칭과 사전 Runtime Load를 요구한다.
+   - 파일명의 Position 문자열로 Workspace를 자동 선택하고 Tool별 Score/Overlay를 보여 주는 AI Suggest 완성 흐름은 아직 구현하지 않았다.
+6. **대규모 구조 재분리**
+   - `Persistence`, `ImagePreviewService`, Naming/Picker 서비스는 분리했지만 `AgentServer.cs`와 `visionqc-extension.js`는 여전히 큰 조율 파일이다.
+   - Simulation Controller, API Handler, Web Store/View/CSV Worker로의 본격 분리는 다음 리팩터링 단계다.
+7. **UI 글자 크기/세부 레이아웃 조정**
+   - 사용자가 “지금 바로는 말고”라고 보류한 항목으로, 아직 변경하지 않았다.
+8. **GitHub Release 페이지 생성 및 파일 첨부**
+   - `main` 푸시, 태그 푸시, GitHub Pages 반영은 완료했다.
+   - GitHub Release 웹 페이지를 만들고 EXE/ZIP을 첨부하는 작업은 아직 하지 않았다.
 
 ## 변경 작업 수칙
 

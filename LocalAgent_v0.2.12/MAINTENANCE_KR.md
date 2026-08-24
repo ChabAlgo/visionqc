@@ -10,6 +10,6 @@
 
 시작 시 `Program.cs`가 Cognex VPDL Studio와 설치 루트의 `bin`/`Service` 폴더를 현재 프로세스 DLL 검색 경로에 넣는다. 설치본에서 Runtime 오류 126이 발생하면 이 경로 설정과 VPDL Runtime/라이선스 설치 상태를 먼저 확인한다.
 
-하위 폴더의 `README_KR.md`에는 목적·의존성·제한·수정 규칙을 적었다. 새 대화에서는 이 문서와 `..\USER_REQUESTS_V4.6.0_KR.md`, `..\ARCHITECTURE_V4.6.0_KR.md`를 먼저 읽는다.
+하위 폴더의 `README_KR.md`에는 목적·의존성·제한·수정 규칙을 적었다. 새 대화에서는 이 문서와 `..\USER_REQUESTS_V4.7.0_KR.md`, `..\ARCHITECTURE_V4.7.0_KR.md`, `Services\HISTORY_SERVICE_KR.md`, `Persistence\HISTORY_STORE_KR.md`를 먼저 읽는다.
 
 `bin`, `obj`는 빌드 산출물이며 직접 수정하지 않는다. `OfflineInstaller`에 새 런타임 DLL을 추가했다면 설치 프로그램의 Payload와 `.csproj` EmbeddedResource도 반드시 함께 추가한다.

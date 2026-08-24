@@ -15,8 +15,8 @@ const installerProject = read('LocalAgent_v0.2.12/OfflineInstaller/VisionQC.Agen
 test('download controls point to the versioned single-exe and offline package', () => {
   assert.match(web, /simulation-agent-download/);
   assert.match(web, /simulation-offline-download/);
-  assert.match(web, /VisionQC_Agent_Installer_v1\.1\.0\.exe/);
-  assert.match(web, /VisionQC_Offline_v4\.6\.0\.zip/);
+  assert.match(web, /VisionQC_Agent_Installer_v1\.2\.0\.exe/);
+  assert.match(web, /VisionQC_Offline_v4\.7\.0\.zip/);
   assert.match(web, /function downloadAgentInstaller/);
   assert.match(web, /function downloadOfflinePackage/);
 });
@@ -26,6 +26,7 @@ test('offline entry UI has no CDN or remote stylesheet/script dependency', () =>
   assert.match(html, /assets\/tailwind-offline\.css/);
   assert.match(html, /assets\/jszip\.min\.js/);
   assert.match(html, /assets\/index-v4\.4\.33\.js/);
+  assert.match(html, /visionqc-v470\.css/);
   assert.match(read('assets/tailwind-offline.css'), /fonts\/inter-latin-400-normal\.woff2/);
 });
 
@@ -47,6 +48,7 @@ test('single installer embeds the local UI, registers protocol, and launches off
   assert.match(installer, /IsLoopbackAgentPortOpen/);
   assert.match(installerProject, /Payload\.Web\.index\.html/);
   assert.match(installerProject, /Payload\.Web\.assets\.index-v4\.4\.33\.js/);
+  assert.match(installerProject, /Payload\.Web\.visionqc-v470\.css/);
   assert.match(installerProject, /Payload\.Web\.assets\.fonts\.inter-latin-400-normal\.woff2/);
   assert.match(installerProject, /Payload\.Agent\.System\.Data\.SQLite\.dll/);
   assert.match(installerProject, /Payload\.Agent\.x64\.SQLite\.Interop\.dll/);

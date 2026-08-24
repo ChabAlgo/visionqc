@@ -176,4 +176,25 @@ test.describe('VisionQC v4.4.38 FHD interaction regression', () => {
     expect(result.koreanTime).toBe('17:17:04.000');
     expect(result.agentTime).toBe('17:17:26.771');
   });
+
+  test('SQLite History and AI inspection navigation render without an Agent connection', async ({ page }) => {
+    await page.goto('/index.html?vqDebug=1&browserRegression=1', { waitUntil: 'domcontentloaded' });
+    await page.waitForFunction(() => Boolean(window.__VISIONQC_DEBUG__), null, { timeout: 15000 });
+
+    await page.locator('[data-vq-page="main"]').click();
+    await expect(page.locator('.vq43-main-history-dashboard')).toBeVisible();
+
+    await page.locator('[data-vq-page="history"]').click();
+    await expect(page.locator('.vq43-history-page')).toBeVisible();
+    await expect(page.locator('[data-history-field="cellId"]')).toBeVisible();
+    await expect(page.locator('.vq43-history-kpis')).toBeVisible();
+
+    await page.locator('[data-vq-page="inspection"]').click();
+    await expect(page.locator('.vq43-inspection-page')).toBeVisible();
+    await expect(page.locator('#vq43-inspection-image-path')).toBeVisible();
+    await expect(page.locator('#vq43-inspection-heatmap')).toBeChecked();
+
+    const settingSvg = await page.locator('[data-vq-page="settings"] .vq43-icon-svg').count();
+    expect(settingSvg).toBeGreaterThan(0);
+  });
 });

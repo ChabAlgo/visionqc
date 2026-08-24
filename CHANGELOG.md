@@ -303,3 +303,10 @@
 - Stream은 Runtime에서 읽은 목록으로 dropdown을 구성합니다.
 - Tool Settings의 Position별 체크박스를 제거했습니다. Tool은 실행 대상으로 체크한 모든 Position에 동일하게 적용됩니다.
 - ToolName은 text input으로 유지하며 Runtime에서 발견된 Green Tool이면 초록색, 없으면 빨간색, 구조 미확인이면 중립색으로 표시합니다.
+# v4.7.0 / Local Agent v1.2.0
+
+- SQLite 검사 이력 Viewer와 날짜별 NG율, Cell/Position/Tool/결과 필터, 페이지 조회를 추가했습니다.
+- 대용량 CSV를 Agent가 줄 단위로 SQLite에 직접 적재하도록 추가했습니다.
+- 파일명 Position 기반 Green Workspace 자동 선택 AI 검사와 Tool별 Green Heatmap Overlay 전환을 추가했습니다.
+- History Service/CSV Importer/SQLite Store 문서와 회귀 테스트를 추가했습니다.
+- 설정 아이콘을 SVG 톱니바퀴로 교체했습니다.

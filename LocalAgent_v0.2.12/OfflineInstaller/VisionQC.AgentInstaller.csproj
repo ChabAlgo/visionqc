@@ -40,6 +40,7 @@
     <EmbeddedResource Include="..\..\index.html"><LogicalName>VisionQC.AgentInstaller.Payload.Web.index.html</LogicalName></EmbeddedResource>
     <EmbeddedResource Include="..\..\visionqc-extension.js"><LogicalName>VisionQC.AgentInstaller.Payload.Web.visionqc-extension.js</LogicalName></EmbeddedResource>
     <EmbeddedResource Include="..\..\visionqc-extension.css"><LogicalName>VisionQC.AgentInstaller.Payload.Web.visionqc-extension.css</LogicalName></EmbeddedResource>
+    <EmbeddedResource Include="..\..\visionqc-v470.css"><LogicalName>VisionQC.AgentInstaller.Payload.Web.visionqc-v470.css</LogicalName></EmbeddedResource>
     <EmbeddedResource Include="..\..\visionqc-v4433-clean.css"><LogicalName>VisionQC.AgentInstaller.Payload.Web.visionqc-v4433-clean.css</LogicalName></EmbeddedResource>
     <EmbeddedResource Include="..\..\assets\index-v4.4.33.js"><LogicalName>VisionQC.AgentInstaller.Payload.Web.assets.index-v4.4.33.js</LogicalName></EmbeddedResource>
     <EmbeddedResource Include="..\..\assets\jszip.min.js"><LogicalName>VisionQC.AgentInstaller.Payload.Web.assets.jszip.min.js</LogicalName></EmbeddedResource>

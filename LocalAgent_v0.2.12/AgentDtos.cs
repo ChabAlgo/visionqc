@@ -69,6 +69,8 @@ namespace VisionQC.LocalAgent
         public string position { get; set; }
         public string totalResult { get; set; }
         public string judgement { get; set; }
+        // CSV 열 또는 파일명 규칙에서 계산한 촬영 시각입니다. 없으면 파일명 규칙 결과를 사용합니다.
+        public string captureTimestamp { get; set; }
         public List<AgentHistoryToolResultRequest> tools { get; set; }
     }
 
@@ -78,6 +80,81 @@ namespace VisionQC.LocalAgent
         public string result { get; set; }
         public double? score { get; set; }
         public string overlayPath { get; set; }
+    }
+
+    // SQLite 이력은 항상 Agent에서 페이지 단위로 조회합니다. 대량 이력을 브라우저 배열로 전송하지 않습니다.
+    public sealed class AgentHistorySearchRequest
+    {
+        public string fromDate { get; set; }
+        public string toDate { get; set; }
+        public string cellId { get; set; }
+        public string position { get; set; }
+        public string tool { get; set; }
+        public string toolResult { get; set; }
+        public string totalResult { get; set; }
+        public string sourceName { get; set; }
+        public int page { get; set; } = 1;
+        public int pageSize { get; set; } = 50;
+    }
+
+    public sealed class AgentHistorySearchResponse
+    {
+        public bool ok { get; set; }
+        public string error { get; set; }
+        public string databasePath { get; set; }
+        public int page { get; set; }
+        public int pageSize { get; set; }
+        public long totalCount { get; set; }
+        public long ngCount { get; set; }
+        public long uniqueCellCount { get; set; }
+        public List<AgentHistoryDailySummary> daily { get; set; } = new List<AgentHistoryDailySummary>();
+        public List<AgentHistoryImageRecord> items { get; set; } = new List<AgentHistoryImageRecord>();
+    }
+
+    public sealed class AgentHistoryDailySummary
+    {
+        public string date { get; set; }
+        public long total { get; set; }
+        public long ng { get; set; }
+        public double ngRate { get; set; }
+    }
+
+    public sealed class AgentHistoryImageRecord
+    {
+        public long imageId { get; set; }
+        public string runId { get; set; }
+        public string sourceFileName { get; set; }
+        public int sourceRowNumber { get; set; }
+        public string fullPath { get; set; }
+        public string cellId { get; set; }
+        public string position { get; set; }
+        public string totalResult { get; set; }
+        public string judgement { get; set; }
+        public string captureTimestamp { get; set; }
+        public string inspectedAtUtc { get; set; }
+        public List<AgentHistoryToolResultRequest> tools { get; set; } = new List<AgentHistoryToolResultRequest>();
+    }
+
+    public sealed class AgentHistoryFileImportRequest
+    {
+        public string filePath { get; set; }
+        public string sourceName { get; set; }
+        public string mode { get; set; }
+        public string webVersion { get; set; }
+        public string defaultPosition { get; set; }
+        public NamingProfile namingProfile { get; set; }
+    }
+
+    public sealed class AgentHistoryFileImportStatus
+    {
+        public bool ok { get; set; }
+        public bool running { get; set; }
+        public bool completed { get; set; }
+        public string jobId { get; set; }
+        public string filePath { get; set; }
+        public long processed { get; set; }
+        public string error { get; set; }
+        public string databasePath { get; set; }
     }
 
     public sealed class AgentGreenOptions

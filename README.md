@@ -1,4 +1,13 @@
-# VisionQC GitHub Pages v4.4.38
+# VisionQC v4.7.0
+
+## 현재 릴리스 안내
+
+- 설치 파일: `downloads/VisionQC_Agent_Installer_v1.2.0.exe`
+- 오프라인 패키지: `downloads/VisionQC_Offline_v4.7.0.zip`
+- SQLite 이력, 대용량 CSV 직접 적재, 파일명 Position 기반 AI Green 검사, 원본/Heatmap Viewer를 제공합니다.
+- 새 대화/유지보수 시작 시 `USER_REQUESTS_V4.7.0_KR.md`, `ARCHITECTURE_V4.7.0_KR.md`, `RELEASE_NOTES_v4.7.0_KR.md`를 먼저 확인합니다.
+
+# 이전 변경 이력
 
 GitHub Pages 정적 배포용 VisionQC Web입니다. 실제 VPDL Runtime/GPU 작업은 사용자 PC의 VisionQC Local Agent v0.2.12에서 실행합니다.
 

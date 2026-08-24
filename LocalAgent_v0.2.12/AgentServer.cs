@@ -30,7 +30,8 @@ namespace VisionQC.LocalAgent
         private readonly JavaScriptSerializer _json = new JavaScriptSerializer { MaxJsonLength = int.MaxValue };
         private readonly object _sync = new object();
         private readonly object _vpdlSync = new object();
-        private readonly object _historySync = new object();
+        // Simulation/단일 검사 이력 기록은 하나의 SQLite writer 순서를 유지한다.
+        private readonly object _historyWriteSync = new object();
         private readonly List<SseClient> _sse = new List<SseClient>();
         private readonly Dictionary<string, WorkspaceInspectionCacheEntry> _workspaceInspectionCache = new Dictionary<string, WorkspaceInspectionCacheEntry>(StringComparer.OrdinalIgnoreCase);
         private TcpListener _listener;
@@ -62,7 +63,7 @@ namespace VisionQC.LocalAgent
         private readonly PickerService _picker;
         private readonly ImagePreviewService _imagePreview;
         private readonly SqliteRunStore _historyStore;
-        private readonly Dictionary<string, SqliteRunStore.RunStoreSession> _csvHistorySessions = new Dictionary<string, SqliteRunStore.RunStoreSession>(StringComparer.OrdinalIgnoreCase);
+        private readonly HistoryService _history;
         private SqliteRunStore.RunStoreSession _simulationHistorySession;
         private bool _simulationHistoryWriteFailed;
 
@@ -72,7 +73,8 @@ namespace VisionQC.LocalAgent
             _gpuName = DetectGpuName();
             _picker = new PickerService(AppendAgentLog);
             _imagePreview = new ImagePreviewService();
-            _historyStore = new SqliteRunStore(Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "VisionQC", "LocalAgent", "data", "visionqc-history.sqlite"));
+            _historyStore = new SqliteRunStore(ResolveHistoryDatabasePath());
+            _history = new HistoryService(_historyStore, _json);
         }
 
         public void RunUntilExit(bool openOfflinePage = false)
@@ -95,6 +97,15 @@ namespace VisionQC.LocalAgent
             if (openOfflinePage) Task.Run(OpenOfflinePage);
 
             while (!_serverCts.IsCancellationRequested) Thread.Sleep(250);
+        }
+
+        // 테스트/복구 도구에서만 VISIONQC_HISTORY_DB_PATH로 별도 SQLite 파일을 지정할 수 있다.
+        // 일반 설치 실행은 항상 LocalAppData의 영구 이력 DB를 사용한다.
+        private static string ResolveHistoryDatabasePath()
+        {
+            string overridePath = Environment.GetEnvironmentVariable("VISIONQC_HISTORY_DB_PATH");
+            if (!string.IsNullOrWhiteSpace(overridePath)) return Path.GetFullPath(overridePath.Trim());
+            return Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "VisionQC", "LocalAgent", "data", "visionqc-history.sqlite");
         }
 
         private async Task AcceptLoop(CancellationToken token)
@@ -189,8 +200,20 @@ namespace VisionQC.LocalAgent
                     case "/api/history/import":
                         result = ImportHistory(request.Body);
                         break;
+                    case "/api/history/search":
+                        result = _history.Search(request.Body);
+                        break;
+                    case "/api/history/import-file/start":
+                        result = _history.StartFileImport(request.Body);
+                        break;
+                    case "/api/history/import-file/status":
+                        result = _history.FileImportStatus(request.Body);
+                        break;
                     case "/api/classification/inspect":
                         result = InspectSingleGreenImage(request.Body);
+                        break;
+                    case "/api/classification/inspect/auto":
+                        result = InspectSingleGreenImageAuto(request.Body);
                         break;
                     case "/api/simulation/start":
                         result = StartSimulation(request.Body);
@@ -261,53 +284,7 @@ namespace VisionQC.LocalAgent
 
         private object ImportHistory(string body)
         {
-            AgentHistoryImportRequest request;
-            try { request = _json.Deserialize<AgentHistoryImportRequest>(body ?? "{}") ?? new AgentHistoryImportRequest(); }
-            catch (SysException ex) { return new { ok = false, error = "SQLite 이력 요청 JSON 오류: " + ex.Message }; }
-            string importId = (request.importId ?? "").Trim();
-            if (string.IsNullOrWhiteSpace(importId)) return new { ok = false, error = "SQLite 이력 importId가 필요합니다." };
-            if (request.records != null && request.records.Count > 250)
-                return new { ok = false, error = "SQLite 이력 저장은 요청당 250행 이하만 허용합니다." };
-
-            try
-            {
-                lock (_historySync)
-                {
-                    SqliteRunStore.RunStoreSession session;
-                    if (request.begin)
-                    {
-                        if (_csvHistorySessions.TryGetValue(importId, out session))
-                            _historyStore.Complete(session, "replaced", "새 CSV 저장 요청으로 교체됨");
-                        session = _historyStore.Start(new SqliteRunStore.RunStoreStart
-                        {
-                            SourceType = "csv-import",
-                            Mode = FirstNonEmpty(request.mode, "analysis"),
-                            SourceName = request.sourceName ?? "CSV 분석 결과",
-                            AgentVersion = Program.AgentVersion,
-                            WebVersion = request.webVersion ?? "",
-                            NamingProfile = request.namingProfile,
-                            NamingProfileJson = _json.Serialize(request.namingProfile ?? new NamingProfile())
-                        });
-                        _csvHistorySessions[importId] = session;
-                    }
-                    else if (!_csvHistorySessions.TryGetValue(importId, out session))
-                        return new { ok = false, error = "시작되지 않았거나 만료된 SQLite 이력 저장 요청입니다." };
-
-                    foreach (AgentHistoryRecordRequest record in request.records ?? new List<AgentHistoryRecordRequest>())
-                        _historyStore.AppendImportedRecord(session, record);
-                    if (request.complete)
-                    {
-                        _historyStore.Complete(session, "completed", "사용자 요청으로 CSV 분석 이력 저장 완료");
-                        _csvHistorySessions.Remove(importId);
-                    }
-                    return new { ok = true, importId = importId, saved = session.RecordCount, completed = request.complete, databasePath = _historyStore.DatabasePath };
-                }
-            }
-            catch (SysException ex)
-            {
-                AppendAgentLog("ERROR", "SQLite CSV 이력 저장 실패: " + ex.Message);
-                return new { ok = false, error = "SQLite CSV 이력 저장 실패: " + ex.Message };
-            }
+            return _history.ImportBrowserRows(body);
         }
 
         private object InspectSingleGreenImage(string body)
@@ -348,8 +325,10 @@ namespace VisionQC.LocalAgent
             bool reusable = true;
             try
             {
-                var config = BuildGreenConfig(req, Path.GetTempPath(), null, false);
-                config.HeatmapImageSave = false;
+                // 단일 AI 검사 Overlay는 임시 폴더가 아니라 사용자 LocalAppData에 남긴다.
+                // SQLite에는 Tool별 overlay_path만 저장하며, 원본 이미지 자체는 복사하지 않는다.
+                var config = BuildGreenConfig(req, SingleInspectionOutputRoot(), null, false);
+                config.HeatmapImageSave = req.green != null && req.green.heatmapImageSave;
                 config.WorkspaceSlots = config.WorkspaceSlots.Where(x => string.Equals(x.Key, position.key, StringComparison.OrdinalIgnoreCase)).ToList();
                 foreach (var tool in config.Tools) tool.PositionKeys = new List<string> { position.key };
                 LiveAnalysisRecord record = GreenOverlayProcessor.InspectSingle(config, position.key, req.imagePath, control, true, CancellationToken.None);
@@ -385,6 +364,41 @@ namespace VisionQC.LocalAgent
                     _vpdlReservedForSimulation = false;
                 }
             }
+        }
+
+        // 파일명 Position 문자열을 기준으로 Position/Green Workspace를 한 개로 좁힌 뒤,
+        // Runtime File Load와 단일 검사를 연속 수행하는 AI Suggest용 진입점이다.
+        private object InspectSingleGreenImageAuto(string body)
+        {
+            AgentSingleInspectionRequest req;
+            try { req = _json.Deserialize<AgentSingleInspectionRequest>(body ?? "{}"); }
+            catch (SysException ex) { return new { ok = false, error = "AI 자동 검사 설정 JSON 오류: " + ex.Message }; }
+            if (req == null || string.IsNullOrWhiteSpace(req.imagePath) || !File.Exists(req.imagePath))
+                return new { ok = false, error = "AI 자동 검사할 이미지 파일을 찾을 수 없습니다." };
+
+            PositionResolution resolution = PositionResolver.Resolve(req.imagePath, req.positions);
+            if (resolution.matches.Count == 0)
+                return new { ok = false, error = "파일명에서 활성 Position을 찾지 못했습니다. 파일명에 Position 문자열이 있어야 합니다." };
+            if (!resolution.IsUnique)
+                return new { ok = false, error = "파일명에 여러 Position이 동시에 일치합니다: " + string.Join(", ", resolution.matches.Select(x => x.displayName)) };
+            if (string.IsNullOrWhiteSpace(FirstNonEmpty(resolution.Position.greenWorkspacePath, resolution.Position.workspacePath)))
+                return new { ok = false, error = resolution.Position.displayName + " Green Workspace가 설정되지 않았습니다." };
+
+            req.mode = "green";
+            req.positions = new List<AgentPositionRequest> { resolution.Position };
+            string normalized = _json.Serialize(req);
+            RuntimePreloadResponse preload = PreloadRuntime(normalized);
+            if (!preload.ok) return new { ok = false, autoLoaded = false, position = resolution.Position.displayName, error = preload.error };
+
+            AppendAgentLog("INFO", "AI Suggest 자동 Workspace 선택 | " + resolution.Position.displayName + " | " + Path.GetFileName(req.imagePath));
+            return InspectSingleGreenImage(normalized);
+        }
+
+        private static string SingleInspectionOutputRoot()
+        {
+            string root = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "VisionQC", "LocalAgent", "output", "single-inspection");
+            Directory.CreateDirectory(root);
+            return root;
         }
 
         private object BuildStatus()
@@ -1165,7 +1179,7 @@ namespace VisionQC.LocalAgent
         {
             try
             {
-                lock (_historySync)
+                lock (_historyWriteSync)
                 {
                     if (_simulationHistorySession != null) _historyStore.Complete(_simulationHistorySession, "replaced", "새 Simulation 실행으로 교체됨");
                     _simulationHistorySession = _historyStore.Start(new SqliteRunStore.RunStoreStart
@@ -1194,7 +1208,7 @@ namespace VisionQC.LocalAgent
             if (record == null) return;
             try
             {
-                lock (_historySync)
+                lock (_historyWriteSync)
                 {
                     if (_simulationHistorySession == null || _simulationHistoryWriteFailed) return;
                     _historyStore.AppendLiveRecord(_simulationHistorySession, record);
@@ -1211,7 +1225,7 @@ namespace VisionQC.LocalAgent
         {
             try
             {
-                lock (_historySync)
+                lock (_historyWriteSync)
                 {
                     if (_simulationHistorySession == null) return;
                     _historyStore.Complete(_simulationHistorySession, status, message ?? "");
@@ -1228,7 +1242,7 @@ namespace VisionQC.LocalAgent
         {
             try
             {
-                lock (_historySync)
+                lock (_historyWriteSync)
                 {
                     var session = _historyStore.Start(new SqliteRunStore.RunStoreStart
                     {
@@ -2060,12 +2074,7 @@ namespace VisionQC.LocalAgent
         {
             try { _picker.Dispose(); } catch { }
             try { CompleteSimulationHistory("interrupted", "Agent 종료"); } catch { }
-            lock (_historySync)
-            {
-                foreach (SqliteRunStore.RunStoreSession session in _csvHistorySessions.Values.ToList())
-                    try { _historyStore.Complete(session, "interrupted", "Agent 종료"); } catch { }
-                _csvHistorySessions.Clear();
-            }
+            try { _history.Dispose(); } catch { }
             try { _historyStore.Dispose(); } catch { }
             try { _simulationCts?.Cancel(); } catch { }
             try { _serverCts.Cancel(); } catch { }
