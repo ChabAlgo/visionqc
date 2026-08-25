@@ -127,6 +127,26 @@ body.vq43-theme-light #vq43-shell .vq43-donut{background:conic-gradient(#fb7185 
 body.vq43-theme-light #vq43-modal,body.vq43-theme-light #vq43-chart-modal{color:#172033!important}
 body.vq43-theme-light #vq43-notification-panel{background:#fff!important;color:#172033!important;border-color:#cbd7e5!important;box-shadow:0 28px 80px rgba(15,23,42,.18)!important}
 body.vq43-theme-light #vq43-notification-panel>header,body.vq43-theme-light .vq43-notification-row{background:#f8fafc!important;border-color:#dce5ef!important}
+
+/* White theme: every former dark surface has a distinct, readable sky-blue layer. */
+body.vq43-theme-light #vq43-shell :is(.vq43-settings-card,.vq43-input-row,.vq43-position-config-row,.vq43-ng-position-row,.vq43-ready-grid>div,.vq43-naming-rule,.vq43-naming-summary span,.vq43-naming-table-wrap,.vq43-naming-table th,.vq43-naming-table td,.vq43-chart-card,.vq43-chart-area,.vq43-kpi,.vq43-actual-ng-minimum,.vq43-analysis-export,.vq43-filter,.vq43-modal-card,.vq43-modal-head,.vq43-modal-foot,.vq43-modal-scores,.vq43-workspace-tool){background:#f8fcff!important;border-color:#c9dfed!important;color:#1f3850!important}
+body.vq43-theme-light #vq43-shell :is(.vq43-settings-card,.vq43-input-row,.vq43-position-config-row,.vq43-ng-position-row,.vq43-ready-grid>div,.vq43-naming-rule,.vq43-naming-summary span,.vq43-naming-table-wrap,.vq43-naming-table th,.vq43-naming-table td,.vq43-chart-card,.vq43-chart-area,.vq43-kpi,.vq43-actual-ng-minimum,.vq43-analysis-export,.vq43-filter,.vq43-modal-card,.vq43-modal-head,.vq43-modal-foot,.vq43-modal-scores,.vq43-workspace-tool) :is(strong,h3,h4,b,legend){color:#172f46!important}
+body.vq43-theme-light #vq43-shell :is(.vq43-input-row,.vq43-position-config-row,.vq43-ng-position-row,.vq43-ready-grid>div,.vq43-naming-rule,.vq43-chart-area,.vq43-modal-foot){background:#ffffff!important}
+body.vq43-theme-light #vq43-shell .vq43-modal-image{background:#07111d!important}
+body.vq43-theme-light[data-vq-page="settings"] #vq43-page>.vq43-content{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:18px;align-items:start}
+body.vq43-theme-light[data-vq-page="settings"] #vq43-page>.vq43-content>.vq43-topline,body.vq43-theme-light[data-vq-page="settings"] #vq43-page>.vq43-content>.vq43-warning{grid-column:1/-1}
+body[data-vq-page="settings"] #vq43-page>.vq43-content>.vq43-settings-card{margin-top:0!important;min-width:0}
+body.vq43-theme-light[data-vq-page="settings"] #vq43-page>.vq43-content>.vq43-settings-card:nth-of-type(1){background:#edf9ff!important;border-color:#9ed5ef!important}
+body.vq43-theme-light[data-vq-page="settings"] #vq43-page>.vq43-content>.vq43-settings-card:nth-of-type(2){background:#f5fbff!important;border-color:#b9dff1!important}
+body.vq43-theme-light[data-vq-page="settings"] #vq43-page>.vq43-content>.vq43-settings-card:nth-of-type(3){background:#e9f7ff!important;border-color:#a9daef!important}
+body.vq43-theme-light[data-vq-page="settings"] #vq43-page>.vq43-content>.vq43-settings-card:nth-of-type(4){background:#f1faff!important;border-color:#b8e0f2!important}
+body.vq43-theme-light[data-vq-page="settings"] #vq43-page>.vq43-content>.vq43-settings-card:nth-of-type(5){background:#eef8ff!important;border-color:#afdaee!important}
+body.vq43-theme-light[data-vq-page="settings"] #vq43-page>.vq43-content>.vq43-settings-card:nth-of-type(6){background:#f7fcff!important;border-color:#c7e3f1!important}
+body[data-vq-page="settings"] #vq43-page>.vq43-content{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:18px;align-items:start}
+body[data-vq-page="settings"] #vq43-page>.vq43-content>.vq43-topline,body[data-vq-page="settings"] #vq43-page>.vq43-content>.vq43-warning{grid-column:1/-1}
+@media(max-width:1100px){body[data-vq-page="settings"] #vq43-page>.vq43-content{grid-template-columns:minmax(0,1fr)}}
+@media(max-width:1100px){body[data-vq-page="settings"] #vq43-page>.vq43-content>.vq43-settings-card{margin-top:0!important}}
+
 body.vq43-theme-light #vq43-notification-panel>header strong,body.vq43-theme-light .vq43-notification-row p{color:#172033!important}
 body.vq43-theme-light #vq43-notification-panel button{background:#fff!important;color:#334155!important;border-color:#c7d4e2!important}
 body.vq43-theme-light #vq43-toast{background:#fff!important;color:#172033!important;border-color:#bfcee0!important;box-shadow:0 18px 44px rgba(15,23,42,.18)!important}

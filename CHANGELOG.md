@@ -1,3 +1,9 @@
+# VisionQC v4.7.4
+
+- Cell별 Score 차트의 축소 화면에서도 점을 클릭해 CSV FullPath 또는 실제 NG 이미지를 바로 연다.
+- 실제 NG 검출 Score 제외는 같은 Cell ID + Position의 모든 CSV 중복 행을 합쳐 다른 Tool NG 최고 Score로 판정한다.
+- 화이트 모드의 남은 어두운 표면을 하늘색 계열의 밝은 레이어로 정리하고, 설정 화면을 2열로 재배치했다.
+
 # VisionQC v4.7.3
 
 ## Runtime 재사용 / 다크·화이트 테마

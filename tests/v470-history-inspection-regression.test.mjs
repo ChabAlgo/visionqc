@@ -12,14 +12,14 @@ const dashboardCss = read('visionqc-v470.css');
 const cleanCss = read('visionqc-v4433-clean.css');
 const html = read('index.html');
 
-test('v4.7.3 Web and Agent download targets are aligned', () => {
-  assert.match(read('VERSION.txt'), /v4\.7\.3/);
-  assert.match(html, /visionqc-extension\.js\?v=4\.7\.3/);
-  assert.match(html, /visionqc-v470\.css\?v=4\.7\.3/);
-  assert.match(js, /const VERSION = '4\.7\.3'/);
+test('v4.7.4 Web and Agent download targets are aligned', () => {
+  assert.match(read('VERSION.txt'), /v4\.7\.4/);
+  assert.match(html, /visionqc-extension\.js\?v=4\.7\.4/);
+  assert.match(html, /visionqc-v470\.css\?v=4\.7\.4/);
+  assert.match(js, /const VERSION = '4\.7\.4'/);
   assert.match(js, /const EXPECTED_AGENT_VERSION = '1\.2\.3'/);
   assert.match(js, /VisionQC_Agent_Installer_v1\.2\.3\.exe/);
-  assert.match(js, /VisionQC_Offline_v4\.7\.3\.zip/);
+  assert.match(js, /VisionQC_Offline_v4\.7\.4\.zip/);
 });
 
 test('persistent History page has filters, server-side pagination, daily NG chart and image viewer', () => {
@@ -78,4 +78,12 @@ test('Web accepts an Integrated Runtime only for the same GPU and Green Workspac
   assert.match(js, /runtimePreloadMode === 'integrated'/);
   assert.match(js, /runtimePreloadControlSignature === simulationRuntimeControlSignature\(request\)/);
   assert.match(js, /runtimePreloadGreenWorkspaceSignature === simulationGreenWorkspaceSignature\(request\)/);
+});
+
+test('inline Cell score points open images and settings use compact two-column light layout', () => {
+  assert.match(js, /function bindInlineScoreChartControls/);
+  assert.match(js, /vq43-analysis-scatter/);
+  assert.match(js, /scatterSvg\(points,\{interactive:true\}\)/);
+  assert.match(cleanCss, /body\[data-vq-page="settings"\] #vq43-page>\.vq43-content\{display:grid;grid-template-columns:repeat\(2/);
+  assert.match(cleanCss, /vq43-settings-card,.vq43-input-row/);
 });

@@ -1,7 +1,7 @@
 {
   "name": "visionqc-browser-regression",
   "private": true,
-  "version": "4.7.3",
+  "version": "4.7.4",
   "type": "module",
   "scripts": {
     "test": "node --test tests/v4434-regression.test.mjs tests/picker-multi-folder-regression.test.mjs tests/offline-package.test.mjs tests/naming-profile-regression.test.mjs tests/history-image-regression.test.mjs tests/v470-history-inspection-regression.test.mjs LocalAgent_v0.2.12/tests/v0212-static.test.mjs",

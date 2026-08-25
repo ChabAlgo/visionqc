@@ -1,7 +1,7 @@
 (() => {
   'use strict';
 
-  const VERSION = '4.7.3';
+  const VERSION = '4.7.4';
   const DEFAULT_POSITION_DEFS = [
     { key:'CA_TOP', name:'CA(TOP)' },
     { key:'AN_TOP', name:'AN(TOP)' },
@@ -27,7 +27,7 @@
   const LOCAL_AGENT_URL = 'http://127.0.0.1:17891';
   const EXPECTED_AGENT_VERSION = '1.2.3';
   const AGENT_INSTALLER_URL = './downloads/VisionQC_Agent_Installer_v1.2.3.exe';
-  const OFFLINE_PACKAGE_URL = './downloads/VisionQC_Offline_v4.7.3.zip';
+  const OFFLINE_PACKAGE_URL = './downloads/VisionQC_Offline_v4.7.4.zip';
   // SQLite에는 사용자가 명시적으로 남기려는 두 종류의 결과만 표시한다.
   // 이전 버전의 단발 검사(single-inspection) 이력은 보존하되 화면 집계에서는 제외한다.
   const PERSISTED_HISTORY_SOURCE_TYPES = ['simulation', 'csv-import', 'csv-file-stream'];
@@ -738,6 +738,21 @@
     });
   }
 
+  // 축소된 Cell별 Score도 확대 화면과 동일하게 마우스/키보드로 이미지를 연다.
+  function bindInlineScoreChartControls(shell) {
+    $$('.vq43-analysis-scatter .vq43-scatter-point', shell).forEach((dot) => {
+      const open = (event) => {
+        event.preventDefault();
+        event.stopPropagation();
+        openScorePointImage(dot.dataset.vqPointKey || '');
+      };
+      dot.addEventListener('click', open);
+      dot.addEventListener('keydown', (event) => {
+        if (event.key === 'Enter' || event.key === ' ') open(event);
+      });
+    });
+  }
+
   function bindPageControls() {
     const shell = $('#vq43-shell');
     if (!shell) return;
@@ -750,6 +765,7 @@
       };
     });
     bindAnalysisDropdowns();
+    bindInlineScoreChartControls(shell);
 
     const cutoffInput = $('#vq43-score-cutoff', shell);
     if (cutoffInput) {
@@ -2044,6 +2060,21 @@
     return Array.isArray(point?.otherToolNgScores) && point.otherToolNgScores.some((item) => item.score >= threshold);
   }
 
+  // CSV 중복 행에 Tool 결과가 나뉘어 있어도 Cell ID + Position 전체 기준으로 비교한다.
+  function recordOtherToolNgScores(record, selectedTool) {
+    const selected = String(selectedTool || '').toLowerCase();
+    const highestByTool = new Map();
+    (record?.sourceRows || []).forEach((sourceRow) => {
+      Object.entries(sourceRow?.tools || {}).forEach(([tool, observation]) => {
+        const score = observation?.score;
+        if (String(tool).toLowerCase() === selected || observation?.result !== 'NG' || !Number.isFinite(score)) return;
+        const prior = highestByTool.get(tool);
+        if (!Number.isFinite(prior) || score > prior) highestByTool.set(tool, score);
+      });
+    });
+    return Array.from(highestByTool.entries()).map(([tool, score]) => ({ tool, score }));
+  }
+
   function scorePoints(tool, scope, position, { excludeOtherToolNg = false, otherToolNgScoreThreshold = state.actualNgOtherToolExclusionScore } = {}) {
     const model = state.model;
     const points = [];
@@ -2059,7 +2090,7 @@
         if (scope === 'ACTUAL_NG_TOOL_NG' && observation.result !== 'NG') return;
         if (scope === 'ACTUAL_NG_TOOL_OK' && observation.result !== 'OK') return;
         const key = `${record.key}|${tool}|${index}`;
-        const otherToolNgScores = Object.entries(row.tools || {}).filter(([otherTool, other]) => otherTool !== tool && other?.result === 'NG' && Number.isFinite(other?.score)).map(([otherTool, other]) => ({ tool:otherTool, score:other.score }));
+        const otherToolNgScores = recordOtherToolNgScores(record, tool);
         const point = { key, recordKey: record.key, cellId: record.cellId, position: record.position, result: observation.result, score: observation.score, hasActualImage, hasCsvImage:!!row.fullPath, fullPath:row.fullPath || '', sourceFileName: row.sourceFileName || '', sourceRowNumber: row.sourceRowNumber || '', otherToolNgScores };
         if (excludeOtherToolNg && scope === 'ACTUAL_NG_TOOL_NG' && actualNgDetectedExclusion(point, clampScore(otherToolNgScoreThreshold, 0.80))) return;
         points.push(point);
@@ -2133,7 +2164,7 @@
         <section class="vq43-actual-ng-minimum"><div><strong>실제 NG 검출 최소 Score</strong><p>선택 Tool이 실제 NG 이미지를 NG로 검출한 점수만 대상으로 계산합니다. 다른 Tool이 함께 NG이고 아래 기준 이상이면 그 행은 최소값 후보에서 제외합니다.</p></div><label>다른 Tool NG 제외 기준<input id="vq43-actual-ng-exclusion-score" type="number" inputmode="decimal" min="0.50" max="1.00" step="0.01" value="${actualNgMinimum.threshold.toFixed(2)}"></label><div class="vq43-actual-ng-minimum-value"><span>조건 적용 최소</span><b>${scoreText(actualNgMinimum.min)}</b><small>후보 ${numberText(actualNgMinimum.eligible.length)} · 제외 ${numberText(actualNgMinimum.excluded.length)} / 전체 ${numberText(actualNgMinimum.candidates.length)}</small></div></section>
         <div class="vq43-analysis-export"><div><strong>Score 조건 CSV 저장</strong><span>현재 Position · Tool · 분석 범위 안에서 Score 조건으로 필터합니다.</span></div><label>Score<input id="vq43-score-cutoff" type="number" inputmode="decimal" min="0.50" max="1.00" step="0.01" value="${state.analysisScoreCutoff.toFixed(2)}"></label>${customDropdown('compare', '조건', state.analysisScoreCompare, [{ value: 'GTE', label: '이상 (≥)' }, { value: 'LTE', label: '이하 (≤)' }])}<button class="vq43-btn vq43-btn-green" data-vq-action="download-score-filter">CSV 저장</button></div>
         <div class="vq43-note" style="margin-top:16px">${escapeHtml(scopeInfo.text)}</div>
-        <div class="vq43-chart-grid"><div class="vq43-chart-card"><div class="vq43-chart-head"><div><h3>Score 분포</h3><p>${escapeHtml(scopeInfo.color)}</p></div><span>▥</span></div><div class="vq43-chart-area">${points.length ? histogramSvg(points) : '<div class="vq43-chart-empty">해당 조건의 Score가 없습니다.</div>'}</div></div><div class="vq43-chart-card"><div class="vq43-chart-head"><div><h3>Cell별 Score</h3><p>낮은 Score부터 정렬 · 점에 마우스를 올리면 Cell ID · Position · Score 표시</p></div><button class="vq43-chart-expand-btn" type="button" data-vq-action="open-chart-modal" ${points.length ? '' : 'disabled'}>⛶ 확대 보기</button></div><div class="vq43-chart-area">${points.length ? scatterSvg(points) : '<div class="vq43-chart-empty">해당 조건의 Score가 없습니다.</div>'}</div></div></div>
+        <div class="vq43-chart-grid"><div class="vq43-chart-card"><div class="vq43-chart-head"><div><h3>Score 분포</h3><p>${escapeHtml(scopeInfo.color)}</p></div><span>▥</span></div><div class="vq43-chart-area">${points.length ? histogramSvg(points) : '<div class="vq43-chart-empty">해당 조건의 Score가 없습니다.</div>'}</div></div><div class="vq43-chart-card"><div class="vq43-chart-head"><div><h3>Cell별 Score</h3><p>낮은 Score부터 정렬 · 점 클릭 시 CSV FullPath 또는 실제 NG 이미지를 표시합니다.</p></div><button class="vq43-chart-expand-btn" type="button" data-vq-action="open-chart-modal" ${points.length ? '' : 'disabled'}>⛶ 확대 보기</button></div><div class="vq43-chart-area vq43-analysis-scatter">${points.length ? scatterSvg(points,{interactive:true}) : '<div class="vq43-chart-empty">해당 조건의 Score가 없습니다.</div>'}</div></div></div>
         <div class="vq43-table vq43-summary-table" style="margin-bottom:30px"><div class="vq43-table-row head"><span>구분</span><span>개수</span><span>평균</span><span>최소</span><span>최대</span><span>중앙값</span></div>${scoreSummaryRow('OK', okValues)}${scoreSummaryRow('NG', ngValues)}</div>
       </div>`;
   }
