@@ -176,3 +176,14 @@ body.vq43-theme-light[data-vq-page="classification"] #root [class*="border-slate
 body.vq43-theme-light[data-vq-page="classification"] #root [class*="text-slate-"],body.vq43-theme-light[data-vq-page="classification"] #root [class~="text-white"]{color:#304b65!important}
 body.vq43-theme-light[data-vq-page="classification"] #root :is([class*="bg-blue-"],[class*="bg-violet-"],[class*="bg-emerald-"],[class*="bg-cyan-"],[class*="bg-amber-"]){box-shadow:0 1px 4px rgba(45,91,130,.12)!important}
 body.vq43-theme-light[data-vq-page="classification"] #root [class*="bg-slate-"] :is([class~="text-white"],[class*="text-slate-"]){color:#263f58!important}
+
+/* v4.7.6 white theme: image and chart popups are outside #vq43-shell. Only the image canvas stays dark for image contrast. */
+body.vq43-theme-light :is(#vq43-modal .vq43-modal-card,#vq43-chart-modal .vq43-chart-modal-card){background:#f8fcff!important;border-color:#b9d7eb!important;color:#1b344d!important;box-shadow:0 24px 60px rgba(30,70,105,.18)!important}
+body.vq43-theme-light :is(#vq43-modal .vq43-modal-head,#vq43-modal .vq43-modal-foot,#vq43-modal .vq43-modal-image-switcher,#vq43-chart-modal .vq43-chart-modal-head){background:#eef8ff!important;border-color:#c5ddea!important;color:#1b344d!important}
+body.vq43-theme-light :is(#vq43-modal .vq43-modal-head strong,#vq43-modal .vq43-modal-head small,#vq43-modal .vq43-modal-path,#vq43-modal .vq43-modal-scores,#vq43-modal .vq43-modal-scores .vq43-score-chip,#vq43-chart-modal .vq43-chart-modal-head strong,#vq43-chart-modal .vq43-chart-modal-head small,#vq43-chart-modal .vq43-chart-modal-head>div:last-child){color:#1b344d!important}
+body.vq43-theme-light :is(#vq43-modal .vq43-score-chip,#vq43-modal .vq43-modal-image-switcher button,#vq43-modal .vq43-close,#vq43-modal .vq43-modal-zoom-tools,#vq43-modal .vq43-modal-zoom-tools button,#vq43-chart-modal .vq43-chart-modal-head button,#vq43-chart-modal .vq43-close){background:#fff!important;color:#234761!important;border-color:#aacbe2!important}
+body.vq43-theme-light #vq43-modal .vq43-modal-image-switcher button.active{background:#e4f3ff!important;color:#075985!important;border-color:#4aa3d1!important}
+body.vq43-theme-light #vq43-modal .vq43-modal-image{background:#07111d!important}
+body.vq43-theme-light :is(#vq43-chart-modal .vq43-chart-modal-viewport,#vq43-chart-modal .vq43-chart-modal-canvas){background:#f8fcff!important}
+body.vq43-theme-light :is(#vq43-chart-modal .vq43-chart-modal-help,#vq43-chart-modal .vq43-chart-modal-tooltip){background:#fff!important;color:#1b344d!important;border-color:#b8d4e7!important}
+body.vq43-theme-light #vq43-modal .vq43-modal-nav{background:#fff!important;color:#234761!important;border-color:#aacbe2!important}

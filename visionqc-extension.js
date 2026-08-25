@@ -1,7 +1,7 @@
 (() => {
   'use strict';
 
-  const VERSION = '4.7.5';
+  const VERSION = '4.7.6';
   const DEFAULT_POSITION_DEFS = [
     { key:'CA_TOP', name:'CA(TOP)' },
     { key:'AN_TOP', name:'AN(TOP)' },
@@ -27,7 +27,7 @@
   const LOCAL_AGENT_URL = 'http://127.0.0.1:17891';
   const EXPECTED_AGENT_VERSION = '1.2.3';
   const AGENT_INSTALLER_URL = './downloads/VisionQC_Agent_Installer_v1.2.3.exe';
-  const OFFLINE_PACKAGE_URL = './downloads/VisionQC_Offline_v4.7.5.zip';
+  const OFFLINE_PACKAGE_URL = './downloads/VisionQC_Offline_v4.7.6.zip';
   // SQLite에는 사용자가 명시적으로 남기려는 두 종류의 결과만 표시한다.
   // 이전 버전의 단발 검사(single-inspection) 이력은 보존하되 화면 집계에서는 제외한다.
   const PERSISTED_HISTORY_SOURCE_TYPES = ['simulation', 'csv-import', 'csv-file-stream'];

@@ -50,6 +50,11 @@ test('Actual NG folders defer original-file reads and exclude high-score other-T
   assert.match(analysis, /otherToolNgScores/);
   assert.match(js, /function recordOtherToolNgScores/);
   assert.match(js, /function analysisScorePointOptions/); assert.match(js, /function actualNgScoreCandidates/);
+  const mainStart = js.indexOf('const positionToolSummaries');
+  const mainEnd = js.indexOf('const actualKeys = Array.from', mainStart);
+  const mainSummaries = js.slice(mainStart, mainEnd);
+  assert.match(mainSummaries, /const actualNgScores = actualNgScoreCandidates\(actualMatchedRecords, tool, state\.actualNgOtherToolExclusionScore\)/);
+  assert.match(mainSummaries, /minNgScore: actualNgScores\.eligible\.length \? Math\.min/);
   assert.match(js, /excludeOtherToolNg:true/);
   assert.match(js, /id="vq43-actual-ng-exclusion-score"/);
 
