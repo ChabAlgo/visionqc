@@ -1,3 +1,12 @@
+# VisionQC v4.7.8
+
+- 분석 Cell별 Score Viewer에서 저장된 Overlay가 없더라도 현재 사전 로드된 Green Runtime으로 한 장의 Heatmap을 즉시 생성할 수 있다.
+- CSV FullPath가 실제 파일을 가리키지 않을 때 빈 화면 대신 Agent 오류를 모달에 표시한다.
+- Grab의 JPEG 이미지는 정상 지원하며, Viewer 실패는 확장자가 아니라 CSV에 남은 경로의 파일 존재 여부로 구분한다.
+
+---
+
+
 # VisionQC v4.7.7
 
 - 이미지 분류의 PROGRESS·통계 영역을 좌측에 배치하고, PROGRESS 카드를 화이트 모드에 맞는 밝은 하늘색으로 표시한다.

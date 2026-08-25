@@ -225,3 +225,6 @@ body.vq43-theme-light #vq43-modal .vq43-modal-image{background:#07111d!important
 body.vq43-theme-light :is(#vq43-chart-modal .vq43-chart-modal-viewport,#vq43-chart-modal .vq43-chart-modal-canvas){background:#f8fcff!important}
 body.vq43-theme-light :is(#vq43-chart-modal .vq43-chart-modal-help,#vq43-chart-modal .vq43-chart-modal-tooltip){background:#fff!important;color:#1b344d!important;border-color:#b8d4e7!important}
 body.vq43-theme-light #vq43-modal .vq43-modal-nav{background:#fff!important;color:#234761!important;border-color:#aacbe2!important}
+
+/* v4.7.8: bright analysis-viewer Heatmap generation control. */
+body.vq43-theme-light #vq43-modal .vq43-modal-heatmap-create{background:#eef8ff!important;border-color:#c5ddea!important}body.vq43-theme-light #vq43-modal .vq43-modal-heatmap-create button{background:#e1f3ff!important;border-color:#68b8df!important;color:#075985!important}body.vq43-theme-light #vq43-modal .vq43-modal-heatmap-create small{color:#365a75!important}

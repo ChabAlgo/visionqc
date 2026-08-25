@@ -1,7 +1,7 @@
 (() => {
   'use strict';
 
-  const VERSION = '4.7.7';
+  const VERSION = '4.7.8';
   const DEFAULT_POSITION_DEFS = [
     { key:'CA_TOP', name:'CA(TOP)' },
     { key:'AN_TOP', name:'AN(TOP)' },
@@ -27,7 +27,7 @@
   const LOCAL_AGENT_URL = 'http://127.0.0.1:17891';
   const EXPECTED_AGENT_VERSION = '1.2.3';
   const AGENT_INSTALLER_URL = './downloads/VisionQC_Agent_Installer_v1.2.3.exe';
-  const OFFLINE_PACKAGE_URL = './downloads/VisionQC_Offline_v4.7.7.zip';
+  const OFFLINE_PACKAGE_URL = './downloads/VisionQC_Offline_v4.7.8.zip';
   // SQLite에는 사용자가 명시적으로 남기려는 두 종류의 결과만 표시한다.
   // 이전 버전의 단발 검사(single-inspection) 이력은 보존하되 화면 집계에서는 제외한다.
   const PERSISTED_HISTORY_SOURCE_TYPES = ['simulation', 'csv-import', 'csv-file-stream'];
@@ -131,7 +131,7 @@
     historyData: null,
     historyFilters: { fromDate:'', toDate:'', cellId:'', position:'', tool:'', toolResult:'', totalResult:'', sourceName:'', page:1, pageSize:50 },
     historyFileImport: null,
-    modalOverlayPath: '',
+    modalOverlayPath: '', modalHeatmapLoading: false,
     simulationMode: 'integrated',
     simulationAgent: { status: 'idle', version: '-', vpdl: '-', license: '-', gpu: '-', message: 'Local Agent 연결 전' },
     simulationAgentPollInFlight: false,
@@ -675,6 +675,7 @@
     else if (action === 'history-import-file') chooseHistoryCsvImport();
     else if (action === 'modal-original-image') selectModalOriginalImage();
     else if (action === 'modal-overlay-image') selectModalOverlayImage(control.dataset.vqModalOverlay || '');
+    else if (action === 'modal-generate-heatmap') generateModalHeatmap();
     else if (action === 'choose-ng-folder') chooseNgFolder();
     else if (action === 'clear-inputs') clearAnalysisInputs();
     else if (action === 'miss-tab') {
@@ -4825,14 +4826,65 @@
 
   function overlayImagesForRecord(record) {
     const seen = new Set();
-    return Object.values(record?.tools || {}).map((tool) => {
-      const fullPath = String(tool?.overlayPath || '').trim();
-      const toolName = String(tool?.tool || '').trim() || 'Green Tool';
+    const tools = record?.tools || record?.Tools || {};
+    return Object.entries(tools).map(([name, tool]) => {
+      const fullPath = String(tool?.overlayPath ?? tool?.OverlayPath ?? '').trim();
+      const toolName = String(tool?.tool ?? tool?.Tool ?? name).trim() || 'Green Tool';
       if (!fullPath || seen.has(fullPath.toLowerCase())) return null;
       seen.add(fullPath.toLowerCase());
       return { fullPath, relativePath:fullPath, name:`${toolName} Heatmap Overlay`, kind:'Heatmap Overlay', toolName };
     }).filter(Boolean);
   }
+  function modalRuntimeHeatmapSource(miss) {
+    return (miss?.images || []).find((image) => !!image?.fullPath && !image?.file && !image?.fileHandle) || null;
+  }
+
+  function buildModalHeatmapInspectionRequest(imagePath) {
+    const request = buildSimulationRequest();
+    if (request.mode === 'blue') throw new Error('Green Heatmap은 Green 또는 Integrated 모드에서만 생성할 수 있습니다.');
+    if (!request.positions?.length) throw new Error('Green Heatmap에 사용할 활성 Position이 없습니다.');
+    request.green = cloneSimulation(request.green || {});
+    request.green.heatmapImageSave = true;
+    request.imagePath = String(imagePath || '');
+    return request;
+  }
+
+  async function generateModalHeatmap() {
+    const miss = state.modalItem;
+    const source = modalRuntimeHeatmapSource(miss);
+    if (!miss || !source?.fullPath || state.modalHeatmapLoading) return;
+    let request;
+    try { request = buildModalHeatmapInspectionRequest(source.fullPath); }
+    catch (error) { showToast(error?.message || String(error), true); return; }
+    const modalKey = miss.key;
+    state.modalHeatmapLoading = true;
+    renderModal();
+    try {
+      const data = await agentFetch('/api/classification/inspect', {
+        method:'POST', timeout:300000, body:request,
+        timeoutMessage:'Green Heatmap 생성이 5분을 초과했습니다.'
+      });
+      if (!data?.ok) throw new Error(data?.error || 'Green Heatmap 생성 실패');
+      if (state.modalItem?.key !== modalKey) return;
+      const overlays = overlayImagesForRecord(data.record || {});
+      if (!overlays.length) throw new Error('Green 검사 결과에 저장된 Heatmap Overlay가 없습니다. Heatmap 저장 설정을 확인하세요.');
+      const existing = Array.isArray(miss.overlayImages) ? miss.overlayImages : [];
+      const paths = new Set(existing.map((image) => String(image.fullPath || '').toLowerCase()));
+      const added = overlays.filter((image) => !paths.has(String(image.fullPath || '').toLowerCase()));
+      miss.overlayImages = [...existing, ...added];
+      state.modalOverlayPath = (added[0] || overlays[0]).fullPath;
+      resetModalView();
+      showToast(`${data.position || miss.position} Green Heatmap 생성 완료`);
+    } catch (error) {
+      showToast(`Green Heatmap을 만들지 못했습니다: ${error?.message || error}`, true);
+    } finally {
+      if (state.modalItem?.key === modalKey) {
+        state.modalHeatmapLoading = false;
+        renderModal();
+      }
+    }
+  }
+
 
   async function hydrateModalOverlaysFromHistory(record, modalKey) {
     const fullPath = csvImagesForRecord(record)[0]?.fullPath || '';
@@ -4872,8 +4924,10 @@
     const modalImageRequestKey = state.modalImageRequestKey;
     const scores = Object.values(miss.record?.tools || {}).map((tool) => `<span class="vq43-score-chip">${escapeHtml(tool.tool)}: <b style="color:${tool.result==='NG'?'#f87171':'#34d399'}">${tool.result}</b> <b>${scoreText(tool.representativeScore ?? tool.score)}</b></span>`).join('');
     const switcher = overlayImages.length ? `<div class="vq43-modal-image-switcher"><button type="button" data-vq-action="modal-original-image" class="${selectedOverlay?'':'active'}" ${miss.images?.length?'':'disabled'}>원본 / 크롭</button>${overlayImages.map((overlay) => `<button type="button" data-vq-action="modal-overlay-image" data-vq-modal-overlay="${escapeHtml(overlay.fullPath)}" class="${selectedOverlay?.fullPath===overlay.fullPath?'active':''}">${escapeHtml(overlay.toolName || 'Tool')} Heatmap</button>`).join('')}</div>` : '';
+    const heatmapSource = modalRuntimeHeatmapSource(miss);
+    const heatmapCreate = !overlayImages.length && heatmapSource ? `<div class="vq43-modal-heatmap-create"><button type="button" data-vq-action="modal-generate-heatmap" ${state.modalHeatmapLoading?'disabled':''}>${state.modalHeatmapLoading?'Green Heatmap 생성 중...':'Green Heatmap 생성'}</button><small>현재 사전 로드된 Green Runtime으로 이 이미지 1장을 다시 검사합니다.</small></div>` : '';
     const countText = selectedOverlay ? `Heatmap ${overlayImages.findIndex((candidate) => candidate.fullPath === selectedOverlay.fullPath) + 1} / ${overlayImages.length}` : `${state.modalIndex+1} / ${displayImages.length}`;
-    modal.innerHTML = `<div class="vq43-modal-card"><div class="vq43-modal-head"><div><small>${escapeHtml(miss.label || 'Actual NG Image')}</small><strong>${escapeHtml(miss.cellId)} · ${miss.position}</strong></div><button class="vq43-close" data-vq-action="close-modal">×</button></div>${switcher}<div class="vq43-modal-image" id="vq43-modal-viewport"><img id="vq43-modal-zoom-image" draggable="false" src="${state.modalUrl}" alt="${escapeHtml(image.file?.name || image.name || image.relativePath)}"><div class="vq43-modal-zoom-tools"><span id="vq43-modal-zoom-value">100%</span><button data-vq-action="modal-reset">원위치</button></div><div class="vq43-modal-help">마우스 휠: 확대/축소 · 드래그: 이동 · 더블클릭: 원위치</div>${!selectedOverlay && displayImages.length>1?`<button class="vq43-modal-nav prev" data-vq-action="modal-prev" ${state.modalIndex===0?'disabled':''}>‹</button><button class="vq43-modal-nav next" data-vq-action="modal-next" ${state.modalIndex>=displayImages.length-1?'disabled':''}>›</button>`:''}</div><div class="vq43-modal-foot"><div class="vq43-modal-path"><span>${escapeHtml(image.relativePath)}</span><b>${countText}</b></div><div class="vq43-modal-scores">${scores}</div></div></div>`;
+    modal.innerHTML = `<div class="vq43-modal-card"><div class="vq43-modal-head"><div><small>${escapeHtml(miss.label || 'Actual NG Image')}</small><strong>${escapeHtml(miss.cellId)} · ${miss.position}</strong></div><button class="vq43-close" data-vq-action="close-modal">×</button></div>${switcher}${heatmapCreate}<div class="vq43-modal-image" id="vq43-modal-viewport"><img id="vq43-modal-zoom-image" draggable="false" src="${state.modalUrl}" alt="${escapeHtml(image.file?.name || image.name || image.relativePath)}"><div class="vq43-modal-zoom-tools"><span id="vq43-modal-zoom-value">100%</span><button data-vq-action="modal-reset">원위치</button></div><div class="vq43-modal-help">마우스 휠: 확대/축소 · 드래그: 이동 · 더블클릭: 원위치</div>${!selectedOverlay && displayImages.length>1?`<button class="vq43-modal-nav prev" data-vq-action="modal-prev" ${state.modalIndex===0?'disabled':''}>‹</button><button class="vq43-modal-nav next" data-vq-action="modal-next" ${state.modalIndex>=displayImages.length-1?'disabled':''}>›</button>`:''}</div><div class="vq43-modal-foot"><div class="vq43-modal-path"><span>${escapeHtml(image.relativePath)}</span><b>${countText}</b></div><div class="vq43-modal-scores">${scores}</div></div></div>`;
     modal.classList.add('open');
     applyModalTransform();
     bindModalImageControls();
@@ -4925,6 +4979,7 @@
       if (state.modalImageRequestKey !== requestKey) return;
       const target = $('#vq43-modal-zoom-image');
       if (!target) return;
+      if (!response?.ok || !response?.dataUrl) throw new Error(response?.error || '이미지 미리보기 데이터가 없습니다.');
       target.src = response.dataUrl || '';
       target.alt = image.name || image.fullPath;
       loading.remove();
@@ -4994,6 +5049,7 @@
     state.modalItem = null;
     state.modalIndex = 0;
     state.modalOverlayPath = '';
+    state.modalHeatmapLoading = false;
     state.modalZoom = 1;
     state.modalPanX = 0;
     state.modalPanY = 0;
