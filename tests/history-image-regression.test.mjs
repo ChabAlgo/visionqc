@@ -49,7 +49,7 @@ test('Actual NG folders defer original-file reads and exclude high-score other-T
   assert.match(analysis, /function actualNgMinimumScore/);
   assert.match(analysis, /otherToolNgScores/);
   assert.match(js, /function recordOtherToolNgScores/);
-  assert.match(js, /function analysisScorePointOptions/);
+  assert.match(js, /function analysisScorePointOptions/); assert.match(js, /function actualNgScoreCandidates/);
   assert.match(js, /excludeOtherToolNg:true/);
   assert.match(js, /id="vq43-actual-ng-exclusion-score"/);
 
@@ -68,11 +68,12 @@ test('Actual NG folders defer original-file reads and exclude high-score other-T
       }]
     }
   };
-  const helpers = new Function('state', `const clampScore=(value,fallback=0.50)=>{const parsed=Number(value);return Number.isFinite(parsed)?Math.max(0.50,Math.min(1.00,parsed)):fallback;};${js.slice(start, end)};return {scorePoints,analysisScorePointOptions,actualNgMinimumScore};`)(state);
+  const helpers = new Function('state', `const clampScore=(value,fallback=0.50)=>{const parsed=Number(value);return Number.isFinite(parsed)?Math.max(0.50,Math.min(1.00,parsed)):fallback;};${js.slice(start, end)};return {scorePoints,analysisScorePointOptions,actualNgMinimumScore,actualNgScoreCandidates};`)(state);
   assert.equal(helpers.scorePoints('Crack', 'ACTUAL_NG_TOOL_NG', 'ALL').length, 1);
   assert.equal(helpers.scorePoints('Crack', 'ACTUAL_NG_TOOL_NG', 'ALL', helpers.analysisScorePointOptions('ACTUAL_NG_TOOL_NG')).length, 1);
   assert.equal(helpers.actualNgMinimumScore('Crack', 'ALL', 0.80).eligible.length, 1);
   state.actualNgOtherToolExclusionScore = 0.70;
+  assert.deepEqual(helpers.actualNgScoreCandidates(state.model.records, 'Welding', 0.70), { eligible:[], excluded:[0.5071], threshold:0.70 });
   assert.equal(helpers.scorePoints('Welding', 'ACTUAL_NG_TOOL_NG', 'ALL', helpers.analysisScorePointOptions('ACTUAL_NG_TOOL_NG')).length, 0);
   assert.equal(helpers.actualNgMinimumScore('Welding', 'ALL', 0.70).min, null);
   state.actualNgOtherToolExclusionScore = 0.80;

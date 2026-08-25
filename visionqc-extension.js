@@ -1,7 +1,7 @@
 (() => {
   'use strict';
 
-  const VERSION = '4.7.4';
+  const VERSION = '4.7.5';
   const DEFAULT_POSITION_DEFS = [
     { key:'CA_TOP', name:'CA(TOP)' },
     { key:'AN_TOP', name:'AN(TOP)' },
@@ -27,7 +27,7 @@
   const LOCAL_AGENT_URL = 'http://127.0.0.1:17891';
   const EXPECTED_AGENT_VERSION = '1.2.3';
   const AGENT_INSTALLER_URL = './downloads/VisionQC_Agent_Installer_v1.2.3.exe';
-  const OFFLINE_PACKAGE_URL = './downloads/VisionQC_Offline_v4.7.4.zip';
+  const OFFLINE_PACKAGE_URL = './downloads/VisionQC_Offline_v4.7.5.zip';
   // SQLite에는 사용자가 명시적으로 남기려는 두 종류의 결과만 표시한다.
   // 이전 버전의 단발 검사(single-inspection) 이력은 보존하되 화면 집계에서는 제외한다.
   const PERSISTED_HISTORY_SOURCE_TYPES = ['simulation', 'csv-import', 'csv-file-stream'];
@@ -780,7 +780,7 @@
       const syncActualNgExclusion = () => {
         state.actualNgOtherToolExclusionScore = clampScore(actualNgExclusionInput.value, 0.80);
         actualNgExclusionInput.value = state.actualNgOtherToolExclusionScore.toFixed(2);
-        renderAnalysis();
+        rebuildModel(false); renderAnalysis();
         bindPageControls();
       };
       actualNgExclusionInput.onchange = syncActualNgExclusion;
@@ -1665,13 +1665,15 @@
         tools: positionTools.map((tool) => {
           const ng = positionNgRecords.filter((record) => record.tools[tool]?.result === 'NG').length;
           const actualMatchedRecords = positionRecords.filter((record) => actualMap.has(record.key));
-          const rawNgScores = actualMatchedRecords.flatMap((record) => record.sourceRows.map((row) => row.tools[tool]).filter((item) => item?.result === 'NG' && Number.isFinite(item.score)).map((item) => item.score));
+          const actualNgScores = actualNgScoreCandidates(actualMatchedRecords, tool, state.actualNgOtherToolExclusionScore);
           return {
             tool,
             ng,
             denominator: positionNgRecords.length,
             rate: positionNgRecords.length ? ng / positionNgRecords.length : 0,
-            minNgScore: rawNgScores.length ? Math.min(...rawNgScores) : null,
+            minNgScore: actualNgScores.eligible.length ? Math.min(...actualNgScores.eligible) : null,
+            excludedActualNgScoreCount: actualNgScores.excluded.length,
+            actualNgExclusionThreshold: actualNgScores.threshold,
             threshold: getThreshold(position, tool)
           };
         })
@@ -2073,6 +2075,21 @@
       });
     });
     return Array.from(highestByTool.entries()).map(([tool, score]) => ({ tool, score }));
+  }
+
+  // 메인 화면과 Score 분석이 같은 실제 NG 최소 Score 규칙을 사용한다.
+  function actualNgScoreCandidates(records, selectedTool, otherToolExclusionScore) {
+    const threshold = clampScore(otherToolExclusionScore, 0.80);
+    const eligible = [], excluded = [];
+    (records || []).forEach((record) => {
+      const excludedByOtherTool = actualNgDetectedExclusion({ otherToolNgScores:recordOtherToolNgScores(record, selectedTool) }, threshold);
+      (record.sourceRows || []).forEach((row) => {
+        const observation = row?.tools?.[selectedTool];
+        if (observation?.result !== 'NG' || !Number.isFinite(observation.score)) return;
+        (excludedByOtherTool ? excluded : eligible).push(observation.score);
+      });
+    });
+    return { eligible, excluded, threshold };
   }
 
   function scorePoints(tool, scope, position, { excludeOtherToolNg = false, otherToolNgScoreThreshold = state.actualNgOtherToolExclusionScore } = {}) {

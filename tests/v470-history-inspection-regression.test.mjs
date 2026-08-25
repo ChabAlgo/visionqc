@@ -12,14 +12,14 @@ const dashboardCss = read('visionqc-v470.css');
 const cleanCss = read('visionqc-v4433-clean.css');
 const html = read('index.html');
 
-test('v4.7.4 Web and Agent download targets are aligned', () => {
-  assert.match(read('VERSION.txt'), /v4\.7\.4/);
-  assert.match(html, /visionqc-extension\.js\?v=4\.7\.4/);
-  assert.match(html, /visionqc-v470\.css\?v=4\.7\.4/);
-  assert.match(js, /const VERSION = '4\.7\.4'/);
+test('v4.7.5 Web and Agent download targets are aligned', () => {
+  assert.match(read('VERSION.txt'), /v4\.7\.5/);
+  assert.match(html, /visionqc-extension\.js\?v=4\.7\.5/);
+  assert.match(html, /visionqc-v470\.css\?v=4\.7\.5/);
+  assert.match(js, /const VERSION = '4\.7\.5'/);
   assert.match(js, /const EXPECTED_AGENT_VERSION = '1\.2\.3'/);
   assert.match(js, /VisionQC_Agent_Installer_v1\.2\.3\.exe/);
-  assert.match(js, /VisionQC_Offline_v4\.7\.4\.zip/);
+  assert.match(js, /VisionQC_Offline_v4\.7\.5\.zip/);
 });
 
 test('persistent History page has filters, server-side pagination, daily NG chart and image viewer', () => {
