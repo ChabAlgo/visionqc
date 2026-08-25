@@ -9,7 +9,7 @@
 - Keyword 모드는 공통 Root를 모든 활성 Position에 전달하며, 중복 제거 키는 `Position + 파일 경로`입니다.
 - SQLite 조회 집계는 같은 `Cell ID + Position`의 마지막 기록을 대표값으로 사용합니다.
 - Integrated Runtime은 동일 GPU 조건 및 Green Workspace·Position 집합이면 Green 단독 Simulation에서 재사용합니다.
-- 배포 파일은 `VisionQC_Agent_Installer_v1.2.3.exe`, `VisionQC_Offline_v4.7.6.zip`입니다.
+- 배포 파일은 `VisionQC_Agent_Installer_v1.2.3.exe`, `VisionQC_Offline_v4.7.7.zip`입니다.
 
 # 이전 변경 이력
 

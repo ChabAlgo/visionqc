@@ -1,18 +1,18 @@
 {
-  "releaseTag": "visionqc-v4.7.6-agent-v1.2.3",
-  "webVersion": "4.7.6",
+  "releaseTag": "visionqc-v4.7.7-agent-v1.2.3",
+  "webVersion": "4.7.7",
   "agentVersion": "1.2.3",
   "minimumAgentVersion": "1.2.3",
   "compatibility": {
-    "web": "4.7.6",
+    "web": "4.7.7",
     "agent": "1.2.3"
   },
   "artifacts": {
     "agentInstaller": "downloads/VisionQC_Agent_Installer_v1.2.3.exe",
-    "offlinePackage": "downloads/VisionQC_Offline_v4.7.6.zip",
+    "offlinePackage": "downloads/VisionQC_Offline_v4.7.7.zip",
     "sha256": {
-      "agentInstaller": "8F84229F980A1BF4F46BB365003C7C1EDCFE0B011826E37C0F4FB5E57F13148B",
-      "offlinePackage": "671BD3C80A6EED8A56D19BF7930308BB520E865F316890DB50E901DD7DEAF23A"
+      "agentInstaller": "CD4B25983983D02677C7C900B6ADC6302E0145FDEFE4713A6CE403101032F02A",
+      "offlinePackage": "7C9109967DA413F4D3C828E1084B86BE4813E3496F1E54EC8FA886C5F0B74300"
     }
   },
   "notes": "Simulation·CSV 전용 SQLite 집계, Runtime 기반 AI SUGGEST, Tool Score Heatmap Viewer와 대용량 실제 NG 폴더 지연 색인을 포함한 릴리스입니다. 배포 파일은 GitHub Release와 별도 백업 저장소에 보관합니다."

@@ -177,6 +177,44 @@ body.vq43-theme-light[data-vq-page="classification"] #root [class*="text-slate-"
 body.vq43-theme-light[data-vq-page="classification"] #root :is([class*="bg-blue-"],[class*="bg-violet-"],[class*="bg-emerald-"],[class*="bg-cyan-"],[class*="bg-amber-"]){box-shadow:0 1px 4px rgba(45,91,130,.12)!important}
 body.vq43-theme-light[data-vq-page="classification"] #root [class*="bg-slate-"] :is([class~="text-white"],[class*="text-slate-"]){color:#263f58!important}
 
+/* v4.7.7: classification alignment and complete light-mode readability. */
+body[data-vq-page="classification"] #root>div>header.vq43-host-header{justify-content:flex-start!important}
+body[data-vq-page="classification"] #root>div>header.vq43-host-header .vq43-stats{order:-1!important;margin-left:0!important;max-width:calc(100% - 24px)!important}
+body[data-vq-page="classification"] #root>div>header.vq43-host-header .vq43-actions{margin-left:auto!important}
+body.vq43-theme-light[data-vq-page="classification"] #root .vq43-stats>.flex.flex-col.shrink-0{padding:7px 9px!important;border:1px solid #9fcbe6!important;border-radius:10px!important;background:#e8f6ff!important;box-shadow:0 2px 7px rgba(29,78,116,.10)!important}
+body.vq43-theme-light[data-vq-page="classification"] #root .vq43-stats .h-1\\.5.w-24{background:#b9d9ed!important}
+body.vq43-theme-light[data-vq-page="classification"] #root .vq43-stats .text-blue-400{color:#075985!important}
+body.vq43-theme-light[data-vq-page="classification"] #root :is([class*="text-slate-"],[class*="text-gray-"],[class*="text-zinc-"],[class~="text-white"]){color:#18354f!important}
+body.vq43-theme-light[data-vq-page="classification"] #root :is([class*="text-blue-"],[class*="text-indigo-"],[class*="text-cyan-"]){color:#075985!important}
+body.vq43-theme-light[data-vq-page="classification"] #root [class*="text-emerald-"]{color:#047857!important}
+body.vq43-theme-light[data-vq-page="classification"] #root :is([class*="text-rose-"],[class*="text-red-"],[class*="text-pink-"]){color:#b42338!important}
+body.vq43-theme-light #vq43-shell .vq43-workspace-inspect{border-top-color:#9fc6dd!important}
+body.vq43-theme-light #vq43-shell .vq43-workspace-inspect>em{background:#e0f4ff!important;border-color:#8cc8e7!important;color:#075985!important}
+body.vq43-theme-light #vq43-shell :is(.vq43-workspace-inspect>span,.vq43-workspace-tool){background:#f8fcff!important;border-color:#a9cde3!important;color:#173952!important}
+body.vq43-theme-light #vq43-shell .vq43-workspace-inspect>span b{color:#075985!important}
+body.vq43-theme-light #vq43-shell .vq43-workspace-inspect>span small{color:#365a75!important}
+body.vq43-theme-light #vq43-shell :is(.vq43-workspace-card.loading,.vq43-workspace-card.pending,.vq43-workspace-card.ok){background:#f7fcff!important;border-color:#9fcbe3!important}
+body.vq43-theme-light #vq43-shell .vq43-workspace-card :is(header b,header small,p){color:#1d405b!important}
+body.vq43-theme-light #vq43-shell :is(.vq43-workspace-position-card,.vq43-workspace-kind-card){background:#f7fcff!important;border-color:#a5cee5!important}
+body.vq43-theme-light #vq43-shell :is(.vq43-workspace-position-card,.vq43-workspace-kind-card) :is(strong,b,span,small,p){color:#1d405b!important}
+body.vq43-theme-light #vq43-shell .vq43-workspace-tool :is(b,small){color:#315b78!important}
+body.vq43-theme-light #vq43-shell .vq43-workspace-stream{border-top-color:#9fc6dd!important}
+body.vq43-theme-light #vq43-shell .vq43-sim-page :is(.vq43-sim-option-field>span,.vq43-sim-compact-field>span,.vq43-sim-position-row-new .vq43-sim-path>span,.vq43-sim-options .vq43-sim-path>span){font-size:13px!important;color:#244761!important}
+body.vq43-theme-light #vq43-shell .vq43-sim-page :is(.vq43-sim-option-field input,.vq43-sim-option-field select,.vq43-sim-compact-field input,.vq43-sim-compact-field select){font-size:15px!important}
+body.vq43-theme-light #vq43-shell .vq43-sim-page .vq43-sim-options-head strong{font-size:21px!important}
+body.vq43-theme-light #vq43-shell .vq43-sim-page .vq43-sim-options-head span{font-size:14px!important;color:#31536d!important}
+body.vq43-theme-light #vq43-shell .vq43-sim-page :is(.vq43-sim-option-section>h3,.vq43-sim-option-titlebar h3){font-size:17px!important}
+body.vq43-theme-light #vq43-shell .vq43-sim-page .vq43-sim-option-note{font-size:13px!important;color:#36536d!important}
+body.vq43-theme-light #vq43-shell .vq43-sim-page :is(.vq43-sim-options-head button,.vq43-sim-option-titlebar button,.vq43-sim-table button,.vq43-sim-judgement-row button){font-size:14px!important}
+body.vq43-theme-light #vq43-shell .vq43-sim-page .vq43-sim-check span{font-size:15px!important;color:#244761!important}
+body[data-vq-page="classification"] #root .absolute.bottom-8.z-40.pointer-events-none{left:20px!important;bottom:16px!important;width:auto!important;max-width:min(520px,calc(100% - 36px))!important;transform:none!important;gap:10px!important;padding:10px 12px!important;border-radius:12px!important}
+body[data-vq-page="classification"] #root .absolute.bottom-8.z-40.pointer-events-none>div:first-child{width:32px!important;height:32px!important;border-radius:9px!important}
+body[data-vq-page="classification"] #root .absolute.bottom-8.z-40.pointer-events-none>div:first-child svg{width:16px!important;height:16px!important}
+body[data-vq-page="classification"] #root .absolute.bottom-8.z-40.pointer-events-none>div:nth-child(2){gap:3px!important}
+body[data-vq-page="classification"] #root .absolute.bottom-8.z-40.pointer-events-none :is(.text-\[11px\],.text-\[10px\]){font-size:10px!important}
+body[data-vq-page="classification"] #root .absolute.bottom-8.z-40.pointer-events-none p{font-size:12px!important;line-height:1.35!important;display:-webkit-box!important;-webkit-box-orient:vertical!important;-webkit-line-clamp:2!important;overflow:hidden!important}
+body.vq43-theme-light[data-vq-page="classification"] #root .absolute.bottom-8.z-40.pointer-events-none{background:rgba(232,246,255,.96)!important;border-color:#8cc8e7!important;color:#173952!important;box-shadow:0 10px 25px rgba(33,90,130,.16)!important}
+@media(max-width:900px){body[data-vq-page="classification"] #root .absolute.bottom-8.z-40.pointer-events-none{left:12px!important;bottom:12px!important;max-width:calc(100% - 24px)!important}}
 /* v4.7.6 white theme: image and chart popups are outside #vq43-shell. Only the image canvas stays dark for image contrast. */
 body.vq43-theme-light :is(#vq43-modal .vq43-modal-card,#vq43-chart-modal .vq43-chart-modal-card){background:#f8fcff!important;border-color:#b9d7eb!important;color:#1b344d!important;box-shadow:0 24px 60px rgba(30,70,105,.18)!important}
 body.vq43-theme-light :is(#vq43-modal .vq43-modal-head,#vq43-modal .vq43-modal-foot,#vq43-modal .vq43-modal-image-switcher,#vq43-chart-modal .vq43-chart-modal-head){background:#eef8ff!important;border-color:#c5ddea!important;color:#1b344d!important}
