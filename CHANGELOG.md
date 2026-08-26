@@ -1,3 +1,12 @@
+# VisionQC v4.7.9
+
+- 화이트 모드에서 Runtime File Load의 로딩·대기·완료 상태가 어두운 바탕으로 남던 CSS 우선순위를 밝은 하늘색 표면과 어두운 텍스트로 고정했다.
+- 화이트 모드의 Integrated / Green / Blue 탭은 선택 상태를 하늘색 배경·청록 테두리·하단 강조선으로 구분한다.
+- Integrated Simulation은 결과 Crop 이미지를 기본적으로 Output의 `_VisionQC_Integrated_Images`에 보존하여 CSV FullPath Viewer와 분석 Heatmap 재생성을 계속 사용할 수 있다.
+- 기존 저장 설정은 한 번만 Viewer 보존 기본값으로 이관한다. 사용자가 명시적으로 해제한 이후에는 임시 Crop을 삭제한다.
+
+---
+
 # VisionQC v4.7.8
 
 - 분석 Cell별 Score Viewer에서 저장된 Overlay가 없더라도 현재 사전 로드된 Green Runtime으로 한 장의 Heatmap을 즉시 생성할 수 있다.

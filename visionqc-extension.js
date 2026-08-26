@@ -1,7 +1,7 @@
 (() => {
   'use strict';
 
-  const VERSION = '4.7.8';
+  const VERSION = '4.7.9';
   const DEFAULT_POSITION_DEFS = [
     { key:'CA_TOP', name:'CA(TOP)' },
     { key:'AN_TOP', name:'AN(TOP)' },
@@ -27,7 +27,7 @@
   const LOCAL_AGENT_URL = 'http://127.0.0.1:17891';
   const EXPECTED_AGENT_VERSION = '1.2.3';
   const AGENT_INSTALLER_URL = './downloads/VisionQC_Agent_Installer_v1.2.3.exe';
-  const OFFLINE_PACKAGE_URL = './downloads/VisionQC_Offline_v4.7.8.zip';
+  const OFFLINE_PACKAGE_URL = './downloads/VisionQC_Offline_v4.7.9.zip';
   // SQLite에는 사용자가 명시적으로 남기려는 두 종류의 결과만 표시한다.
   // 이전 버전의 단발 검사(single-inspection) 이력은 보존하되 화면 집계에서는 제외한다.
   const PERSISTED_HISTORY_SOURCE_TYPES = ['simulation', 'csv-import', 'csv-file-stream'];
@@ -2486,7 +2486,7 @@
         fallbacks:simulationPositionDefs().map(({key,label}) => simulationDefaultFallback(key,label,'Locate'))
       },
       integrated:{
-        cellIdCsvPath:'', keywordMode:false, keywordInputRoot:'', keywordInputRoots:[], keepCropImages:false, heatmapImageSave:false
+        cellIdCsvPath:'', keywordMode:false, keywordInputRoot:'', keywordInputRoots:[], keepCropImages:true, heatmapImageSave:false
       }
     };
   }
@@ -2566,6 +2566,12 @@
     form.green = mergeSimulationSection(defaults.green, legacyGreen, form.green);
     form.blue = mergeSimulationSection(defaults.blue, legacyBlue, form.blue);
     form.integrated = mergeSimulationSection(defaults.integrated, legacyIntegrated, form.integrated);
+    // v4.7.9 이전 설정은 Crop 결과를 임시 파일로 삭제했습니다. 기존 기본값(false)을
+    // 한 번만 Viewer 보존 기본값(true)으로 이관하고, 이후 사용자가 끈 값은 그대로 유지합니다.
+    if (Number(form.integrated.viewerImageRetentionSchema || 0) < 1) {
+      form.integrated.keepCropImages = true;
+      form.integrated.viewerImageRetentionSchema = 1;
+    }
     form.green.keywordInputRoots = normalizeImageRoots(form.green.keywordInputRoots, form.green.keywordInputRoot || '');
     form.green.keywordInputRoot = form.green.keywordInputRoots[0] || '';
     form.integrated.keywordInputRoots = normalizeImageRoots(form.integrated.keywordInputRoots, form.integrated.keywordInputRoot || '');
@@ -4309,7 +4315,7 @@
       ${simPathField(scope,'','cellIdCsvPath','Cell ID CSV','비워두면 전체 검사','file','csv')}
       ${simulationCheck(scope,'keywordMode','Keyword 모드')}
       ${simPathField(scope,'','keywordInputRoot','Keyword Input Root','Keyword 모드 공통 이미지 입력 폴더','folder','folder',!obj.keywordMode)}
-      ${integrated?`${simulationCheck('integrated','keepCropImages','Blue Crop 이미지 저장')}`:''}
+      ${integrated?`${simulationCheck('integrated','keepCropImages','결과 Crop 이미지 유지 (Viewer용)')}<p class="vq43-sim-option-note">통합 결과의 원본·Heatmap Viewer를 위해 Crop 이미지를 Output 아래에 보존합니다. 해제하면 결과 CSV의 이미지 Viewer를 사용할 수 없습니다.</p>`:''}
     </section>`;
   }
 

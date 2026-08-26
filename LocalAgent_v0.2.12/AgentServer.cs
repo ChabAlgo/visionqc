@@ -1156,10 +1156,12 @@ namespace VisionQC.LocalAgent
                 }
                 else if (mode == "integrated")
                 {
-                    string cropRoot = Path.Combine(req.outputRoot, "_VisionQC_BlueCrop_Temp");
+                    var integratedOptions = GetIntegratedOptions(req);
+                    bool keepCropImages = integratedOptions.keepCropImages;
+                    string cropRoot = Path.Combine(req.outputRoot, keepCropImages ? "_VisionQC_Integrated_Images" : "_VisionQC_BlueCrop_Temp");
                     var blue = BuildBlueConfig(req, cropRoot, true);
                     var green = BuildGreenConfig(req, req.outputRoot, cropRoot, true);
-                    var summary = IntegratedSimulationProcessor.RunStreaming(blue, green, GetIntegratedOptions(req).keepCropImages, cropRoot, simulationControl, true, progress, token);
+                    var summary = IntegratedSimulationProcessor.RunStreaming(blue, green, keepCropImages, cropRoot, simulationControl, true, progress, token);
                     lock (_sync)
                     {
                         _state.processed = summary.BlueSummary.ProcessedImages;
