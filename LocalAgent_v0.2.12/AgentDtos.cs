@@ -74,6 +74,7 @@ namespace VisionQC.LocalAgent
         public string sourceFileName { get; set; }
         public int sourceRowNumber { get; set; }
         public string fullPath { get; set; }
+        public string processedPath { get; set; }
         public string cellId { get; set; }
         public string position { get; set; }
         public string totalResult { get; set; }
@@ -137,6 +138,7 @@ namespace VisionQC.LocalAgent
         public string sourceFileName { get; set; }
         public int sourceRowNumber { get; set; }
         public string fullPath { get; set; }
+        public string processedPath { get; set; }
         public string cellId { get; set; }
         public string position { get; set; }
         public string totalResult { get; set; }

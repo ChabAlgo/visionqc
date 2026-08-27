@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Collections;
 using System.Collections.Generic;
 using System.Diagnostics;
@@ -168,6 +168,12 @@ namespace VisionQC.LocalAgent
                     case "/api/status":
                         result = BuildStatus();
                         break;
+                    case "/api/vpdl/versions":
+                        result = BuildVpdlVersions();
+                        break;
+                    case "/api/vpdl/select":
+                        result = SelectVpdlWorker(request.Body);
+                        break;
                     case "/api/runtime/check":
                         result = RuntimeCheck(request.Body);
                         break;
@@ -315,7 +321,7 @@ namespace VisionQC.LocalAgent
             {
                 if (_vpdlReservedForSimulation)
                     return new { ok = false, busy = true, error = "다른 VPDL 작업이 실행 중입니다. 단일 검사는 작업 완료 후 다시 시도하세요." };
-                if (_preloadedRuntimeControl == null || !string.Equals(_preloadedRuntimeSignature, signature, StringComparison.Ordinal))
+                if (!HasCompatiblePreloadedRuntime(req, signature))
                     return new { ok = false, error = "현재 설정에 맞는 Runtime 사전 로드가 없습니다. Green 모드의 Runtime File Load를 먼저 실행하세요." };
                 _vpdlReservedForSimulation = true;
                 control = _preloadedRuntimeControl;
@@ -433,6 +439,8 @@ namespace VisionQC.LocalAgent
                 agentVersion = Program.AgentVersion,
                 engineVersion = "DL_Simulation v1.13 + VisionQC Workspace Inspect",
                 installedVpdlVersion = _vpdlVersion,
+                activeVpdlApiVersion = Program.ActiveVpdlInstallation == null ? "-" : Program.ActiveVpdlInstallation.ApiVersion,
+                availableVpdlVersions = VpdlRuntimeCatalog.Discover().Select(item => new { productVersion = item.ProductVersion, apiVersion = item.ApiVersion, displayName = item.DisplayName, workerInstalled = File.Exists(Path.Combine(Program.AgentHomeDirectory, "Workers", item.ApiVersion, "VisionQC.VpdlWorker.exe")) }).ToArray(),
                 vpdlVersion = (_preloadedRuntimeControl != null || _vpdlReservedForSimulation) ? _vpdlVersion : "-",
                 license = _licenseStatus,
                 runtimeMessage = _runtimeMessage,
@@ -449,6 +457,70 @@ namespace VisionQC.LocalAgent
             };
         }
 
+        private object BuildVpdlVersions()
+        {
+            var active = Program.ActiveVpdlInstallation;
+            return new
+            {
+                ok = true,
+                activeApiVersion = active == null ? "-" : active.ApiVersion,
+                activeProductVersion = active == null ? "-" : active.ProductVersion,
+                selectedApiVersion = VpdlWorkerSelection.Read(),
+                available = VpdlRuntimeCatalog.Discover().Select(item => new
+                {
+                    productVersion = item.ProductVersion,
+                    apiVersion = item.ApiVersion,
+                    displayName = item.DisplayName,
+                    workerInstalled = File.Exists(Path.Combine(Program.AgentHomeDirectory, "Workers", item.ApiVersion, "VisionQC.VpdlWorker.exe"))
+                }).ToArray()
+            };
+        }
+
+        private object SelectVpdlWorker(string body)
+        {
+            var request = DeserializeDictionary(body);
+            string requested = FirstNonEmpty(GetString(request, "apiVersion", ""), GetString(request, "version", ""));
+            var target = VpdlRuntimeCatalog.FindByVersion(requested);
+            if (target == null) return new { ok = false, error = "선택한 VPDL 버전이 정상 설치본으로 확인되지 않습니다: " + requested };
+            if (_vpdlReservedForSimulation || _preloadedRuntimeControl != null)
+                return new { ok = false, error = "Simulation 또는 Runtime File Load가 실행 중입니다. 완료 또는 중지 후 VPDL 버전을 전환하세요." };
+
+            string worker = Path.Combine(Program.AgentHomeDirectory, "Workers", target.ApiVersion, "VisionQC.VpdlWorker.exe");
+            if (!File.Exists(worker))
+                return new { ok = false, error = "VPDL " + target.ProductVersion + " (API " + target.ApiVersion + ")용 Worker가 설치되어 있지 않습니다." };
+
+            var active = Program.ActiveVpdlInstallation;
+            if (active != null && string.Equals(active.ApiVersion, target.ApiVersion, StringComparison.OrdinalIgnoreCase))
+                return new { ok = true, restarted = false, activeApiVersion = active.ApiVersion, message = "이미 선택된 VPDL Worker가 실행 중입니다." };
+
+            try
+            {
+                VpdlWorkerSelection.Write(target.ApiVersion);
+                string launcher = Path.Combine(Program.AgentHomeDirectory, "VisionQC.LocalAgent.exe");
+                if (File.Exists(launcher))
+                {
+                    Process.Start(new ProcessStartInfo
+                    {
+                        FileName = launcher,
+                        Arguments = "--vpdl " + target.ApiVersion + " --delay 700",
+                        UseShellExecute = false,
+                        CreateNoWindow = true,
+                        WindowStyle = ProcessWindowStyle.Hidden
+                    });
+                }
+                _ = Task.Run(async () =>
+                {
+                    await Task.Delay(250).ConfigureAwait(false);
+                    Program.RequestWorkerRestart();
+                    _serverCts.Cancel();
+                });
+                return new { ok = true, restarting = true, selectedApiVersion = target.ApiVersion, selectedVpdlVersion = target.ProductVersion };
+            }
+            catch (SysException ex)
+            {
+                return new { ok = false, error = "VPDL Worker 전환 준비 실패: " + ex.Message };
+            }
+        }
         private object RuntimeCheck(string body)
         {
             var req = DeserializeDictionary(body);
@@ -1803,13 +1875,10 @@ namespace VisionQC.LocalAgent
 
         private string DetectVpdlVersion()
         {
-            string root = @"C:\Program Files\Cognex\VisionPro Deep Learning";
-            foreach (string version in new[] { "4.0", "4.1", "4.2", "5.0" })
-            {
-                string dll = Path.Combine(root, version, "Cognex Deep Learning Studio", "ViDi.NET.Local.dll");
-                if (File.Exists(dll)) return version;
-            }
-            return "-";
+            // 현재 Worker가 실제로 바인딩한 VPDL만 상태로 표시한다.
+            // 단순히 먼저 발견한 폴더를 표시하면 다른 버전 DLL 혼용 여부를 숨길 수 있다.
+            var active = Program.ActiveVpdlInstallation;
+            return active == null ? "-" : active.ProductVersion;
         }
 
         private string DetectGpuName()
@@ -2031,7 +2100,7 @@ namespace VisionQC.LocalAgent
                 relative = relative.TrimStart('/').Replace('/', Path.DirectorySeparatorChar);
                 if (string.IsNullOrWhiteSpace(relative)) relative = "index.html";
 
-                string root = Path.GetFullPath(Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "Web"));
+                string root = Path.GetFullPath(Path.Combine(Program.AgentHomeDirectory, "Web"));
                 string path = Path.GetFullPath(Path.Combine(root, relative));
                 if (!path.StartsWith(root + Path.DirectorySeparatorChar, StringComparison.OrdinalIgnoreCase) && !string.Equals(path, root, StringComparison.OrdinalIgnoreCase))
                 {

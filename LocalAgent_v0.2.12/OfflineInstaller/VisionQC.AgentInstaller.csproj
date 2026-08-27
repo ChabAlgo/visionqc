@@ -24,6 +24,8 @@
   <ItemGroup>
     <Reference Include="System" />
     <Reference Include="System.Core" />
+    <Reference Include="System.IO.Compression" />
+    <Reference Include="System.IO.Compression.FileSystem" />
     <Reference Include="System.Windows.Forms" />
     <Reference Include="Microsoft.CSharp" />
   </ItemGroup>
@@ -32,11 +34,9 @@
     <Compile Include="Properties\AssemblyInfo.cs" />
   </ItemGroup>
   <ItemGroup>
-    <EmbeddedResource Include="..\bin\x64\Release\VisionQC.LocalAgent.exe"><LogicalName>VisionQC.AgentInstaller.Payload.Agent.VisionQC.LocalAgent.exe</LogicalName></EmbeddedResource>
-    <EmbeddedResource Include="..\bin\x64\Release\VisionQC.LocalAgent.exe.config"><LogicalName>VisionQC.AgentInstaller.Payload.Agent.VisionQC.LocalAgent.exe.config</LogicalName></EmbeddedResource>
-    <EmbeddedResource Include="..\bin\x64\Release\System.Data.SQLite.dll"><LogicalName>VisionQC.AgentInstaller.Payload.Agent.System.Data.SQLite.dll</LogicalName></EmbeddedResource>
-    <EmbeddedResource Include="..\bin\x64\Release\x64\SQLite.Interop.dll"><LogicalName>VisionQC.AgentInstaller.Payload.Agent.x64.SQLite.Interop.dll</LogicalName></EmbeddedResource>
-    <EmbeddedResource Include="..\bin\x64\Release\System.Drawing.Common.dll"><LogicalName>VisionQC.AgentInstaller.Payload.Agent.System.Drawing.Common.dll</LogicalName></EmbeddedResource>
+    <EmbeddedResource Include="..\Launcher\bin\x64\Release\VisionQC.LocalAgent.exe"><LogicalName>VisionQC.AgentInstaller.Payload.Launcher.VisionQC.LocalAgent.exe</LogicalName></EmbeddedResource>
+    <EmbeddedResource Include="..\Launcher\bin\x64\Release\vpdl-workers.json"><LogicalName>VisionQC.AgentInstaller.Payload.WorkerManifest.vpdl-workers.json</LogicalName></EmbeddedResource>
+    <EmbeddedResource Include="..\Launcher\bin\x64\Release\vpdl-workers.zip"><LogicalName>VisionQC.AgentInstaller.Payload.WorkerBundle.vpdl-workers.zip</LogicalName></EmbeddedResource>
     <EmbeddedResource Include="..\..\index.html"><LogicalName>VisionQC.AgentInstaller.Payload.Web.index.html</LogicalName></EmbeddedResource>
     <EmbeddedResource Include="..\..\visionqc-extension.js"><LogicalName>VisionQC.AgentInstaller.Payload.Web.visionqc-extension.js</LogicalName></EmbeddedResource>
     <EmbeddedResource Include="..\..\visionqc-extension.css"><LogicalName>VisionQC.AgentInstaller.Payload.Web.visionqc-extension.css</LogicalName></EmbeddedResource>

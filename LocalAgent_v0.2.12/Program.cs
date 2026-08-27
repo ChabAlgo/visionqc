@@ -1,17 +1,28 @@
-﻿using System;
+using System;
 using System.IO;
 using System.Linq;
 using System.Reflection;
 using System.Runtime.InteropServices;
 using Microsoft.Win32;
 using System.Windows.Forms;
+using VisionQC.LocalAgent.Services;
 
 namespace VisionQC.LocalAgent
 {
     internal static class Program
     {
-        internal const string AgentVersion = "1.2.3";
-        private static readonly string VpdlStudioDirectory = FindVpdlStudioDirectory();
+        internal const string AgentVersion = "1.3.0";
+        internal static VpdlRuntimeCatalog.Installation ActiveVpdlInstallation { get; private set; }
+        private static int _requestedExitCode;
+
+        internal static string AgentHomeDirectory
+        {
+            get
+            {
+                string configured = Environment.GetEnvironmentVariable("VISIONQC_AGENT_HOME");
+                return string.IsNullOrWhiteSpace(configured) ? AppDomain.CurrentDomain.BaseDirectory : configured.Trim();
+            }
+        }
 
         [DllImport("kernel32.dll", SetLastError = true)]
         private static extern bool SetDllDirectory(string lpPathName);
@@ -21,8 +32,18 @@ namespace VisionQC.LocalAgent
         {
             Application.EnableVisualStyles();
             Application.SetCompatibleTextRenderingDefault(false);
-            ConfigureVpdlNativeSearchPath();
             AppDomain.CurrentDomain.AssemblyResolve += ResolveAssemblyFromLocalOrVpdInstall;
+            ConfigureVpdlNativeSearchPath();
+
+            if (ActiveVpdlInstallation == null)
+            {
+                MessageBox.Show(
+                    "현재 Agent 빌드와 호환되는 Cognex VPDL Runtime을 찾지 못했습니다.\r\n\r\n" +
+                    "설치된 VPDL의 ViDi.NET.Local.dll 및 bin\\vidi_*.dll 쌍을 확인한 뒤, " +
+                    "해당 VPDL 버전용 VisionQC Agent Worker를 사용하세요.",
+                    "VisionQC Local Agent", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+                return;
+            }
 
             bool openOfflinePage = args != null && args.Any(arg => string.Equals(arg, "--offline", StringComparison.OrdinalIgnoreCase));
             if (args != null && args.Length > 0)
@@ -45,11 +66,18 @@ namespace VisionQC.LocalAgent
             {
                 server.RunUntilExit(openOfflinePage);
             }
+            if (_requestedExitCode != 0) Environment.ExitCode = _requestedExitCode;
+        }
+
+        internal static void RequestWorkerRestart()
+        {
+            _requestedExitCode = VpdlWorkerSelection.RestartExitCode;
         }
 
         internal static void RegisterProtocol()
         {
-            string exe = Assembly.GetExecutingAssembly().Location;
+            string launcher = Path.Combine(AgentHomeDirectory, "VisionQC.LocalAgent.exe");
+            string exe = File.Exists(launcher) ? launcher : Assembly.GetExecutingAssembly().Location;
             using (var key = Registry.CurrentUser.CreateSubKey(@"Software\Classes\visionqc-agent"))
             {
                 key.SetValue("", "URL:VisionQC Local Agent");
@@ -70,7 +98,7 @@ namespace VisionQC.LocalAgent
             {
                 string dllName = new AssemblyName(args.Name).Name + ".dll";
                 string baseDir = AppDomain.CurrentDomain.BaseDirectory;
-                string[] candidateDirs = new[] { baseDir, Path.Combine(baseDir, "Cognex"), VpdlStudioDirectory };
+                string[] candidateDirs = new[] { baseDir, Path.Combine(baseDir, "Cognex"), ActiveVpdlInstallation == null ? "" : ActiveVpdlInstallation.StudioDirectory };
                 foreach (string dir in candidateDirs)
                 {
                     if (string.IsNullOrWhiteSpace(dir)) continue;
@@ -82,37 +110,32 @@ namespace VisionQC.LocalAgent
             return null;
         }
 
-        // ViDi.NET은 관리 DLL 외에 VPDL 설치 루트의 bin\vidi_*.dll을 동적으로 로드한다.
-        // 설치 EXE의 AppData 경로에서는 Cognex Studio의 PATH를 상속하지 않을 수 있으므로 시작 전에 명시한다.
+        // ViDi.NET은 관리 DLL 외에 같은 API 버전의 VPDL 설치 루트 bin\vidi_*.dll을 동적으로 로드한다.
+        // 폴더 존재 순서가 아니라 Agent가 참조한 ViDi.NET.Local API 버전과 일치하는 정상 설치본만 선택한다.
         private static void ConfigureVpdlNativeSearchPath()
         {
             try
             {
-                if (string.IsNullOrWhiteSpace(VpdlStudioDirectory)) return;
-                string root = Directory.GetParent(VpdlStudioDirectory).FullName;
-                string nativeBin = Path.Combine(root, "bin");
-                string service = Path.Combine(root, "Service");
+                string explicitStudio = Environment.GetEnvironmentVariable("COGNEX_VPDL_DLL_DIR");
+                Version referencedVersion = Assembly.GetExecutingAssembly()
+                    .GetReferencedAssemblies()
+                    .Where(item => string.Equals(item.Name, "ViDi.NET.Local", StringComparison.OrdinalIgnoreCase))
+                    .Select(item => item.Version)
+                    .FirstOrDefault();
+                string apiVersion = VpdlRuntimeCatalog.ToApiVersion(referencedVersion);
+                ActiveVpdlInstallation = VpdlRuntimeCatalog.Discover(explicitStudio)
+                    .FirstOrDefault(item => string.Equals(item.ApiVersion, apiVersion, StringComparison.OrdinalIgnoreCase));
+                if (ActiveVpdlInstallation == null) return;
+
+                string nativeBin = ActiveVpdlInstallation.NativeDirectory;
+                string service = Path.Combine(ActiveVpdlInstallation.RootDirectory, "Service");
                 string currentPath = Environment.GetEnvironmentVariable("PATH") ?? "";
-                string prefix = string.Join(";", new[] { nativeBin, VpdlStudioDirectory, service }.Where(Directory.Exists));
+                string prefix = string.Join(";", new[] { nativeBin, ActiveVpdlInstallation.StudioDirectory, service }.Where(Directory.Exists));
                 if (!string.IsNullOrWhiteSpace(prefix) && currentPath.IndexOf(nativeBin, StringComparison.OrdinalIgnoreCase) < 0)
                     Environment.SetEnvironmentVariable("PATH", prefix + ";" + currentPath, EnvironmentVariableTarget.Process);
                 if (Directory.Exists(nativeBin)) SetDllDirectory(nativeBin);
             }
             catch { }
-        }
-
-        private static string FindVpdlStudioDirectory()
-        {
-            string environmentDirectory = Environment.GetEnvironmentVariable("COGNEX_VPDL_DLL_DIR");
-            string[] candidates = new[]
-            {
-                environmentDirectory,
-                @"C:\Program Files\Cognex\VisionPro Deep Learning\4.0\Cognex Deep Learning Studio",
-                @"C:\Program Files\Cognex\VisionPro Deep Learning\4.1\Cognex Deep Learning Studio",
-                @"C:\Program Files\Cognex\VisionPro Deep Learning\4.2\Cognex Deep Learning Studio",
-                @"C:\Program Files\Cognex\VisionPro Deep Learning\5.0\Cognex Deep Learning Studio"
-            };
-            return candidates.FirstOrDefault(path => !string.IsNullOrWhiteSpace(path) && File.Exists(Path.Combine(path, "ViDi.NET.Local.dll"))) ?? "";
         }
     }
 }

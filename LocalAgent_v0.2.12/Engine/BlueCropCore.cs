@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
 using System.Diagnostics;
 using System.Drawing;
@@ -623,7 +623,8 @@ namespace VpdlGreenHeatmapOverlay
 
                         if (!result.Error && !string.IsNullOrWhiteSpace(result.OutputPath) && File.Exists(result.OutputPath))
                         {
-                            greenSession.ProcessImage(slot.Key, result.OutputPath, greenInputRoot, token);
+                            // Green Runtime에는 Crop을 입력하지만, 결과/이력에는 원본 Grab 경로도 함께 남긴다.
+                            greenSession.ProcessImage(slot.Key, result.OutputPath, imagePath, greenInputRoot, token);
                             if (!keepCropImages)
                             {
                                 try { File.Delete(result.OutputPath); }

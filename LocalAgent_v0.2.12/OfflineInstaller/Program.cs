@@ -1,6 +1,7 @@
 using System;
 using System.Diagnostics;
 using System.IO;
+using System.IO.Compression;
 using System.Linq;
 using System.Net;
 using System.Net.Sockets;
@@ -14,14 +15,12 @@ namespace VisionQC.AgentInstaller
     internal static class Program
     {
         private const string AgentExe = "VisionQC.LocalAgent.exe";
-        private const string ProductVersion = "1.2.3";
+        private const string ProductVersion = "1.3.0";
         private static readonly PayloadFile[] Payload =
         {
-            new PayloadFile("VisionQC.AgentInstaller.Payload.Agent.VisionQC.LocalAgent.exe", AgentExe),
-            new PayloadFile("VisionQC.AgentInstaller.Payload.Agent.VisionQC.LocalAgent.exe.config", AgentExe + ".config"),
-            new PayloadFile("VisionQC.AgentInstaller.Payload.Agent.System.Data.SQLite.dll", "System.Data.SQLite.dll"),
-            new PayloadFile("VisionQC.AgentInstaller.Payload.Agent.x64.SQLite.Interop.dll", "x64\\SQLite.Interop.dll"),
-            new PayloadFile("VisionQC.AgentInstaller.Payload.Agent.System.Drawing.Common.dll", "System.Drawing.Common.dll"),
+            new PayloadFile("VisionQC.AgentInstaller.Payload.Launcher.VisionQC.LocalAgent.exe", AgentExe),
+            new PayloadFile("VisionQC.AgentInstaller.Payload.WorkerManifest.vpdl-workers.json", "vpdl-workers.json"),
+            new PayloadFile("VisionQC.AgentInstaller.Payload.WorkerBundle.vpdl-workers.zip", "vpdl-workers.zip"),
             new PayloadFile("VisionQC.AgentInstaller.Payload.Web.index.html", "Web\\index.html"),
             new PayloadFile("VisionQC.AgentInstaller.Payload.Web.visionqc-extension.js", "Web\\visionqc-extension.js"),
             new PayloadFile("VisionQC.AgentInstaller.Payload.Web.visionqc-extension.css", "Web\\visionqc-extension.css"),
@@ -88,6 +87,29 @@ namespace VisionQC.AgentInstaller
                     using (FileStream target = new FileStream(destination, FileMode.Create, FileAccess.Write, FileShare.None)) source.CopyTo(target);
                 }
             }
+            ExtractVpdlWorkerBundle(root);
+        }
+
+        private static void ExtractVpdlWorkerBundle(string installDir)
+        {
+            string root = Path.GetFullPath(installDir);
+            string workerRoot = Path.Combine(root, "Workers");
+            string bundle = Path.Combine(root, "vpdl-workers.zip");
+            if (!File.Exists(bundle)) throw new FileNotFoundException("VPDL Worker 묶음을 찾지 못했습니다.", bundle);
+            if (Directory.Exists(workerRoot)) Directory.Delete(workerRoot, true);
+            Directory.CreateDirectory(workerRoot);
+            using (ZipArchive archive = ZipFile.OpenRead(bundle))
+            foreach (ZipArchiveEntry entry in archive.Entries)
+            {
+                string relative = (entry.FullName ?? "").Replace('/', Path.DirectorySeparatorChar).TrimStart(Path.DirectorySeparatorChar);
+                if (string.IsNullOrWhiteSpace(relative)) continue;
+                string target = Path.GetFullPath(Path.Combine(workerRoot, relative));
+                if (!target.StartsWith(workerRoot + Path.DirectorySeparatorChar, StringComparison.OrdinalIgnoreCase)) throw new InvalidOperationException("잘못된 Worker 압축 경로입니다.");
+                if (string.IsNullOrEmpty(entry.Name)) { Directory.CreateDirectory(target); continue; }
+                Directory.CreateDirectory(Path.GetDirectoryName(target));
+                entry.ExtractToFile(target, true);
+            }
+            try { File.Delete(bundle); } catch { }
         }
 
         private static void StopRunningAgent(string installedAgentPath)
@@ -117,12 +139,16 @@ namespace VisionQC.AgentInstaller
         private static bool IsInstalledAgentRunning(string installedAgentPath)
         {
             string expected = Path.GetFullPath(installedAgentPath ?? "");
-            foreach (Process process in Process.GetProcessesByName(Path.GetFileNameWithoutExtension(AgentExe)))
+            string installRoot = Path.GetDirectoryName(expected) ?? "";
+            string installPrefix = installRoot.TrimEnd(Path.DirectorySeparatorChar) + Path.DirectorySeparatorChar;
+            foreach (string name in new[] { Path.GetFileNameWithoutExtension(AgentExe), "VisionQC.VpdlWorker" })
+            foreach (Process process in Process.GetProcessesByName(name))
             {
                 try
                 {
                     string processPath = process.MainModule == null ? "" : process.MainModule.FileName;
-                    if (string.Equals(Path.GetFullPath(processPath), expected, StringComparison.OrdinalIgnoreCase)) return true;
+                    string fullPath = string.IsNullOrWhiteSpace(processPath) ? "" : Path.GetFullPath(processPath);
+                    if (string.Equals(fullPath, expected, StringComparison.OrdinalIgnoreCase) || fullPath.StartsWith(installPrefix, StringComparison.OrdinalIgnoreCase)) return true;
                 }
                 catch { }
                 finally { try { process.Dispose(); } catch { } }
@@ -175,16 +201,23 @@ namespace VisionQC.AgentInstaller
 
         private static bool HasVpdlRuntime()
         {
-            string envDir = Environment.GetEnvironmentVariable("COGNEX_VPDL_DLL_DIR");
-            string[] candidates =
+            string root = Environment.GetEnvironmentVariable("COGNEX_VPDL_ROOT");
+            if (string.IsNullOrWhiteSpace(root)) root = @"C:\Program Files\Cognex\VisionPro Deep Learning";
+            if (!Directory.Exists(root)) return false;
+            foreach (string versionRoot in Directory.GetDirectories(root))
             {
-                envDir,
-                @"C:\\Program Files\\Cognex\\VisionPro Deep Learning\\5.0\\Cognex Deep Learning Studio",
-                @"C:\\Program Files\\Cognex\\VisionPro Deep Learning\\4.2\\Cognex Deep Learning Studio",
-                @"C:\\Program Files\\Cognex\\VisionPro Deep Learning\\4.1\\Cognex Deep Learning Studio",
-                @"C:\\Program Files\\Cognex\\VisionPro Deep Learning\\4.0\\Cognex Deep Learning Studio"
-            };
-            return candidates.Any(path => !string.IsNullOrWhiteSpace(path) && File.Exists(Path.Combine(path, "ViDi.NET.Local.dll")));
+                string studio = Path.Combine(versionRoot, "Cognex Deep Learning Studio");
+                string managed = Path.Combine(studio, "ViDi.NET.Local.dll");
+                if (!File.Exists(managed)) continue;
+                try
+                {
+                    Version api = AssemblyName.GetAssemblyName(managed).Version;
+                    string native = Path.Combine(versionRoot, "bin", "vidi_" + api.Major + api.Minor + ".dll");
+                    if (File.Exists(native)) return true;
+                }
+                catch { }
+            }
+            return false;
         }
 
         private sealed class PayloadFile

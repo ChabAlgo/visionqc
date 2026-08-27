@@ -11,10 +11,10 @@ const picker = read('NativeShellPicker.cs');
 const pickerService = read('Services/PickerService.cs');
 const program = read('Program.cs');
 
-test('Agent v1.2.3 version is consistent', () => {
-  assert.match(program, /AgentVersion = "1\.2\.3"/);
-  assert.match(read('Properties/AssemblyInfo.cs'), /AssemblyVersion\("1\.2\.3\.0"\)/);
-  assert.match(read('BUILD_RELEASE_x64.cmd'), /v1\.2\.3/);
+test('Agent v1.3.0 version is consistent', () => {
+  assert.match(program, /AgentVersion = "1\.3\.0"/);
+  assert.match(read('Properties/AssemblyInfo.cs'), /AssemblyVersion\("1\.3\.0\.0"\)/);
+  assert.match(read('BUILD_RELEASE_x64.cmd'), /v1\.3\.0/);
 });
 
 test('HTTP server delegates picker lifecycle to the isolated picker service', () => {
@@ -84,13 +84,29 @@ test('Integrated Runtime is reusable for a compatible Green-only Simulation', ()
   assert.match(read('AgentDtos.cs'), /public string greenWorkspaceSignature/);
 });
 
-test('installed Agent adds the Cognex native bin folder before loading VPDL Runtime', () => {
+test('Agent resolves only a healthy VPDL installation matching its managed API', () => {
+  const catalog = read('Services/VpdlRuntimeCatalog.cs');
   assert.match(program, /ConfigureVpdlNativeSearchPath\(\)/);
   assert.match(program, /SetDllDirectory\(nativeBin\)/);
-  assert.match(program, /Path\.Combine\(root, "bin"\)/);
-  assert.match(program, /VisionPro Deep Learning\\4\.0/);
+  assert.match(program, /GetReferencedAssemblies\(\)/);
+  assert.match(program, /ActiveVpdlInstallation/);
+  assert.doesNotMatch(program, /VisionPro Deep Learning\\4\.0/);
+  assert.match(catalog, /ViDi\.NET\.Local\.dll/);
+  assert.match(catalog, /vidi_" \+ apiVersion\.Replace/);
+  assert.match(catalog, /File\.Exists\(native\)/);
 });
 
+test('VPDL Workers are process-isolated and selected through a Launcher', () => {
+  const launcher = read('Launcher/Program.cs');
+  const selection = read('Services/VpdlWorkerSelection.cs');
+  assert.match(server, /case "\/api\/vpdl\/versions"/);
+  assert.match(server, /case "\/api\/vpdl\/select"/);
+  assert.match(server, /Program\.RequestWorkerRestart\(\)/);
+  assert.match(launcher, /Workers", installation\.ApiVersion, "VisionQC\.VpdlWorker\.exe/);
+  assert.match(launcher, /process\.WaitForExit\(\)/);
+  assert.match(selection, /RestartExitCode = 74/);
+  assert.match(read('BUILD_VPDL_WORKERS.ps1'), /Get-HealthyVpdlInstallations/);
+});
 test('Agent keeps loopback CORS, JSON errors, and multi-root simulation support', () => {
   assert.match(server, /WriteJson\(stream, 500/);
   assert.match(server, /Access-Control-Allow-Private-Network: true/);

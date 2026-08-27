@@ -2,43 +2,39 @@
 setlocal EnableExtensions
 cd /d "%~dp0"
 echo ============================================================
-echo  VisionQC Local Agent v1.2.3 - Build x64 Release
+echo  VisionQC Local Agent v1.3.0 - Multi VPDL Worker Build
 echo ============================================================
-set "COGNEX=%COGNEX_VPDL_DLL_DIR%"
-if not "%~1"=="" set "COGNEX=%~1"
-if not defined COGNEX if exist "C:\Program Files\Cognex\VisionPro Deep Learning\4.2\Cognex Deep Learning Studio\ViDi.NET.Local.dll" set "COGNEX=C:\Program Files\Cognex\VisionPro Deep Learning\4.2\Cognex Deep Learning Studio"
-if not defined COGNEX if exist "C:\Program Files\Cognex\VisionPro Deep Learning\4.1\Cognex Deep Learning Studio\ViDi.NET.Local.dll" set "COGNEX=C:\Program Files\Cognex\VisionPro Deep Learning\4.1\Cognex Deep Learning Studio"
-if not defined COGNEX if exist "C:\Program Files\Cognex\VisionPro Deep Learning\4.0\Cognex Deep Learning Studio\ViDi.NET.Local.dll" set "COGNEX=C:\Program Files\Cognex\VisionPro Deep Learning\4.0\Cognex Deep Learning Studio"
-if not defined COGNEX if exist "C:\Program Files\Cognex\VisionPro Deep Learning\5.0\Cognex Deep Learning Studio\ViDi.NET.Local.dll" set "COGNEX=C:\Program Files\Cognex\VisionPro Deep Learning\5.0\Cognex Deep Learning Studio"
-if not exist "%COGNEX%\ViDi.NET.Local.dll" (
-  echo [ERROR] VPDL SDK DLL not found:
-  echo %COGNEX%
+powershell -NoProfile -ExecutionPolicy Bypass -File "%~dp0BUILD_VPDL_WORKERS.ps1"
+if errorlevel 1 (
   echo.
-  echo Usage: BUILD_RELEASE_x64.cmd "D:\path\to\Cognex Deep Learning Studio"
-  echo Or set COGNEX_VPDL_DLL_DIR before running this script.
+  echo [FAILED] VPDL Worker build
   pause
   exit /b 1
 )
 set "VSWHERE=%ProgramFiles(x86)%\Microsoft Visual Studio\Installer\vswhere.exe"
 if not exist "%VSWHERE%" (
-  echo [ERROR] vswhere.exe not found. Install Visual Studio 2022 Build Tools.
+  echo [FAILED] vswhere.exe not found
   pause
   exit /b 1
 )
-for /f "usebackq tokens=*" %%i in (`"%VSWHERE%" -latest -products * -requires Microsoft.Component.MSBuild -find MSBuild\**\Bin\MSBuild.exe`) do set "MSBUILD=%%i"
+for /f "usebackq delims=" %%I in ("%VSWHERE% -latest -products * -requires Microsoft.Component.MSBuild -find MSBuild\**\Bin\MSBuild.exe") do set "MSBUILD=%%I"
 if not defined MSBUILD (
-  echo [ERROR] MSBuild not found.
+  echo [FAILED] MSBuild.exe not found
   pause
   exit /b 1
 )
-"%MSBUILD%" VisionQC.LocalAgent.csproj /m /t:Rebuild /p:Configuration=Release /p:Platform=x64 /p:CognexDir="%COGNEX%"
+"%MSBUILD%" "%~dp0OfflineInstaller\VisionQC.AgentInstaller.csproj" /m /t:Rebuild /p:Configuration=Release /p:Platform=x64
 if errorlevel 1 (
-  echo.
-  echo [FAILED]
+  echo [FAILED] Offline Installer build
   pause
   exit /b 1
 )
+set "INSTALLER=%~dp0OfflineInstaller\bin\x64\Release\VisionQC_Agent_Installer.exe"
+set "DOWNLOAD=%~dp0..\downloads\VisionQC_Agent_Installer_v1.3.0.exe"
+if not exist "%~dp0..\downloads" mkdir "%~dp0..\downloads"
+copy /y "%INSTALLER%" "%DOWNLOAD%" >nul
 echo.
-echo [OK] bin\x64\Release\VisionQC.LocalAgent.exe
-echo Next: run REGISTER_PROTOCOL.cmd once.
+echo [OK] Launcher\bin\x64\Release\VisionQC.LocalAgent.exe
+echo [OK] Launcher\bin\x64\Release\Workers\{API}\VisionQC.VpdlWorker.exe
+echo [OK] %DOWNLOAD%
 pause

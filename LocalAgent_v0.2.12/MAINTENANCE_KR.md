@@ -8,7 +8,7 @@
 - 포트: `127.0.0.1:17891` (외부 인터페이스에 바인딩하지 않는다)
 - 영구 이력: `%LOCALAPPDATA%\VisionQC\LocalAgent\data\visionqc-history.sqlite`
 
-시작 시 `Program.cs`가 Cognex VPDL Studio와 설치 루트의 `bin`/`Service` 폴더를 현재 프로세스 DLL 검색 경로에 넣는다. 설치본에서 Runtime 오류 126이 발생하면 이 경로 설정과 VPDL Runtime/라이선스 설치 상태를 먼저 확인한다.
+`Launcher/Program.cs`는 VPDL DLL을 로드하지 않는 시작 관리자다. 실제 `Program.cs` Worker는 `ViDi.NET.Local.dll` API와 같은 `bin\\vidi_*.dll`이 확인된 설치본만 DLL 검색 경로에 넣는다. Runtime 오류가 나면 `VPDL_MULTI_VERSION_KR.md`의 API 쌍·Worker 포함 여부·VPDL Runtime/라이선스 상태를 먼저 확인한다.
 
 하위 폴더의 `README_KR.md`에는 목적·의존성·제한·수정 규칙을 적었다. 새 대화에서는 이 문서와 `..\USER_REQUESTS_V4.7.0_KR.md`, `..\ARCHITECTURE_V4.7.0_KR.md`, `Services\HISTORY_SERVICE_KR.md`, `Persistence\HISTORY_STORE_KR.md`를 먼저 읽는다.
 

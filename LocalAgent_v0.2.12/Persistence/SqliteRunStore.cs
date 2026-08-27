@@ -68,6 +68,7 @@ VALUES (@run_id, @source_type, @mode, @source_name, @started_at_utc, 'running', 
             {
                 SourceFileName = record.FileName,
                 FullPath = record.FullPath,
+                ProcessedPath = record.ProcessingPath,
                 CellId = record.CellId,
                 Position = record.Position,
                 TotalResult = record.TotalResult,
@@ -89,6 +90,7 @@ VALUES (@run_id, @source_type, @mode, @source_name, @started_at_utc, 'running', 
                 SourceFileName = record.sourceFileName,
                 SourceRowNumber = record.sourceRowNumber,
                 FullPath = record.fullPath,
+                ProcessedPath = record.processedPath,
                 CellId = record.cellId,
                 Position = record.position,
                 TotalResult = record.totalResult,
@@ -141,14 +143,15 @@ VALUES (@run_id, @source_type, @mode, @source_name, @started_at_utc, 'running', 
             using (var command = session.Connection.CreateCommand())
             {
                 command.Transaction = session.Transaction;
-                command.CommandText = @"INSERT INTO images (run_id, sequence_no, source_file_name, source_row_number, full_path, cell_id, position_key, total_result, judgement, capture_timestamp, inspected_at_utc)
-VALUES (@run_id, @sequence_no, @source_file_name, @source_row_number, @full_path, @cell_id, @position_key, @total_result, @judgement, @capture_timestamp, @inspected_at_utc);
+                command.CommandText = @"INSERT INTO images (run_id, sequence_no, source_file_name, source_row_number, full_path, processed_path, cell_id, position_key, total_result, judgement, capture_timestamp, inspected_at_utc)
+VALUES (@run_id, @sequence_no, @source_file_name, @source_row_number, @full_path, @processed_path, @cell_id, @position_key, @total_result, @judgement, @capture_timestamp, @inspected_at_utc);
 SELECT last_insert_rowid();";
                 Add(command, "@run_id", session.RunId);
                 Add(command, "@sequence_no", session.RecordCount + 1);
                 Add(command, "@source_file_name", record.SourceFileName);
                 Add(command, "@source_row_number", record.SourceRowNumber);
                 Add(command, "@full_path", record.FullPath);
+                Add(command, "@processed_path", record.ProcessedPath);
                 Add(command, "@cell_id", cellId);
                 Add(command, "@position_key", record.Position);
                 Add(command, "@total_result", record.TotalResult);
@@ -249,8 +252,8 @@ ORDER BY day_text DESC LIMIT 730;";
                 {
                     string where = BuildSearchWhere(command, request);
                     command.CommandText = BuildDeduplicatedHistoryCte(where) + @"
-SELECT d.image_id, d.run_id, d.source_file_name, d.source_row_number, d.full_path,
-d.cell_id, d.position_key, d.total_result, d.judgement, d.capture_timestamp, d.inspected_at_utc
+SELECT d.image_id, d.run_id, d.source_file_name, d.source_row_number, d.full_path, d.processed_path,
+ d.cell_id, d.position_key, d.total_result, d.judgement, d.capture_timestamp, d.inspected_at_utc
 FROM deduped_images d
 ORDER BY COALESCE(NULLIF(d.capture_timestamp,''), d.inspected_at_utc) DESC, d.image_id DESC
 LIMIT @limit OFFSET @offset;";
@@ -267,12 +270,13 @@ LIMIT @limit OFFSET @offset;";
                                 sourceFileName = ReadString(reader, 2),
                                 sourceRowNumber = Convert.ToInt32(ReadLong(reader, 3)),
                                 fullPath = ReadString(reader, 4),
-                                cellId = ReadString(reader, 5),
-                                position = ReadString(reader, 6),
-                                totalResult = ReadString(reader, 7),
-                                judgement = ReadString(reader, 8),
-                                captureTimestamp = ReadString(reader, 9),
-                                inspectedAtUtc = ReadString(reader, 10)
+                                processedPath = ReadString(reader, 5),
+                                cellId = ReadString(reader, 6),
+                                position = ReadString(reader, 7),
+                                totalResult = ReadString(reader, 8),
+                                judgement = ReadString(reader, 9),
+                                captureTimestamp = ReadString(reader, 10),
+                                inspectedAtUtc = ReadString(reader, 11)
                             };
                             records[item.imageId] = item;
                             response.items.Add(item);
@@ -415,7 +419,7 @@ CREATE TABLE IF NOT EXISTS runs (
 );
 CREATE TABLE IF NOT EXISTS images (
   image_id INTEGER PRIMARY KEY AUTOINCREMENT, run_id TEXT NOT NULL, sequence_no INTEGER NOT NULL, source_file_name TEXT,
-  source_row_number INTEGER NOT NULL DEFAULT 0, full_path TEXT, cell_id TEXT, position_key TEXT, total_result TEXT,
+  source_row_number INTEGER NOT NULL DEFAULT 0, full_path TEXT, processed_path TEXT, cell_id TEXT, position_key TEXT, total_result TEXT,
   judgement TEXT, capture_timestamp TEXT, inspected_at_utc TEXT NOT NULL,
   FOREIGN KEY(run_id) REFERENCES runs(run_id)
 );
@@ -429,10 +433,33 @@ CREATE INDEX IF NOT EXISTS idx_images_cell_capture ON images(cell_id, capture_ti
 CREATE INDEX IF NOT EXISTS idx_images_full_path ON images(full_path);
 CREATE INDEX IF NOT EXISTS idx_images_capture_result ON images(capture_timestamp, total_result);
 CREATE INDEX IF NOT EXISTS idx_tool_results_run_tool ON tool_results(run_id, tool_name);";
+                        command.ExecuteNonQuery();                    }
+                    EnsureColumn(connection, "images", "processed_path", "TEXT");
+                    using (var command = connection.CreateCommand())
+                    {
+                        command.CommandText = @"CREATE INDEX IF NOT EXISTS idx_images_processed_path ON images(processed_path);
+UPDATE schema_info SET schema_version = CASE WHEN schema_version < 2 THEN 2 ELSE schema_version END;";
                         command.ExecuteNonQuery();
                     }
                 }
                 _schemaReady = true;
+            }
+        }
+
+        private static void EnsureColumn(SQLiteConnection connection, string tableName, string columnName, string columnDefinition)
+        {
+            bool exists = false;
+            using (var command = connection.CreateCommand())
+            {
+                command.CommandText = "PRAGMA table_info(" + tableName + ");";
+                using (SQLiteDataReader reader = command.ExecuteReader())
+                    while (reader.Read()) if (string.Equals(ReadString(reader, 1), columnName, StringComparison.OrdinalIgnoreCase)) { exists = true; break; }
+            }
+            if (exists) return;
+            using (var command = connection.CreateCommand())
+            {
+                command.CommandText = "ALTER TABLE " + tableName + " ADD COLUMN " + columnName + " " + columnDefinition + ";";
+                command.ExecuteNonQuery();
             }
         }
 
@@ -485,6 +512,7 @@ CREATE INDEX IF NOT EXISTS idx_tool_results_run_tool ON tool_results(run_id, too
             internal string SourceFileName;
             internal int SourceRowNumber;
             internal string FullPath;
+            internal string ProcessedPath;
             internal string CellId;
             internal string Position;
             internal string TotalResult;

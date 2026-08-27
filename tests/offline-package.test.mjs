@@ -15,7 +15,7 @@ const installerProject = read('LocalAgent_v0.2.12/OfflineInstaller/VisionQC.Agen
 test('download controls point to the versioned single-exe and offline package', () => {
   assert.match(web, /simulation-agent-download/);
   assert.match(web, /simulation-offline-download/);
-  assert.match(web, /VisionQC_Agent_Installer_v1\.2\.3\.exe/);
+  assert.match(web, /VisionQC_Agent_Installer_v1\.3\.0\.exe/);
   assert.match(web, /VisionQC_Offline_v4\.7\.9\.zip/);
   assert.match(web, /function downloadAgentInstaller/);
   assert.match(web, /function downloadOfflinePackage/);
@@ -30,27 +30,28 @@ test('offline entry UI has no CDN or remote stylesheet/script dependency', () =>
   assert.match(read('assets/tailwind-offline.css'), /fonts\/inter-latin-400-normal\.woff2/);
 });
 
-test('agent securely serves the bundled offline UI from loopback', () => {
+test('agent securely serves the bundled offline UI from its launcher-owned home', () => {
   assert.match(server, /RunUntilExit\(bool openOfflinePage = false\)/);
   assert.match(server, /WriteOfflineWebAsset/);
-  assert.match(server, /AppDomain\.CurrentDomain\.BaseDirectory, "Web"/);
+  assert.match(server, /Program\.AgentHomeDirectory, "Web"/);
   assert.match(server, /Path\.GetFullPath/);
   assert.match(server, /OfflineContentType/);
   assert.match(server, /http:\/\/127\.0\.0\.1:/);
 });
 
-test('single installer embeds the local UI, registers protocol, and launches offline mode', () => {
+test('single installer embeds the launcher, all Worker APIs, local UI, and offline startup', () => {
   assert.match(installer, /LocalApplicationData/);
   assert.match(installer, /ExtractPayload/);
+  assert.match(installer, /ExtractVpdlWorkerBundle/);
   assert.match(installer, /RunAndWait\(agentPath, "--register"/);
   assert.match(installer, /Arguments = "--offline"/);
   assert.match(installer, /StopRunningAgent/);
-  assert.match(installer, /IsLoopbackAgentPortOpen/);
+  assert.match(installer, /VisionQC\.VpdlWorker/);
+  assert.match(installerProject, /Payload\.Launcher\.VisionQC\.LocalAgent\.exe/);
+  assert.match(installerProject, /Payload\.WorkerManifest\.vpdl-workers\.json/);
+  assert.match(installerProject, /Payload\.WorkerBundle\.vpdl-workers\.zip/);
   assert.match(installerProject, /Payload\.Web\.index\.html/);
   assert.match(installerProject, /Payload\.Web\.assets\.index-v4\.4\.33\.js/);
   assert.match(installerProject, /Payload\.Web\.visionqc-v470\.css/);
   assert.match(installerProject, /Payload\.Web\.assets\.fonts\.inter-latin-400-normal\.woff2/);
-  assert.match(installerProject, /Payload\.Agent\.System\.Data\.SQLite\.dll/);
-  assert.match(installerProject, /Payload\.Agent\.x64\.SQLite\.Interop\.dll/);
-  assert.match(installer, /Web\\\\assets\\\\fonts\\\\inter-latin-400-normal\.woff2/);
 });

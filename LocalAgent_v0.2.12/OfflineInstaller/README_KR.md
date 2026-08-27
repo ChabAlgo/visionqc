@@ -8,6 +8,7 @@
 
 1. `Program.cs`의 `Payload` 배열
 2. `VisionQC.AgentInstaller.csproj`의 `EmbeddedResource`
-3. 오프라인 패키지와 설치 후 실제 실행 검증
+3. `BUILD_VPDL_WORKERS.ps1`의 Worker 묶음 생성
+4. 오프라인 패키지와 설치 후 실제 실행 검증
 
 Cognex VPDL Runtime과 라이선스는 용량·라이선스 이유로 설치 파일에 포함하지 않는다.

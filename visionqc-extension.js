@@ -25,8 +25,8 @@
   const NG_POSITION_PREFIX = 'ng-position:';
   const IMG_RE = /\.(png|jpe?g|bmp|gif|webp|tif?f)$/i;
   const LOCAL_AGENT_URL = 'http://127.0.0.1:17891';
-  const EXPECTED_AGENT_VERSION = '1.2.3';
-  const AGENT_INSTALLER_URL = './downloads/VisionQC_Agent_Installer_v1.2.3.exe';
+  const EXPECTED_AGENT_VERSION = '1.3.0';
+  const AGENT_INSTALLER_URL = './downloads/VisionQC_Agent_Installer_v1.3.0.exe';
   const OFFLINE_PACKAGE_URL = './downloads/VisionQC_Offline_v4.7.9.zip';
   // SQLite에는 사용자가 명시적으로 남기려는 두 종류의 결과만 표시한다.
   // 이전 버전의 단발 검사(single-inspection) 이력은 보존하되 화면 집계에서는 제외한다.
@@ -125,15 +125,16 @@
     actualNgOtherToolExclusionScore: 0.80,
     analysisPoints: [],
     analysisPointMap: new Map(),
+    analysisLiveRenderPending: false,
     historyImporting: false,
     historyLoaded: false,
     historyLoading: false,
     historyData: null,
     historyFilters: { fromDate:'', toDate:'', cellId:'', position:'', tool:'', toolResult:'', totalResult:'', sourceName:'', page:1, pageSize:50 },
     historyFileImport: null,
-    modalOverlayPath: '', modalHeatmapLoading: false,
+    modalOverlayPath: '', modalImageView: 'source', modalHeatmapLoading: false,
     simulationMode: 'integrated',
-    simulationAgent: { status: 'idle', version: '-', vpdl: '-', license: '-', gpu: '-', message: 'Local Agent 연결 전' },
+    simulationAgent: { status: 'idle', version: '-', vpdl: '-', installedVpdl: '-', activeVpdlApiVersion: '-', availableVpdl: [], license: '-', gpu: '-', message: 'Local Agent 연결 전' },
     simulationAgentPollInFlight: false,
     simulationAgentPollFailures: 0,
     simulationAgentPollTimer: null,
@@ -393,7 +394,7 @@
     if (!window.__VISIONQC_V437_GLOBAL_EVENTS_BOUND__) {
       window.__VISIONQC_V437_GLOBAL_EVENTS_BOUND__ = true;
       document.body.addEventListener('click', handleDelegatedClick);
-      document.addEventListener('click', () => closeAnalysisDropdowns());
+      document.addEventListener('click', () => { closeAnalysisDropdowns(); flushPendingAnalysisRender(); });
       window.addEventListener('keydown', (event) => {
         if (event.key === 'Escape') {
           if (state.notificationPanelOpen) closeNotificationCenter();
@@ -620,7 +621,7 @@
     if (!control) return;
     const action = control.dataset.vqAction;
     if (!action) return;
-    const simulationConfigAction = action.startsWith('simulation-') && !['simulation-stop','simulation-agent-stop','simulation-agent-info','simulation-agent-download','simulation-offline-download','simulation-log-clear'].includes(action);
+    const simulationConfigAction = action.startsWith('simulation-') && !['simulation-stop','simulation-agent-stop','simulation-agent-info','simulation-agent-download','simulation-offline-download','simulation-vpdl-select','simulation-log-clear'].includes(action);
     if (state.simulationProgress?.running && simulationConfigAction && action !== 'simulation-start') {
       showToast('Simulation 실행 중에는 옵션/Position/Workspace를 변경할 수 없습니다.', true);
       return;
@@ -634,6 +635,7 @@
       renderSimulationPreserveScroll();
     }
     else if (action === 'simulation-agent-launch') launchSimulationAgent();
+    else if (action === 'simulation-vpdl-select') switchSimulationVpdlWorker(control);
     else if (action === 'simulation-agent-stop') stopSimulationAgent();
     else if (action === 'simulation-agent-download') downloadAgentInstaller();
     else if (action === 'simulation-offline-download') downloadOfflinePackage();
@@ -674,6 +676,7 @@
     else if (action === 'history-open-image') openHistoryImage(Number(control.dataset.vqHistoryImageId));
     else if (action === 'history-import-file') chooseHistoryCsvImport();
     else if (action === 'modal-original-image') selectModalOriginalImage();
+    else if (action === 'modal-crop-image') selectModalCropImage();
     else if (action === 'modal-overlay-image') selectModalOverlayImage(control.dataset.vqModalOverlay || '');
     else if (action === 'modal-generate-heatmap') generateModalHeatmap();
     else if (action === 'choose-ng-folder') chooseNgFolder();
@@ -698,8 +701,19 @@
     else if (action === 'modal-reset') resetModalView();
   }
 
+  function isAnalysisDropdownOpen() {
+    return !!$('.vq43-dropdown.open');
+  }
+
+  function flushPendingAnalysisRender() {
+    if (state.page !== 'analysis' || !state.analysisLiveRenderPending || isAnalysisDropdownOpen()) return;
+    state.analysisLiveRenderPending = false;
+    renderAnalysis();
+    bindPageControls();
+  }
+
   function closeAnalysisDropdowns(except = null) {
-    $$('.vq43-dropdown.open').forEach((dropdown) => {
+    $('.vq43-dropdown.open').forEach((dropdown) => {
       if (dropdown === except) return;
       dropdown.classList.remove('open');
       dropdown.querySelector('.vq43-dropdown-button')?.setAttribute('aria-expanded', 'false');
@@ -712,6 +726,7 @@
     else if (kind === 'scope') state.analysisScope = value;
     else if (kind === 'compare') state.analysisScoreCompare = value;
     else return;
+    state.analysisLiveRenderPending = false;
     closeAnalysisDropdowns();
     renderAnalysis();
     bindPageControls();
@@ -728,6 +743,7 @@
         closeAnalysisDropdowns(dropdown);
         dropdown.classList.toggle('open', nextOpen);
         button.setAttribute('aria-expanded', String(nextOpen));
+        if (!nextOpen) flushPendingAnalysisRender();
       };
       dropdown.querySelectorAll('.vq43-dropdown-option').forEach((option) => {
         option.onclick = (event) => {
@@ -1234,6 +1250,11 @@
     return keys.findIndex((key) => aliases.has(key));
   }
 
+  function findProcessedPathColumn(keys) {
+    const aliases = new Set(['processedpath','greeninputpath','bluecroppath','croppath']);
+    return keys.findIndex((key) => aliases.has(key));
+  }
+
   async function parsePositionFile(file, selectedPosition, handle) {
     const table = await parseTableFile(file);
     const headerRow = table.findIndex((row) => row.some((value) => normalizeHeaderKey(value) === 'cellid') && row.some((value) => normalizeHeaderKey(value) === 'total_result'));
@@ -1244,6 +1265,7 @@
     const positionIndex = keys.indexOf('position');
     const totalIndex = keys.indexOf('total_result');
     const fullPathIndex = findFullPathColumn(keys);
+    const processedPathIndex = findProcessedPathColumn(keys);
     const resultColumns = [];
     const scoreMap = new Map();
     headers.forEach((header, index) => {
@@ -1267,7 +1289,7 @@
         const scoreIndex = scoreMap.get(column.tool.toLowerCase());
         tools[column.tool] = { tool: column.tool, result: normalizeResult(row[column.index]), score: scoreIndex === undefined ? null : parseNumber(row[scoreIndex]) };
       });
-      rows.push({ sourceFileName: file.name, sourceRowNumber: headerRow + offset + 2, fullPath: fullPathIndex >= 0 ? csvFullPathValue(row[fullPathIndex]) : '', cellId, position: selectedPosition, totalResult: normalizeResult(row[totalIndex]), tools });
+      rows.push({ sourceFileName: file.name, sourceRowNumber: headerRow + offset + 2, fullPath: fullPathIndex >= 0 ? csvFullPathValue(row[fullPathIndex]) : '', processedPath: processedPathIndex >= 0 ? csvFullPathValue(row[processedPathIndex]) : '', cellId, position: selectedPosition, totalResult: normalizeResult(row[totalIndex]), tools });
     });
     if (invalidCell) warnings.push(`Cell ID 추출 실패 ${numberText(invalidCell)}행 제외`);
     if (mismatch) warnings.push(`Position 불일치 ${numberText(mismatch)}행을 ${selectedPosition}으로 처리`);
@@ -1331,7 +1353,7 @@
     const sourceName = inputs.map((input) => input.fileName || input.position || 'CSV').join(' / ').slice(0, 500);
     const toRecord = (row) => ({
       sourceFileName:String(row.sourceFileName || ''), sourceRowNumber:Number(row.sourceRowNumber || 0),
-      fullPath:String(row.fullPath || ''), cellId:String(row.cellId || ''), position:String(row.position || ''),
+      fullPath:String(row.fullPath || ''), processedPath:String(row.processedPath || ''), cellId:String(row.cellId || ''), position:String(row.position || ''),
       totalResult:String(row.totalResult || ''), judgement:String(row.judgement || ''),
       tools:Object.values(row.tools || {}).map((tool) => ({ tool:String(tool.tool || ''), result:String(tool.result || ''), score:Number.isFinite(tool.score) ? tool.score : null, overlayPath:String(tool.overlayPath || '') }))
     });
@@ -2352,7 +2374,9 @@
     if (!item) return;
     const images = [];
     const overlayImages = [];
-    if (item.fullPath) images.push({ fullPath:item.fullPath, relativePath:item.fullPath, name:item.fullPath.split(/[\\/]/).pop() || item.fullPath, kind:'원본' });
+    if (item.fullPath) images.push({ fullPath:item.fullPath, relativePath:item.fullPath, name:item.fullPath.split(/[\\/]/).pop() || item.fullPath, kind:'원본', viewKind:'source' });
+    if (item.processedPath && String(item.processedPath).toLowerCase() !== String(item.fullPath || '').toLowerCase())
+      images.push({ fullPath:item.processedPath, relativePath:item.processedPath, name:item.processedPath.split(/[\\/]/).pop() || item.processedPath, kind:'Crop', viewKind:'crop' });
     (item.tools || []).forEach((tool) => {
       if (!tool.overlayPath) return;
       overlayImages.push({ fullPath:tool.overlayPath, relativePath:tool.overlayPath, name:`${tool.tool} Heatmap Overlay`, kind:'Heatmap Overlay', toolName:tool.tool });
@@ -2362,6 +2386,7 @@
     state.modalMissKey = null;
     state.modalItem = { key:`history-${item.imageId}`, cellId:item.cellId || '-', position:item.position || '-', record:{ tools }, images, overlayImages, label:'SQLite History Image' };
     state.modalIndex = 0;
+    state.modalImageView = 'source';
     state.modalOverlayPath = images.length ? '' : (overlayImages[0]?.fullPath || '');
     resetModalView();
     renderModal();
@@ -3030,6 +3055,8 @@
         installedVpdl,
         vpdl:runtimeActive ? (data.vpdlVersion || installedVpdl) : '미로드',
         license:data.license || '확인 중', gpu:data.gpu || '-', instanceId:data.instanceId || '',
+        activeVpdlApiVersion:String(data.activeVpdlApiVersion || '-'),
+        availableVpdl:Array.isArray(data.availableVpdlVersions) ? data.availableVpdlVersions : [],
         runtimePreloaded,
         runtimePreloadMode:String(data.runtimePreloadMode || ''),
         runtimePreloadToken:String(data.runtimePreloadToken || ''),
@@ -3086,6 +3113,28 @@
     state.simulationAgentPollTimer = window.setInterval(pollSimulationAgentStatus, 2000);
   }
 
+  async function switchSimulationVpdlWorker(control) {
+    if (state.simulationAgent?.status !== 'connected') return showToast('먼저 Local Agent를 실행하세요.', true);
+    if (state.simulationProgress?.running || state.simulationWorkspaceLoading) return showToast('Simulation 또는 Runtime File Load가 끝난 뒤 VPDL 버전을 전환하세요.', true);
+    const select = $('#vq43-vpdl-worker-select');
+    const apiVersion = String(select?.value || '');
+    if (!apiVersion) return showToast('선택할 VPDL Worker가 없습니다.', true);
+    try {
+      const result = await agentFetch('/api/vpdl/select', { method:'POST', body:{ apiVersion }, timeout:5000 });
+      if (!result?.ok) throw new Error(result?.error || 'VPDL Worker 전환 실패');
+      if (result.restarting) {
+        clearSimulationRuntimeReadiness();
+        appendSimulationLog({ level:'INFO', message:`VPDL ${result.selectedVpdlVersion || apiVersion} Worker로 전환 중입니다.` });
+        showToast('VPDL Worker를 전환하고 있습니다. 잠시 후 자동으로 다시 연결됩니다.');
+        setTimeout(pollSimulationAgentStatus, 1200);
+        setTimeout(pollSimulationAgentStatus, 2800);
+      } else {
+        showToast(result.message || '이미 선택된 VPDL Worker가 실행 중입니다.');
+      }
+    } catch (error) {
+      showToast(`VPDL Worker 전환 실패: ${error.message || error}`, true);
+    }
+  }
   function launchSimulationAgent() {
     // Chrome loopback-network 권한은 사용자 동작에서 요청해야 안내창이 안정적으로 표시됩니다.
     // Agent가 이미 실행 중인 경우에도 이 클릭으로 연결 권한을 다시 요청할 수 있습니다.
@@ -3731,6 +3780,7 @@
         sourceFileName:String(record.FileName ?? record.fileName ?? 'LIVE'),
         sourceRowNumber:state.simulationLiveRows + offset + 1,
         fullPath:String(record.FullPath ?? record.fullPath ?? ''),
+        processedPath:String(record.ProcessingPath ?? record.processingPath ?? record.ProcessedPath ?? record.processedPath ?? ''),
         cellId, position,
         totalResult:normalizeResult(record.TotalResult ?? record.totalResult),
         tools
@@ -3739,7 +3789,15 @@
     state.simulationLiveRows += records.length;
     if (data?.state && typeof data.state === 'object') state.simulationProgress = { ...state.simulationProgress, ...data.state };
     else if (Number.isFinite(Number(data?.processed))) state.simulationProgress.processed = Number(data.processed);
-    rebuildModel(state.page === 'main' || state.page === 'analysis');
+    rebuildModel(false);
+    if (state.page === 'main') {
+      renderDashboard();
+      bindPageControls();
+    } else if (state.page === 'analysis') {
+      // 열린 분석 드롭다운은 전체 재렌더링 시 사라진다. 수신 데이터는 보류했다가 닫힌 뒤 한 번 반영한다.
+      if (isAnalysisDropdownOpen()) state.analysisLiveRenderPending = true;
+      else { renderAnalysis(); bindPageControls(); }
+    }
     updateSimulationStatusDom();
   }
 
@@ -4293,9 +4351,10 @@
     return `<div class="vq43-sim-position-toolbar"><div><strong>Position 구성</strong><span>체크박스는 현재 모드의 사용 여부입니다. Position 추가/삭제는 메인·분석·설정에도 공통 반영됩니다.</span></div><div><input id="vq43-sim-new-position-name" placeholder="새 Position 이름"><button class="vq43-btn vq43-btn-blue" data-vq-action="simulation-add-position">+ Position 추가</button></div></div>`;
   }
 
-  function simulationCheck(scope, field, label) {
+  function simulationCheck(scope, field, label, tooltip = '') {
     const target = simulationScopeObject(scope, '');
-    return `<label class="vq43-sim-check"><input type="checkbox" data-sim-scope="${scope}" data-sim-field="${field}" ${target?.[field]?'checked':''}><span>${escapeHtml(label)}</span></label>`;
+    const title = tooltip ? ` title="${escapeHtml(tooltip)}"` : '';
+    return `<label class="vq43-sim-check"${title}><input type="checkbox" data-sim-scope="${scope}" data-sim-field="${field}"${title} ${target?.[field]?'checked':''}><span>${escapeHtml(label)}</span></label>`;
   }
 
   function simulationNumber(scope, field, label, min='', max='', step='1') {
@@ -4315,7 +4374,7 @@
       ${simPathField(scope,'','cellIdCsvPath','Cell ID CSV','비워두면 전체 검사','file','csv')}
       ${simulationCheck(scope,'keywordMode','Keyword 모드')}
       ${simPathField(scope,'','keywordInputRoot','Keyword Input Root','Keyword 모드 공통 이미지 입력 폴더','folder','folder',!obj.keywordMode)}
-      ${integrated?`${simulationCheck('integrated','keepCropImages','결과 Crop 이미지 유지 (Viewer용)')}<p class="vq43-sim-option-note">통합 결과의 원본·Heatmap Viewer를 위해 Crop 이미지를 Output 아래에 보존합니다. 해제하면 결과 CSV의 이미지 Viewer를 사용할 수 없습니다.</p>`:''}
+      ${integrated?`${simulationCheck('integrated','keepCropImages','결과 Crop 이미지 유지 (Viewer용)')}<p class="vq43-sim-option-note">통합 결과의 원본·Heatmap Viewer를 위해 Crop 이미지를 Output 아래에 보존합니다. 해제하면 원본 Viewer는 계속 사용할 수 있지만, Crop 및 Green Heatmap 재생성은 사용할 수 없습니다.</p>`:''}
     </section>`;
   }
 
@@ -4380,8 +4439,8 @@
   function blueRuntimeOptions() {
     return `<section class="vq43-sim-option-section"><h3>Blue Runtime / Save</h3><div class="vq43-sim-option-grid">
       ${simulationCheck('blue','useGpu','GPU 사용')}${simulationText('blue','gpuDevices','GPU Devices','0')}
-      ${simulationCheck('blue','keepSubfolders','하위 폴더 구조 유지')}${simulationCheck('blue','saveAsJpeg','Save as JPEG')}
-      ${simulationCheck('blue','skipExisting','Skip Existing')}${simulationNumber('blue','jpegQuality','JPEG Quality',1,100)}
+      ${simulationCheck('blue','keepSubfolders','하위 폴더 구조 유지')}${simulationCheck('blue','saveAsJpeg','Save as JPEG','켜면 Blue Crop 결과를 JPEG(.jpg)로 저장하고 JPEG Quality 값을 적용합니다. 끄면 원본 확장자 기준으로 저장합니다.')}
+      ${simulationCheck('blue','skipExisting','Skip Existing','켜면 같은 출력 경로에 Crop 파일이 이미 있을 때 Blue Crop을 다시 계산·저장하지 않습니다. 통합 모드에서는 기존 Crop 파일로 Green 검사를 진행하므로 원본 또는 Crop 조건을 바꿨다면 끄고 다시 실행하세요.')}${simulationNumber('blue','jpegQuality','JPEG Quality',1,100)}
       ${simulationNumber('blue','printEvery','Progress Update',1,1000000)}
     </div></section>`;
   }
@@ -4499,9 +4558,12 @@
     const runtimeTitle = agent.runtimePreloaded || state.simulationProgress?.running
       ? `Workspace가 Simulation Runtime에 선로딩되었습니다. VPDL ${agent.vpdl || '-'}`
       : `설치 감지 ${agent.installedVpdl || '-'} · Runtime File Load 전에는 실제 Simulation Runtime으로 표시하지 않습니다.`;
-    return `<section class="vq43-sim-agent-card ${statusClass}"><div class="vq43-sim-agent-title"><div><span class="vq43-sim-dot"></span><strong>Local Engine</strong></div><b>${statusText}</b></div><div class="vq43-sim-agent-grid"><div><span>Agent</span><strong>${escapeHtml(agent.version||'-')}</strong></div><div title="${escapeHtml(runtimeTitle)}"><span>VPDL Runtime</span><strong>${escapeHtml(agent.vpdl||'-')}</strong></div><div><span>License</span><strong>${escapeHtml(agent.license||'-')}</strong></div><div><span>GPU</span><strong>${escapeHtml(agent.gpu||'-')}</strong></div></div><p>${escapeHtml(agent.message||'Local Agent 상태를 2초마다 자동 확인합니다.')}</p></section>`;
+    const workers = (Array.isArray(agent.availableVpdl) ? agent.availableVpdl : []).filter(item => item?.workerInstalled);
+    const workerSelector = connected && workers.length
+      ? `<div class="vq43-vpdl-worker-switch"><label>VPDL Worker<select id="vq43-vpdl-worker-select">${workers.map(item => `<option value="${escapeHtml(item.apiVersion)}" ${String(item.apiVersion)===String(agent.activeVpdlApiVersion)?'selected':''}>${escapeHtml(item.displayName || item.productVersion || item.apiVersion)}</option>`).join('')}</select></label><button class="vq43-btn" data-vq-action="simulation-vpdl-select" ${workers.length < 2 ? 'disabled' : ''}>적용</button><small>버전 전환 시 Worker만 재시작됩니다.</small></div>`
+      : '';
+    return `<section class="vq43-sim-agent-card ${statusClass}"><div class="vq43-sim-agent-title"><div><span class="vq43-sim-dot"></span><strong>Local Engine</strong></div><b>${statusText}</b></div><div class="vq43-sim-agent-grid"><div><span>Agent</span><strong>${escapeHtml(agent.version||'-')}</strong></div><div title="${escapeHtml(runtimeTitle)}"><span>VPDL Runtime</span><strong>${escapeHtml(agent.vpdl||'-')}</strong></div><div><span>License</span><strong>${escapeHtml(agent.license||'-')}</strong></div><div><span>GPU</span><strong>${escapeHtml(agent.gpu||'-')}</strong></div></div>${workerSelector}<p>${escapeHtml(agent.message||'Local Agent 상태를 2초마다 자동 확인합니다.')}</p></section>`;
   }
-
   function updateSimulationAgentDom() {
     if (state.page !== 'simulation') return;
     const page = $('#vq43-page');
@@ -4796,6 +4858,7 @@
     state.modalMissKey = key;
     state.modalItem = { ...miss, overlayImages:overlayImagesForRecord(miss.record), label: 'Missed Actual NG' };
     state.modalIndex = 0;
+    state.modalImageView = 'source';
     state.modalOverlayPath = '';
     resetModalView();
     renderModal();
@@ -4814,6 +4877,7 @@
     state.modalMissKey = null;
     state.modalItem = { key: point.recordKey, cellId: point.cellId, position: point.position, record, images, overlayImages, label: csvImages.length ? 'CSV FullPath Image' : 'Actual NG Image' };
     state.modalIndex = 0;
+    state.modalImageView = 'source';
     state.modalOverlayPath = images.length ? '' : (overlayImages[0]?.fullPath || '');
     resetModalView();
     renderModal();
@@ -4821,13 +4885,27 @@
   }
 
   function csvImagesForRecord(record) {
-    const paths = new Set();
-    return (record?.sourceRows || []).map((row) => String(row.fullPath || '').trim()).filter((fullPath) => {
-      const key = fullPath.toLowerCase();
-      if (!fullPath || paths.has(key)) return false;
-      paths.add(key);
-      return true;
-    }).map((fullPath) => ({ fullPath, relativePath:fullPath, name:fullPath.split(/[\\/]/).pop() || fullPath }));
+    const sourcePaths = new Set();
+    const cropPaths = new Set();
+    const images = [];
+    (record?.sourceRows || []).forEach((row) => {
+      const sourcePath = String(row.fullPath || '').trim();
+      const cropPath = String(row.processedPath || '').trim();
+      if (sourcePath && !sourcePaths.has(sourcePath.toLowerCase())) {
+        sourcePaths.add(sourcePath.toLowerCase());
+        images.push({ fullPath:sourcePath, relativePath:sourcePath, name:sourcePath.split(/[\\/]/).pop() || sourcePath, kind:'원본', viewKind:'source' });
+      }
+      if (cropPath && cropPath.toLowerCase() !== sourcePath.toLowerCase() && !cropPaths.has(cropPath.toLowerCase())) {
+        cropPaths.add(cropPath.toLowerCase());
+        images.push({ fullPath:cropPath, relativePath:cropPath, name:cropPath.split(/[\\/]/).pop() || cropPath, kind:'Crop', viewKind:'crop' });
+      }
+    });
+    return images;
+  }
+
+  function modalImagesForView(miss, view = state.modalImageView) {
+    const images = Array.isArray(miss?.images) ? miss.images : [];
+    return images.filter((image) => view === 'crop' ? image?.viewKind === 'crop' : image?.viewKind !== 'crop');
   }
 
   function overlayImagesForRecord(record) {
@@ -4842,7 +4920,10 @@
     }).filter(Boolean);
   }
   function modalRuntimeHeatmapSource(miss) {
-    return (miss?.images || []).find((image) => !!image?.fullPath && !image?.file && !image?.fileHandle) || null;
+    // 통합 시뮬레이션은 Green이 실제로 검사한 Blue Crop을 먼저 재검사한다.
+    return modalImagesForView(miss, 'crop').find((image) => !!image?.fullPath && !image?.file && !image?.fileHandle)
+      || modalImagesForView(miss, 'source').find((image) => !!image?.fullPath && !image?.file && !image?.fileHandle)
+      || null;
   }
 
   function buildModalHeatmapInspectionRequest(imagePath) {
@@ -4859,6 +4940,10 @@
     const miss = state.modalItem;
     const source = modalRuntimeHeatmapSource(miss);
     if (!miss || !source?.fullPath || state.modalHeatmapLoading) return;
+    if (state.simulationStartPending || state.simulationProgress?.running) {
+      showToast('Simulation 실행 중에는 Runtime을 공유할 수 없습니다. 완료 후 Green Heatmap을 생성하세요.', true);
+      return;
+    }
     let request;
     try { request = buildModalHeatmapInspectionRequest(source.fullPath); }
     catch (error) { showToast(error?.message || String(error), true); return; }
@@ -4913,6 +4998,23 @@
     }
   }
 
+
+  function modalImageSwitcherHtml(sourceImages, cropImages, overlayImages, selectedOverlay) {
+    if (!sourceImages.length && !cropImages.length && !overlayImages.length) return '';
+    const original = '<button type="button" data-vq-action="modal-original-image" class="' + (!selectedOverlay && state.modalImageView === 'source' ? 'active' : '') + '" ' + (sourceImages.length ? '' : 'disabled') + '>원본</button>';
+    const crop = cropImages.length ? '<button type="button" data-vq-action="modal-crop-image" class="' + (!selectedOverlay && state.modalImageView === 'crop' ? 'active' : '') + '">Crop</button>' : '';
+    const overlays = overlayImages.map((overlay) => '<button type="button" data-vq-action="modal-overlay-image" data-vq-modal-overlay="' + escapeHtml(overlay.fullPath) + '" class="' + (selectedOverlay?.fullPath === overlay.fullPath ? 'active' : '') + '">' + escapeHtml(overlay.toolName || 'Tool') + ' Heatmap</button>').join('');
+    return '<div class="vq43-modal-image-switcher">' + original + crop + overlays + '</div>';
+  }
+
+  function modalHeatmapCreateHtml(overlayImages, heatmapSource) {
+    if (overlayImages.length || !heatmapSource) return '';
+    const runtimeBusy = !!state.simulationStartPending || !!state.simulationProgress?.running;
+    const disabled = state.modalHeatmapLoading || runtimeBusy ? 'disabled' : '';
+    const label = state.modalHeatmapLoading ? 'Green Heatmap 생성 중...' : 'Green Heatmap 생성';
+    const guide = runtimeBusy ? 'Simulation 실행 중에는 Runtime을 공유할 수 없습니다. 완료 후 생성하세요.' : '현재 사전 로드된 Green Runtime으로 실제 검사 Crop 이미지 1장을 다시 검사합니다.';
+    return '<div class="vq43-modal-heatmap-create"><button type="button" data-vq-action="modal-generate-heatmap" ' + disabled + '>' + label + '</button><small>' + guide + '</small></div>';
+  }
   function renderModal() {
     const modal = $('#vq43-modal');
     const miss = state.modalItem;
@@ -4920,7 +5022,11 @@
     if (state.modalUrl?.startsWith('blob:')) URL.revokeObjectURL(state.modalUrl);
     const overlayImages = Array.isArray(miss.overlayImages) ? miss.overlayImages : [];
     const selectedOverlay = overlayImages.find((candidate) => candidate.fullPath === state.modalOverlayPath);
-    const displayImages = selectedOverlay ? [selectedOverlay] : (miss.images || []);
+    const sourceImages = modalImagesForView(miss, 'source');
+    const cropImages = modalImagesForView(miss, 'crop');
+    if (!selectedOverlay && state.modalImageView === 'crop' && !cropImages.length) state.modalImageView = 'source';
+    const displayImages = selectedOverlay ? [selectedOverlay] : modalImagesForView(miss);
+    state.modalIndex = Math.max(0, Math.min(Math.max(0, displayImages.length - 1), state.modalIndex));
     const image = displayImages[selectedOverlay ? 0 : state.modalIndex];
     if (!image) return showToast('표시할 이미지가 없습니다.', true);
     const agentImage = !!image?.fullPath && !image?.file;
@@ -4929,10 +5035,10 @@
     state.modalImageRequestKey = `${Date.now()}-${state.modalIndex}-${Math.random().toString(36).slice(2, 8)}`;
     const modalImageRequestKey = state.modalImageRequestKey;
     const scores = Object.values(miss.record?.tools || {}).map((tool) => `<span class="vq43-score-chip">${escapeHtml(tool.tool)}: <b style="color:${tool.result==='NG'?'#f87171':'#34d399'}">${tool.result}</b> <b>${scoreText(tool.representativeScore ?? tool.score)}</b></span>`).join('');
-    const switcher = overlayImages.length ? `<div class="vq43-modal-image-switcher"><button type="button" data-vq-action="modal-original-image" class="${selectedOverlay?'':'active'}" ${miss.images?.length?'':'disabled'}>원본 / 크롭</button>${overlayImages.map((overlay) => `<button type="button" data-vq-action="modal-overlay-image" data-vq-modal-overlay="${escapeHtml(overlay.fullPath)}" class="${selectedOverlay?.fullPath===overlay.fullPath?'active':''}">${escapeHtml(overlay.toolName || 'Tool')} Heatmap</button>`).join('')}</div>` : '';
+    const switcher = modalImageSwitcherHtml(sourceImages, cropImages, overlayImages, selectedOverlay);
     const heatmapSource = modalRuntimeHeatmapSource(miss);
-    const heatmapCreate = !overlayImages.length && heatmapSource ? `<div class="vq43-modal-heatmap-create"><button type="button" data-vq-action="modal-generate-heatmap" ${state.modalHeatmapLoading?'disabled':''}>${state.modalHeatmapLoading?'Green Heatmap 생성 중...':'Green Heatmap 생성'}</button><small>현재 사전 로드된 Green Runtime으로 이 이미지 1장을 다시 검사합니다.</small></div>` : '';
-    const countText = selectedOverlay ? `Heatmap ${overlayImages.findIndex((candidate) => candidate.fullPath === selectedOverlay.fullPath) + 1} / ${overlayImages.length}` : `${state.modalIndex+1} / ${displayImages.length}`;
+    const heatmapCreate = modalHeatmapCreateHtml(overlayImages, heatmapSource);
+    const countText = selectedOverlay ? ('Heatmap ' + (overlayImages.findIndex((candidate) => candidate.fullPath === selectedOverlay.fullPath) + 1) + ' / ' + overlayImages.length) : ((state.modalIndex+1) + ' / ' + displayImages.length);
     modal.innerHTML = `<div class="vq43-modal-card"><div class="vq43-modal-head"><div><small>${escapeHtml(miss.label || 'Actual NG Image')}</small><strong>${escapeHtml(miss.cellId)} · ${miss.position}</strong></div><button class="vq43-close" data-vq-action="close-modal">×</button></div>${switcher}${heatmapCreate}<div class="vq43-modal-image" id="vq43-modal-viewport"><img id="vq43-modal-zoom-image" draggable="false" src="${state.modalUrl}" alt="${escapeHtml(image.file?.name || image.name || image.relativePath)}"><div class="vq43-modal-zoom-tools"><span id="vq43-modal-zoom-value">100%</span><button data-vq-action="modal-reset">원위치</button></div><div class="vq43-modal-help">마우스 휠: 확대/축소 · 드래그: 이동 · 더블클릭: 원위치</div>${!selectedOverlay && displayImages.length>1?`<button class="vq43-modal-nav prev" data-vq-action="modal-prev" ${state.modalIndex===0?'disabled':''}>‹</button><button class="vq43-modal-nav next" data-vq-action="modal-next" ${state.modalIndex>=displayImages.length-1?'disabled':''}>›</button>`:''}</div><div class="vq43-modal-foot"><div class="vq43-modal-path"><span>${escapeHtml(image.relativePath)}</span><b>${countText}</b></div><div class="vq43-modal-scores">${scores}</div></div></div>`;
     modal.classList.add('open');
     applyModalTransform();
@@ -4965,6 +5071,9 @@
     modal.querySelector('[data-vq-action="modal-original-image"]')?.addEventListener('click', (event) => {
       event.preventDefault(); event.stopPropagation(); selectModalOriginalImage();
     });
+    modal.querySelector('[data-vq-action="modal-crop-image"]')?.addEventListener('click', (event) => {
+      event.preventDefault(); event.stopPropagation(); selectModalCropImage();
+    });
     modal.querySelectorAll('[data-vq-action="modal-overlay-image"]').forEach((button) => button.addEventListener('click', (event) => {
       event.preventDefault(); event.stopPropagation(); selectModalOverlayImage(button.dataset.vqModalOverlay || '');
     }));
@@ -4978,7 +5087,7 @@
     const loading = document.createElement('div');
     loading.id = 'vq43-modal-loading';
     loading.className = 'vq43-modal-loading';
-    loading.textContent = 'Local Agent에서 원본 이미지를 불러오는 중...';
+    loading.textContent = 'Local Agent에서 이미지를 불러오는 중...';
     viewport.appendChild(loading);
     try {
       const response = await agentFetch('/api/image/preview', { method:'POST', timeout:60000, body:{ imagePath:image.fullPath, maxDimension:2560 } });
@@ -5023,15 +5132,26 @@
 
   function changeModalImage(delta) {
     const miss = state.modalItem;
-    if (!miss) return;
-    state.modalIndex = Math.max(0, Math.min(miss.images.length-1, state.modalIndex+delta));
+    if (!miss || state.modalOverlayPath) return;
+    const images = modalImagesForView(miss);
+    state.modalIndex = Math.max(0, Math.min(images.length - 1, state.modalIndex + delta));
     resetModalView();
     renderModal();
   }
 
   function selectModalOriginalImage() {
-    if (!state.modalItem?.images?.length) return;
+    if (!modalImagesForView(state.modalItem, 'source').length) return;
     state.modalOverlayPath = '';
+    state.modalImageView = 'source';
+    state.modalIndex = 0;
+    resetModalView();
+    renderModal();
+  }
+
+  function selectModalCropImage() {
+    if (!modalImagesForView(state.modalItem, 'crop').length) return;
+    state.modalOverlayPath = '';
+    state.modalImageView = 'crop';
     state.modalIndex = 0;
     resetModalView();
     renderModal();
@@ -5054,6 +5174,7 @@
     state.modalMissKey = null;
     state.modalItem = null;
     state.modalIndex = 0;
+    state.modalImageView = 'source';
     state.modalOverlayPath = '';
     state.modalHeatmapLoading = false;
     state.modalZoom = 1;

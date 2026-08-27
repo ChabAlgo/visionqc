@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
 using System.Diagnostics;
 using System.IO;
@@ -30,6 +30,9 @@ namespace VpdlGreenHeatmapOverlay
         private sealed class ImageJob
         {
             public string ImagePath { get; set; }
+            // ImagePath는 Runtime에 투입할 파일이다. 통합 모드에서는 Blue Crop 결과가 된다.
+            // SourceFullPath는 사용자가 클릭해서 확인할 원본 Grab 이미지 경로다.
+            public string SourceFullPath { get; set; }
             public string WorkspaceKey { get; set; }
             public string InputRoot { get; set; }
             public string InputRootTag { get; set; }
@@ -51,6 +54,7 @@ namespace VpdlGreenHeatmapOverlay
             public string TimeText { get; set; }
             public string FileName { get; set; }
             public string FullPath { get; set; }
+            public string ProcessingPath { get; set; }
             public string CellId { get; set; }
             public string Position { get; set; }
             public Dictionary<string, ToolResult> ToolResults { get; set; } = new Dictionary<string, ToolResult>(StringComparer.OrdinalIgnoreCase);
@@ -308,6 +312,7 @@ namespace VpdlGreenHeatmapOverlay
             {
                 FileName = result.FileName,
                 FullPath = result.FullPath,
+                ProcessingPath = result.ProcessingPath,
                 CellId = result.CellId,
                 Position = result.Position,
                 TotalResult = result.IsTotalOk ? "OK" : "NG",
@@ -353,6 +358,7 @@ namespace VpdlGreenHeatmapOverlay
                 var result = ProcessOneImage(config, context, new ImageJob
                 {
                     ImagePath = imagePath,
+                    SourceFullPath = imagePath,
                     WorkspaceKey = slotKey,
                     InputRoot = slot.InputRoot,
                     SlotDisplayName = slot.DisplayName
@@ -373,7 +379,7 @@ namespace VpdlGreenHeatmapOverlay
         {
             var header = new List<string>
             {
-                "Date", "Time", "FileName", "FullPath", "Cell ID", "Position", "total_result", "Judgement"
+                "Date", "Time", "FileName", "FullPath", "ProcessedPath", "Cell ID", "Position", "total_result", "Judgement"
             };
             csv.WriteLine(string.Join(",", header.Select(EscapeCsv)));
         }
@@ -386,6 +392,7 @@ namespace VpdlGreenHeatmapOverlay
                 result.TimeText,
                 result.FileName,
                 result.FullPath,
+                result.ProcessingPath,
                 result.CellId,
                 result.Position,
                 result.IsTotalOk ? "OK" : "NG",
@@ -548,8 +555,9 @@ namespace VpdlGreenHeatmapOverlay
 
         private static ProcessOneResult ProcessOneImage(AppConfig config, WorkspaceContext context, ImageJob job, Dictionary<string, int> ngCountByTool, Dictionary<string, int> judgementPriority, CancellationToken token)
         {
-            string fileName = Path.GetFileName(job.ImagePath);
-            string cellId = ExtractCellId(config.NamingProfile, job.ImagePath);
+            string sourceFullPath = string.IsNullOrWhiteSpace(job.SourceFullPath) ? job.ImagePath : job.SourceFullPath;
+            string fileName = Path.GetFileName(sourceFullPath);
+            string cellId = ExtractCellId(config.NamingProfile, sourceFullPath);
             var judgementCandidates = new List<string>();
             bool allOk = true;
             var result = new ProcessOneResult
@@ -557,7 +565,8 @@ namespace VpdlGreenHeatmapOverlay
                 DateText = DateTime.Now.ToString("yyyyMMdd"),
                 TimeText = DateTime.Now.ToString("HHmmss"),
                 FileName = fileName,
-                FullPath = job.ImagePath,
+                FullPath = sourceFullPath,
+                ProcessingPath = job.ImagePath,
                 CellId = cellId,
                 Position = context.Slot.DisplayName
             };
@@ -786,10 +795,11 @@ namespace VpdlGreenHeatmapOverlay
                 WriteIntegratedSummaryHeader(_integratedCsv);
             }
 
-            internal bool ProcessImage(string slotKey, string imagePath, string inputRoot, CancellationToken token)
+            internal bool ProcessImage(string slotKey, string imagePath, string sourceFullPath, string inputRoot, CancellationToken token)
             {
                 token.ThrowIfCancellationRequested();
-                string fileName = Path.GetFileName(imagePath);
+                string sourcePath = string.IsNullOrWhiteSpace(sourceFullPath) ? imagePath : sourceFullPath;
+                string fileName = Path.GetFileName(sourcePath);
                 WorkspaceSlotConfig slotCfg = null;
                 foreach (var s in _config.WorkspaceSlots)
                     if (string.Equals(s.Key, slotKey, StringComparison.OrdinalIgnoreCase)) { slotCfg = s; break; }
@@ -808,6 +818,7 @@ namespace VpdlGreenHeatmapOverlay
                 var job = new ImageJob
                 {
                     ImagePath = imagePath,
+                    SourceFullPath = sourcePath,
                     WorkspaceKey = slotKey,
                     InputRoot = inputRoot,
                     SlotDisplayName = context.Slot.DisplayName
