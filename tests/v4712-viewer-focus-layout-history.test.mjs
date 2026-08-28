@@ -7,10 +7,10 @@ import { fileURLToPath } from 'node:url';
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const read = (name) => fs.readFileSync(path.join(root, name), 'utf8');
 
-test('v4.7.12 viewer fits images and navigates heatmaps', () => {
+test('v4.7.13 viewer fits images and navigates heatmaps', () => {
   const js = read('visionqc-extension.js');
   const css = read('visionqc-extension.css');
-  assert.match(js, /const VERSION = '4\.7\.12'/);
+  assert.match(js, /const VERSION = '4\.7\.13'/);
   assert.match(js, /const navigationImages = selectedOverlay \? overlayImages : displayImages/);
   assert.match(js, /if \(state\.modalOverlayPath\) \{[\s\S]*overlays\.findIndex/);
   assert.match(css, /vq43-modal-media-layer img\{width:auto!important;height:auto!important;max-width:100%!important;max-height:100%!important/);

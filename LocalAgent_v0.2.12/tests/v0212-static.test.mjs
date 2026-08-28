@@ -11,10 +11,10 @@ const picker = read('NativeShellPicker.cs');
 const pickerService = read('Services/PickerService.cs');
 const program = read('Program.cs');
 
-test('Agent v1.3.2 version is consistent', () => {
-  assert.match(program, /AgentVersion = "1\.3\.2"/);
-  assert.match(read('Properties/AssemblyInfo.cs'), /AssemblyVersion\("1\.3\.2\.0"\)/);
-  assert.match(read('BUILD_RELEASE_x64.cmd'), /v1\.3\.2/);
+test('Agent v1.3.3 version is consistent', () => {
+  assert.match(program, /AgentVersion = "1\.3\.3"/);
+  assert.match(read('Properties/AssemblyInfo.cs'), /AssemblyVersion\("1\.3\.3\.0"\)/);
+  assert.match(read('BUILD_RELEASE_x64.cmd'), /v1\.3\.3/);
 });
 
 test('HTTP server delegates picker lifecycle to the isolated picker service', () => {

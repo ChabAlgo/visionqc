@@ -1,7 +1,7 @@
 (() => {
   'use strict';
 
-  const VERSION = '4.7.12';
+  const VERSION = '4.7.13';
   const DEFAULT_POSITION_DEFS = [
     { key:'CA_TOP', name:'CA(TOP)' },
     { key:'AN_TOP', name:'AN(TOP)' },
@@ -25,8 +25,8 @@
   const NG_POSITION_PREFIX = 'ng-position:';
   const IMG_RE = /\.(png|jpe?g|bmp|gif|webp|tif?f)$/i;
   const LOCAL_AGENT_URL = 'http://127.0.0.1:17891';
-  const EXPECTED_AGENT_VERSION = '1.3.2';
-  const AGENT_INSTALLER_URL = './downloads/VisionQC_Agent_Installer_v1.3.2.exe';
+  const EXPECTED_AGENT_VERSION = '1.3.3';
+  const AGENT_INSTALLER_URL = './downloads/VisionQC_Agent_Installer_v1.3.3.exe';
   const OFFLINE_PACKAGE_URL = './downloads/VisionQC_Offline_v4.7.9.zip';
   // SQLite에는 사용자가 명시적으로 남기려는 두 종류의 결과만 표시한다.
   // 이전 버전의 단발 검사(single-inspection) 이력은 보존하되 화면 집계에서는 제외한다.
@@ -366,6 +366,7 @@
           </div>
         </aside>
         <section id="vq43-shell"><div id="vq43-page" class="vq43-page"></div></section>
+        <div id="vq43-global-sim-progress" hidden><div><strong>Simulation</strong><span id="vq43-global-sim-current">준비 중</span></div><b id="vq43-global-sim-count">0 / 0</b><em id="vq43-global-sim-percent">0.00%</em><i><span id="vq43-global-sim-bar" style="width:0%"></span></i><button type="button" data-vq-action="simulation-open-page">시뮬레이션 보기</button></div>
         <div id="vq43-chart-modal"></div>
         <div id="vq43-modal"></div>
         <div id="vq43-toast"></div>
@@ -547,6 +548,7 @@
     }
 
     $$('.vq43-nav-item').forEach((item) => item.classList.toggle('active', item.dataset.vqPage === page));
+    updateGlobalSimulationProgress();
   }
 
   function patchReactHeader() {
@@ -640,7 +642,7 @@
     if (!control) return;
     const action = control.dataset.vqAction;
     if (!action) return;
-    const simulationConfigAction = action.startsWith('simulation-') && !['simulation-stop','simulation-agent-stop','simulation-agent-info','simulation-agent-download','simulation-offline-download','simulation-vpdl-select','simulation-log-clear'].includes(action);
+    const simulationConfigAction = action.startsWith('simulation-') && !['simulation-stop','simulation-agent-stop','simulation-agent-info','simulation-agent-download','simulation-offline-download','simulation-vpdl-select','simulation-log-clear','simulation-open-page'].includes(action);
     if (state.simulationProgress?.running && simulationConfigAction && action !== 'simulation-start') {
       showToast('Simulation 실행 중에는 옵션/Position/Workspace를 변경할 수 없습니다.', true);
       return;
@@ -657,6 +659,7 @@
     else if (action === 'simulation-vpdl-select') switchSimulationVpdlWorker(control);
     else if (action === 'simulation-agent-stop') stopSimulationAgent();
     else if (action === 'simulation-agent-download') downloadAgentInstaller();
+    else if (action === 'simulation-open-page') setPage('simulation');
     else if (action === 'simulation-offline-download') downloadOfflinePackage();
     else if (action === 'simulation-agent-info') showToast('VisionQC Web은 GUI만 담당하고 VPDL Runtime · GPU · Workspace 처리는 사용자 PC의 Local Agent가 수행합니다.');
     else if (action === 'simulation-browse') browseSimulationPath(control);
@@ -2027,7 +2030,7 @@
   function positionCard(summary) {
     if (!summary.input) return `<div class="vq43-position-card disabled"><div class="vq43-card-head"><strong>${summary.position}</strong><span class="vq43-pill">미입력</span></div><div class="vq43-no-data">설정에서 결과 파일을 선택하세요.</div></div>`;
     const matched = Math.max(0, summary.actualNg - summary.unmatched);
-    return `<div class="vq43-position-card"><div class="vq43-card-head"><strong>${summary.position}</strong><span class="vq43-pill ready">입력됨</span></div><div class="vq43-flex-between"><div><div class="vq43-rate-label">NG Rate</div><div class="vq43-rate-value">${rateText(summary.ngRate)}</div></div><div class="vq43-count"><b>${numberText(summary.ng)}</b> / ${numberText(summary.total)}</div></div>${rateBar(summary.ngRate, true)}<div class="vq43-mini-grid four"><div><span>실제<br>NG</span><b>${numberText(summary.actualNg)}</b></div><div><span>CSV<br>매칭</span><b class="blue">${numberText(matched)}</b></div><div><span>정상<br>검출</span><b class="green">${numberText(summary.detected)}</b></div><div><span>미검</span><b class="amber">${numberText(summary.misses)}</b></div></div>${summary.unmatched ? `<div class="vq43-unmatched warn">CSV Cell ID와 미매칭 실제 NG ${numberText(summary.unmatched)}건</div>` : ''}</div>`;
+    return `<div class="vq43-position-card"><div class="vq43-card-head"><strong>${summary.position}</strong><span class="vq43-pill ready">입력됨</span></div><div class="vq43-flex-between"><div><div class="vq43-rate-label">NG Rate</div><div class="vq43-rate-value">${rateText(summary.ngRate)}</div></div><div class="vq43-count"><b>${numberText(summary.ng)}</b> / ${numberText(summary.total)}</div></div>${rateBar(summary.ngRate, true)}<div class="vq43-mini-grid four"><div><span>실제 NG</span><b>${numberText(summary.actualNg)}</b></div><div><span>CSV 매칭</span><b class="blue">${numberText(matched)}</b></div><div><span>정상 검출</span><b class="green">${numberText(summary.detected)}</b></div><div><span>미검</span><b class="amber">${numberText(summary.misses)}</b></div></div>${summary.unmatched ? `<div class="vq43-unmatched warn">CSV Cell ID와 미매칭 실제 NG ${numberText(summary.unmatched)}건</div>` : ''}</div>`;
   }
 
   function positionToolCharts(summaries) {
@@ -2264,13 +2267,9 @@
     }[state.analysisScope];
     $('#vq43-page').innerHTML = `
       <div class="vq43-content vq43-analysis-page"><div class="vq43-eyebrow" style="color:#a78bfa">Detailed Analysis</div><h1 class="vq43-title">Tool별 Score 분석</h1><p class="vq43-subtitle">Tool 판정 결과와 Score를 조건별로 분리하여 분석합니다.</p>
-        <div class="vq43-filter">${customDropdown('position', 'Position', state.analysisPosition, [{ value: 'ALL', label: '전체 Position' }, ...positionNames().map((position) => ({ value: position, label: position }))])}${customDropdown('tool', 'Tool', state.analysisTool, model.tools.map((tool) => ({ value: tool, label: tool })))}${customDropdown('scope', '분석 범위', state.analysisScope, [{ value: 'TOOL_OK', label: '선택 Tool의 OK Score' }, { value: 'TOOL_NG', label: '선택 Tool의 NG Score' }, { value: 'ACTUAL_NG_TOOL_NG', label: 'NG Image를 NG로 검출한 Score' }, { value: 'ACTUAL_NG_TOOL_OK', label: 'NG Image를 OK로 판정한 Score' }])}</div>
-        <div class="vq43-kpi-grid">${kpi('Score 데이터', numberText(points.length), `OK ${okValues.length} · NG ${ngValues.length}`)}${kpi('평균 Score', scoreText(avg), '그래프 파란 점선', 'blue')}${kpi('최소 Score', scoreText(min), '그래프 노란 강조', 'amber')}${kpi('최대 / 중앙값', scoreText(max), `Median ${scoreText(med)}`)}</div>
-        <div class="vq43-analysis-control-grid"><section class="vq43-actual-ng-minimum"><div><strong>실제 NG 검출 최소 Score</strong><p>선택 Tool이 실제 NG 이미지를 NG로 검출한 점수만 대상으로 계산합니다. 다른 Tool이 함께 NG이고 아래 기준 이상이면 그 행은 최소값 후보에서 제외합니다.</p></div><label>다른 Tool NG 제외 기준<input id="vq43-actual-ng-exclusion-score" type="number" inputmode="decimal" min="0.50" max="1.00" step="0.01" value="${actualNgMinimum.threshold.toFixed(2)}"></label><div class="vq43-actual-ng-minimum-value"><span>조건 적용 최소</span><b>${scoreText(actualNgMinimum.min)}</b><small>후보 ${numberText(actualNgMinimum.eligible.length)} · 제외 ${numberText(actualNgMinimum.excluded.length)} / 전체 ${numberText(actualNgMinimum.candidates.length)}</small></div></section>
-        <div class="vq43-analysis-export"><div><strong>Score 조건 CSV 저장</strong><span>현재 Position · Tool · 분석 범위 안에서 Score 조건으로 필터합니다.</span></div><label>Score<input id="vq43-score-cutoff" type="number" inputmode="decimal" min="0.50" max="1.00" step="0.01" value="${state.analysisScoreCutoff.toFixed(2)}"></label>${customDropdown('compare', '조건', state.analysisScoreCompare, [{ value: 'GTE', label: '이상 (≥)' }, { value: 'LTE', label: '이하 (≤)' }])}<button class="vq43-btn vq43-btn-green" data-vq-action="download-score-filter">CSV 저장</button></div></div>
+        <div class="vq43-analysis-upper-grid"><div class="vq43-analysis-left"><div class="vq43-filter">${customDropdown('position', 'Position', state.analysisPosition, [{ value: 'ALL', label: '전체 Position' }, ...positionNames().map((position) => ({ value: position, label: position }))])}${customDropdown('tool', 'Tool', state.analysisTool, model.tools.map((tool) => ({ value: tool, label: tool })))}${customDropdown('scope', '분석 범위', state.analysisScope, [{ value: 'TOOL_OK', label: '선택 Tool의 OK Score' }, { value: 'TOOL_NG', label: '선택 Tool의 NG Score' }, { value: 'ACTUAL_NG_TOOL_NG', label: 'NG Image를 NG로 검출한 Score' }, { value: 'ACTUAL_NG_TOOL_OK', label: 'NG Image를 OK로 판정한 Score' }])}</div><div class="vq43-kpi-grid">${kpi('Score 데이터', numberText(points.length), `OK ${okValues.length} · NG ${ngValues.length}`)}${kpi('평균 Score', scoreText(avg), '그래프 파란 점선', 'blue')}${kpi('최소 Score', scoreText(min), '그래프 노란 강조', 'amber')}${kpi('최대 / 중앙값', scoreText(max), `Median ${scoreText(med)}`)}</div></div><div class="vq43-analysis-right"><div class="vq43-analysis-export"><div><strong>Score 조건 CSV 저장</strong><span>현재 Position · Tool · 분석 범위 안에서 Score 조건으로 필터합니다.</span></div><label>Score<input id="vq43-score-cutoff" type="number" inputmode="decimal" min="0.50" max="1.00" step="0.01" value="${state.analysisScoreCutoff.toFixed(2)}"></label>${customDropdown('compare', '조건', state.analysisScoreCompare, [{ value: 'GTE', label: '이상 (≥)' }, { value: 'LTE', label: '이하 (≤)' }])}<button class="vq43-btn vq43-btn-green" data-vq-action="download-score-filter">CSV 저장</button></div><section class="vq43-actual-ng-minimum"><div><strong>실제 NG 검출 최소 Score</strong><p>선택 Tool이 실제 NG 이미지를 NG로 검출한 점수만 대상으로 계산합니다. 다른 Tool이 함께 NG이고 아래 기준 이상이면 그 행은 최소값 후보에서 제외합니다.</p></div><label>다른 Tool NG 제외 기준<input id="vq43-actual-ng-exclusion-score" type="number" inputmode="decimal" min="0.50" max="1.00" step="0.01" value="${actualNgMinimum.threshold.toFixed(2)}"></label><div class="vq43-actual-ng-minimum-value"><span>조건 적용 최소</span><b>${scoreText(actualNgMinimum.min)}</b><small>후보 ${numberText(actualNgMinimum.eligible.length)} · 제외 ${numberText(actualNgMinimum.excluded.length)} / 전체 ${numberText(actualNgMinimum.candidates.length)}</small></div></section><div class="vq43-table vq43-summary-table"><div class="vq43-table-row head"><span>구분</span><span>개수</span><span>평균</span><span>최소</span><span>최대</span><span>중앙값</span></div>${scoreSummaryRow('OK', okValues)}${scoreSummaryRow('NG', ngValues)}</div></div></div>
         <div class="vq43-note" style="margin-top:16px">${escapeHtml(scopeInfo.text)}</div>
         <div class="vq43-chart-grid"><div class="vq43-chart-card"><div class="vq43-chart-head"><div><h3>Score 분포</h3><p>${escapeHtml(scopeInfo.color)}</p></div><span>▥</span></div><div class="vq43-chart-area">${points.length ? histogramSvg(points) : '<div class="vq43-chart-empty">해당 조건의 Score가 없습니다.</div>'}</div></div><div class="vq43-chart-card"><div class="vq43-chart-head"><div><h3>Cell별 Score</h3><p>낮은 Score부터 정렬 · 점 클릭 시 CSV FullPath 또는 실제 NG 이미지를 표시합니다.</p></div><button class="vq43-chart-expand-btn" type="button" data-vq-action="open-chart-modal" ${points.length ? '' : 'disabled'}>⛶ 확대 보기</button></div><div class="vq43-chart-area vq43-analysis-scatter">${points.length ? scatterSvg(points,{interactive:true}) : '<div class="vq43-chart-empty">해당 조건의 Score가 없습니다.</div>'}</div></div></div>
-        <div class="vq43-table vq43-summary-table" style="margin-bottom:30px"><div class="vq43-table-row head"><span>구분</span><span>개수</span><span>평균</span><span>최소</span><span>최대</span><span>중앙값</span></div>${scoreSummaryRow('OK', okValues)}${scoreSummaryRow('NG', ngValues)}</div>
       </div>`;
   }
 
@@ -2360,6 +2359,8 @@
       content.insertBefore(left, cell);
       content.insertBefore(right, cell);
       left.append(cell, position);
+      const misses = $('.vq43-main-misses', content);
+      if (misses) left.append(misses);
       right.append(history, tools);
     }
   }
@@ -2443,8 +2444,10 @@
   function historyDateBars(daily) {
     const rows = (Array.isArray(daily) ? daily : []).slice(-90);
     if (!rows.length) return '<div class="vq43-history-empty">표시할 날짜별 이력이 없습니다.</div>';
-    const width = Math.max(520, rows.length * 58);
-    const height = 220, left = 36, right = 12, top = 26, bottom = 42;
+    const height = 220, mainCompact = state.page === 'main', renderedHeight = mainCompact ? 136 : 220;
+    const availableWidth = mainCompact ? Math.max(420, window.innerWidth / 2) : Math.max(720, window.innerWidth - 160);
+    const width = Math.max(520, Math.round(availableWidth * height / renderedHeight), rows.length * 58);
+    const left = 28, right = 6, top = 26, bottom = 42;
     const plotW = width - left - right, plotH = height - top - bottom;
     const x = (index) => left + (rows.length <= 1 ? plotW / 2 : plotW * index / (rows.length - 1));
     const y = (rate) => top + plotH * (1 - Math.max(0, Math.min(1, Number(rate || 0))));
@@ -4085,7 +4088,24 @@
     catch (error) { showToast(`중지 실패: ${error.message}`, true); }
   }
 
+  function updateGlobalSimulationProgress() {
+    const element = $('#vq43-global-sim-progress');
+    if (!element) return;
+    const s = state.simulationProgress || {};
+    const total = Number(s.total || 0), processed = Number(s.processed || 0);
+    const rate = total > 0 ? Math.min(100, Math.max(0, processed * 100 / total)) : 0;
+    const active = Boolean(s.running);
+    element.hidden = !active;
+    element.classList.toggle('show', active);
+    if (!active) return;
+    const current = $('#vq43-global-sim-current'); if (current) current.textContent = s.current || s.message || '검사 중';
+    const count = $('#vq43-global-sim-count'); if (count) count.textContent = `${numberText(processed)} / ${numberText(total)}`;
+    const percent = $('#vq43-global-sim-percent'); if (percent) percent.textContent = `${rate.toFixed(2)}%`;
+    const bar = $('#vq43-global-sim-bar'); if (bar) bar.style.width = `${rate}%`;
+  }
+
   function updateSimulationStatusDom() {
+    updateGlobalSimulationProgress();
     if (state.page !== 'simulation') return;
     const s = state.simulationProgress || {};
     const total = Number(s.total || 0), processed = Number(s.processed || 0);
@@ -5509,7 +5529,7 @@
             const tools = position === 'AN(TOP)' ? ['Crack','Edge','FoilDamage','Trimming','Welding'] : position.includes('BOT') ? ['Crack','FoilDamage','Welding'] : ['Crack','FoilDamage','Trimming','Welding'];
             const toolData = {};
             tools.forEach((tool, toolIndex) => { toolData[tool] = { tool, result:'OK', score:0.72 + ((index + toolIndex) % 25) / 100 }; });
-            rows.push({ sourceFileName:`debug_${position}.csv`, sourceRowNumber:index+1, cellId, position, totalResult:'OK', tools:toolData });
+            rows.push({ sourceFileName:`20260203_debug_${position}.csv`, sourceRowNumber:index+1, cellId, position, totalResult:'OK', tools:toolData });
             const svg = new File([`<svg xmlns="http://www.w3.org/2000/svg" width="400" height="240"><rect width="100%" height="100%" fill="#111827"/><text x="50%" y="50%" fill="white" text-anchor="middle">${position} ${cellId}</text></svg>`], `${cellId}.svg`, {type:'image/svg+xml'});
             ngImages.push({position,cellId,file:svg,relativePath:`NG/${position}/${cellId}.svg`});
           }
@@ -5613,6 +5633,15 @@
         return result;
       },
       formatLogTime(value) { return formatSimulationLogTime(value); },
+      seedRunningProgress() {
+        state.simulationProgress = { ...state.simulationProgress, running:true, processed:37, total:100, ok:29, ng:8, current:'P163GG23M2100037', message:'Simulation 실행 중' };
+        updateSimulationStatusDom();
+        return { ...state.simulationProgress };
+      },
+      stopRunningProgress() {
+        state.simulationProgress = { ...state.simulationProgress, running:false, message:'Ready' };
+        updateSimulationStatusDom();
+      },
       testDisconnectWorkspaceClear() {
         state.simulationMode = 'integrated';
         const form = ensureSimulationForm();

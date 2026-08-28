@@ -49,11 +49,11 @@ test('Main and Analysis use the requested compact two-column geometry', async ({
   expect(main.independentColumns).toBe(2);
   expect(main.toolColumns).toBe(2);
   expect(main.verticalGap).toBeLessThanOrEqual(1);
-  expect(main.labels).toEqual(['실제\nNG','CSV\n매칭','정상\n검출','미검']);
+  expect(main.labels).toEqual(['실제 NG','CSV 매칭','정상 검출','미검']);
 
   await page.evaluate(() => window.__VISIONQC_DEBUG__.seedAnalysis());
   const analysis = await page.evaluate(() => {
-    const grid = document.querySelector('.vq43-analysis-control-grid');
+    const grid = document.querySelector('.vq43-analysis-upper-grid');
     return { columns:getComputedStyle(grid).gridTemplateColumns.split(' ').length, overflow:grid.scrollWidth-grid.clientWidth };
   });
   expect(analysis.columns).toBe(2);

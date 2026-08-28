@@ -1,6 +1,6 @@
-# VisionQC Local Agent v1.3.2
+# VisionQC Local Agent v1.3.3
 
-## v1.3.2 유지보수 기준
+## v1.3.3 유지보수 기준
 
 - `Services/HistoryService.cs`: 이력 HTTP 요청과 비동기 import 작업 관리.
 - `Services/CsvHistoryFileImporter.cs`: CSV 한 줄씩 SQLite에 직접 적재.
@@ -11,7 +11,7 @@
 - Integrated Runtime은 동일 GPU 조건 및 Green Workspace·Position 집합이면 Green 단독 Simulation에서 재사용합니다.
 - `Launcher/`는 VPDL을 직접 로드하지 않고 설치된 API와 일치하는 Worker만 시작합니다.
 - `VPDL_MULTI_VERSION_KR.md`, `Launcher/README_KR.md`, `REQUEST_VPDL_MULTI_VERSION_KR.md`를 새 VPDL 관련 작업 전에 확인합니다.
-- 배포 파일은 `VisionQC_Agent_Installer_v1.3.2.exe`입니다.
+- 배포 파일은 `VisionQC_Agent_Installer_v1.3.3.exe`입니다.
 
 # 이전 변경 이력
 
@@ -102,7 +102,7 @@ VisionQC Web과 사용자 PC의 Cognex VPDL Runtime/GPU/로컬 파일을 연결�
 3. `REGISTER_PROTOCOL.cmd`
 4. `CHECK_PROTOCOL.cmd`에서 현재 EXE 경로 확인
 5. `RUN_AGENT.cmd` 또는 Web의 Agent 실행
-6. `http://127.0.0.1:17891/api/status`에서 `agentVersion: 1.3.2` 확인
+6. `http://127.0.0.1:17891/api/status`에서 `agentVersion: 1.3.3` 확인
 
 `OptimizedGPUMemory(ulong)`은 GPU 장치 번호가 아니라 예약 메모리의 byte 수를 받습니다. 이 패키지는 장치 선택을 `InitializeComputeDevices`에만 맡기고, 최적화 메모리는 설치된 VPDL Runtime의 기본 설정을 유지합니다.
 
