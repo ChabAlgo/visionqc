@@ -448,7 +448,8 @@ FROM images WHERE TRIM(IFNULL(workspace_key,''))<>'' GROUP BY workspace_key ORDE
                         response.filterOptions.workspaces.Add(new AgentHistoryWorkspaceOption
                         {
                             value = key,
-                            label = string.Join(" · ", new[] { type, name }.Where(x => !string.IsNullOrWhiteSpace(x)))
+                            label = string.Join(" · ", new[] { type, name }.Where(x => !string.IsNullOrWhiteSpace(x))),
+                            workspaceType = type
                         });
                     }
                 }

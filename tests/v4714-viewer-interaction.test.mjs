@@ -7,10 +7,10 @@ import { fileURLToPath } from 'node:url';
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const read = (name) => fs.readFileSync(path.join(root, name), 'utf8');
 
-test('Threshold input reserves room for the native number spinner', () => {
+test('Threshold input stays inside its Tool card while preserving native number spinner', () => {
   const css = read('visionqc-extension.css');
-  assert.match(css, /vq43-threshold-input\{[\s\S]*?appearance:auto!important;[\s\S]*?width:64px!important/s);
-  assert.match(css, /vq43-threshold-input\{[\s\S]*?height:32px!important/s);
+  assert.match(css, /vq43-threshold-input\{[\s\S]*?appearance:auto!important;[\s\S]*?width:48px!important/s);
+  assert.match(css, /vq43-threshold-input\{[\s\S]*?height:30px!important/s);
 });
 
 test('analysis scope note is directly below filters and live rendering defers during pointer input', () => {

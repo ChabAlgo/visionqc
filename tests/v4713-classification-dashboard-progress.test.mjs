@@ -10,6 +10,10 @@ const read = (name) => fs.readFileSync(path.join(root, name), 'utf8');
 test('classification restores focus only after the current image has loaded', () => {
   const base = read('assets/index-v4.4.33.js');
   assert.match(base, /VQ42_loadedImageId=Ee\.useRef\(null\)/);
+  assert.match(base, /VQ42_restorePending=Ee\.useRef\(!1\)/);
+  assert.match(base, /VQ42_restorePending\.current=!0,VQ42_loadedImageId\.current=null/);
+  assert.match(base, /!VQ42_restorePending\.current&&VQ42_loadedImageId\.current===i\.id/);
+  assert.match(base, /VQ42_restorePending\.current=!1/);
   assert.match(base, /VQ42_loadedImageId\.current!==null&&z\.width>0&&z\.height>0&&!oe\.current/);
   assert.match(base, /VQ42_loadedImageId\.current===i\.id&&z\.width>0&&z\.height>0/);
   assert.match(base, /VQ42_loadedImageId\.current!==i\.id\|\|requestAnimationFrame/);
@@ -31,7 +35,7 @@ test('main dashboard uses two Position columns and nests misses below Position N
   assert.match(js, /<span>정상 검출<\/span>/);
   assert.match(js, /const misses = \$\('\.vq43-main-misses', content\);[\s\S]*left\.append\(misses\)/);
   assert.match(css, /vq43-main-dashboard \.vq43-position-grid\{grid-template-columns:repeat\(2,minmax\(0,1fr\)\)!important/);
-  assert.match(css, /vq43-threshold-input[^{]*\{[^}]*width:64px!important[^}]*font-size:10px!important/);
+  assert.match(css, /vq43-threshold-input[^{]*\{[^}]*width:48px!important[^}]*font-size:9px!important/);
 });
 
 test('analysis upper area follows left filters and right condition-summary order', () => {

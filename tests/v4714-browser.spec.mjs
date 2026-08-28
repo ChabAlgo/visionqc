@@ -13,8 +13,9 @@ test('Threshold spinner is visible and analysis note follows the filters', async
     const rect = node.getBoundingClientRect();
     return { width:rect.width, height:rect.height, appearance:getComputedStyle(node).appearance };
   });
-  expect(threshold.width).toBeGreaterThanOrEqual(63);
-  expect(threshold.height).toBeGreaterThanOrEqual(31);
+  expect(threshold.width).toBeGreaterThanOrEqual(47);
+  expect(threshold.width).toBeLessThanOrEqual(49);
+  expect(threshold.height).toBeGreaterThanOrEqual(29);
   expect(threshold.appearance).not.toBe('none');
 
   await page.evaluate(() => window.__VISIONQC_DEBUG__.seedAnalysis());

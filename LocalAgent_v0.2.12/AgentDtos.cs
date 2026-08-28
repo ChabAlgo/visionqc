@@ -143,6 +143,7 @@ namespace VisionQC.LocalAgent
     {
         public string value { get; set; }
         public string label { get; set; }
+        public string workspaceType { get; set; }
     }
 
     public sealed class AgentHistoryDailySummary

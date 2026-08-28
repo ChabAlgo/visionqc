@@ -1,7 +1,7 @@
 (() => {
   'use strict';
 
-  const VERSION = '4.7.14';
+  const VERSION = '4.7.15';
   const DEFAULT_POSITION_DEFS = [
     { key:'CA_TOP', name:'CA(TOP)' },
     { key:'AN_TOP', name:'AN(TOP)' },
@@ -25,9 +25,9 @@
   const NG_POSITION_PREFIX = 'ng-position:';
   const IMG_RE = /\.(png|jpe?g|bmp|gif|webp|tif?f)$/i;
   const LOCAL_AGENT_URL = 'http://127.0.0.1:17891';
-  const EXPECTED_AGENT_VERSION = '1.3.4';
-  const AGENT_INSTALLER_URL = './downloads/VisionQC_Agent_Installer_v1.3.4.exe';
-  const OFFLINE_PACKAGE_URL = './downloads/VisionQC_Offline_v4.7.9.zip';
+  const EXPECTED_AGENT_VERSION = '1.3.5';
+  const AGENT_INSTALLER_URL = './downloads/VisionQC_Agent_Installer_v1.3.5.exe';
+  const OFFLINE_PACKAGE_URL = './downloads/VisionQC_Offline_v4.7.15.zip';
   // SQLite에는 사용자가 명시적으로 남기려는 두 종류의 결과만 표시한다.
   // 이전 버전의 단발 검사(single-inspection) 이력은 보존하되 화면 집계에서는 제외한다.
   const PERSISTED_HISTORY_SOURCE_TYPES = ['simulation', 'csv-import', 'csv-file-stream'];
@@ -355,8 +355,8 @@
           <nav class="vq43-nav">
             ${navItem('main', 'main', '메인', 'Cell · Position · Tool NG율')}
             ${navItem('analysis', 'analysis', '분석', 'Tool별 Score 세부 분석')}
-            ${navItem('classification', 'classification', '분류', '이미지 분류')}
             ${navItem('simulation', 'simulation', '시뮬레이션', 'VPDL Local Runtime · GPU')}
+            ${navItem('classification', 'classification', '분류', '이미지 분류')}
             ${navItem('settings', 'settings', '설정', 'Input · 실제 NG 경로')}
             ${navItem('history', 'history', '검사 이력', 'SQLite · 날짜별 NG율 · 이미지')}
           </nav>
@@ -1997,7 +1997,7 @@
     const model = state.model;
     const persistedHistory = mainHistoryDashboardPanel();
     if (!model?.records.length) {
-      $('#vq43-page').innerHTML = `<div class="vq43-content"><div class="vq43-topline"><div><div class="vq43-eyebrow">Main Dashboard</div><h1 class="vq43-title">검사 결과 전체 View</h1><p class="vq43-subtitle">CSV 분석 결과와 Local Agent SQLite 검사 이력을 한 화면에서 확인합니다.</p></div><div class="vq43-top-actions"><button class="vq43-btn" data-vq-action="open-settings">Input 변경</button></div></div>${persistedHistory}<section class="vq43-section"><div class="vq43-empty"><div class="vq43-empty-card"><div class="vq43-empty-symbol">◌</div><h2>분석 Input이 없습니다</h2><p>설정 메뉴에서 Position별 시뮬레이션 결과 파일과 실제 NG 이미지 폴더를 입력하세요. 결과 파일은 1개 Position만 입력해도 분석할 수 있습니다.</p></div></div></section></div>`;
+      $('#vq43-page').innerHTML = `<div class="vq43-content"><div class="vq43-topline"><div><div class="vq43-eyebrow">Main Dashboard</div><h1 class="vq43-title">검사 결과 전체 View</h1><p class="vq43-subtitle">CSV 분석 결과와 Local Agent SQLite 검사 이력을 한 화면에서 확인합니다.</p></div><div class="vq43-top-actions">${packageDownloadActionsHtml()}<button class="vq43-btn" data-vq-action="open-settings">Input 변경</button></div></div>${persistedHistory}<section class="vq43-section"><div class="vq43-empty"><div class="vq43-empty-card"><div class="vq43-empty-symbol">◌</div><h2>분석 Input이 없습니다</h2><p>설정 메뉴에서 Position별 시뮬레이션 결과 파일과 실제 NG 이미지 폴더를 입력하세요. 결과 파일은 1개 Position만 입력해도 분석할 수 있습니다.</p></div></div></section></div>`;
       return;
     }
     const positions = positionNames();
@@ -2006,7 +2006,7 @@
     $('#vq43-page').innerHTML = `
       <div class="vq43-content">
         ${persistedHistory}
-        <div class="vq43-topline"><div><div class="vq43-eyebrow">Main Dashboard</div><h1 class="vq43-title">시뮬레이션 결과 전체 View</h1><p class="vq43-subtitle">Tool별 Threshold를 적용해 Position·Cell NG율과 실제 NG 기준 미검을 다시 계산합니다.</p></div><div class="vq43-top-actions"><button class="vq43-btn vq43-btn-blue" data-vq-action="export-summary-report">요약 PDF 리포트</button><button class="vq43-btn vq43-btn-green" data-vq-action="download-all-results">전체 결과 CSV 저장</button><button class="vq43-btn" data-vq-action="open-settings">Input 변경</button></div></div>
+        <div class="vq43-topline"><div><div class="vq43-eyebrow">Main Dashboard</div><h1 class="vq43-title">시뮬레이션 결과 전체 View</h1><p class="vq43-subtitle">Tool별 Threshold를 적용해 Position·Cell NG율과 실제 NG 기준 미검을 다시 계산합니다.</p></div><div class="vq43-top-actions">${packageDownloadActionsHtml()}<button class="vq43-btn vq43-btn-blue" data-vq-action="export-summary-report">요약 PDF 리포트</button><button class="vq43-btn vq43-btn-green" data-vq-action="download-all-results">전체 결과 CSV 저장</button><button class="vq43-btn" data-vq-action="open-settings">Input 변경</button></div></div>
         <section class="vq43-section"><div class="vq43-section-title"><span class="vq43-step">1</span><div><h3>Cell별 NG</h3><p>입력 Position 중 한 곳이라도 Threshold 적용 후 NG인 Cell</p></div></div><div class="vq43-kpi-grid">
           ${kpi('검사 Cell', numberText(model.uniqueCellCount), `Position ${inputCount}개 입력`)}
           ${kpi('NG Cell', numberText(model.ngCellCount), '한 Position 이상 NG', 'red')}
@@ -2459,13 +2459,31 @@
       '<option value="' + escapeHtml(item.value) + '" ' + (item.value === selected ? 'selected' : '') + '>' + escapeHtml(item.label) + '</option>').join('');
   }
 
+  function historyWorkspaceType(item) {
+    const explicit = String(item?.workspaceType ?? item?.type ?? '').trim().toLowerCase();
+    if (explicit) return explicit;
+    return String(item?.label ?? '').split('·')[0].trim().toLowerCase();
+  }
+
+  function historyWorkspacesForType(items, workspaceType) {
+    const type = String(workspaceType || '').trim().toLowerCase();
+    return (Array.isArray(items) ? items : []).filter((item) => !type || historyWorkspaceType(item) === type);
+  }
+
   function bindHistoryControls(shell) {
     if (state.page !== 'history') return;
     $$('[data-history-field]', shell).forEach((input) => {
       const field = input.dataset.historyField;
       const sync = () => { state.historyFilters[field] = input.value; };
       input.oninput = sync;
-      input.onchange = sync;
+      input.onchange = () => {
+        sync();
+        if (field === 'workspaceType') {
+          state.historyFilters.workspaceKey = '';
+          const workspaceSelect = $('[data-history-field="workspaceKey"]', shell);
+          if (workspaceSelect) workspaceSelect.innerHTML = historySelectOptions(historyWorkspacesForType(state.historyData?.filterOptions?.workspaces, input.value), '');
+        }
+      };
       input.onkeydown = (event) => {
         event.stopPropagation();
         if (event.key === 'Enter') { event.preventDefault(); refreshHistory(true); }
@@ -2559,6 +2577,8 @@
     const data = state.historyData || { totalCount:0, ngCount:0, uniqueCellCount:0, daily:[], items:[], filterOptions:{} };
     const f = state.historyFilters;
     const options = data.filterOptions || {};
+    const workspaceOptions = historyWorkspacesForType(options.workspaces, f.workspaceType);
+    if (f.workspaceKey && !workspaceOptions.some((item) => String(item?.value ?? item?.key ?? '') === f.workspaceKey)) f.workspaceKey = '';
     const totalPages = Math.max(1, Math.ceil(Number(data.totalCount || 0) / Number(f.pageSize || 50)));
     const page = Math.max(1, Math.min(Number(f.page || 1), totalPages));
     const status = state.historyLoading ? 'SQLite 이력 조회 중...' : (state.historyFileImport?.running
@@ -2573,7 +2593,7 @@
       + '<label>Position<select data-history-field="position">' + historySelectOptions(options.positions, f.position) + '</select></label>'
       + '<label>Tool<select data-history-field="tool">' + historySelectOptions(options.tools, f.tool) + '</select></label>'
       + '<label>검사 모드<select data-history-field="workspaceType">' + historySelectOptions(options.workspaceTypes, f.workspaceType) + '</select></label>'
-      + '<label>Workspace<select data-history-field="workspaceKey">' + historySelectOptions(options.workspaces, f.workspaceKey) + '</select></label>'
+      + '<label>Workspace<select data-history-field="workspaceKey">' + historySelectOptions(workspaceOptions, f.workspaceKey) + '</select></label>'
       + '<label>Tool 결과<select data-history-field="toolResult">' + historyResultOptions(f.toolResult) + '</select></label>'
       + '<label>Position 결과<select data-history-field="totalResult">' + historyResultOptions(f.totalResult) + '</select></label>'
       + '</section>';
@@ -2998,6 +3018,15 @@
       options.addEventListener('scroll', () => {
         state.simulationOptionsScrollTop = options.scrollTop;
       }, { passive:true });
+      options.addEventListener('wheel', (event) => {
+        const atTop = options.scrollTop <= 0 && event.deltaY < 0;
+        const atBottom = options.scrollTop + options.clientHeight >= options.scrollHeight - 1 && event.deltaY > 0;
+        if (!atTop && !atBottom) return;
+        const outer = $('#vq43-page');
+        if (!outer || outer.scrollHeight <= outer.clientHeight) return;
+        event.preventDefault();
+        outer.scrollTop += event.deltaY;
+      }, { passive:false });
     }
     if (options.scrollTop === 0 && state.simulationOptionsScrollTop > 0)
       options.scrollTop = state.simulationOptionsScrollTop;
@@ -4591,7 +4620,9 @@
           if (tool.tags?.length) meta.push(`Tags ${tool.tags.join(', ')}`);
           if (tool.classes?.length) meta.push(`Classes ${tool.classes.join(', ')}`);
           if (tool.features?.length) meta.push(`Features ${tool.features.join(', ')}`);
-          return `<span class="vq43-workspace-tool"><b>${escapeHtml(tool.type || 'Tool')}</b> ${escapeHtml(tool.name || '')}<small>${escapeHtml(meta.join(' · ') || '-')}</small></span>`;
+          const typeText = String(tool.type || '').toLowerCase();
+          const color = typeText.includes('red') ? 'red' : typeText.includes('blue') ? 'blue' : typeText.includes('green') ? 'green' : item.kind;
+          return `<span class="vq43-workspace-tool ${color}"><b>${escapeHtml(tool.type || 'Tool')}</b> ${escapeHtml(tool.name || '')}<small>${escapeHtml(meta.join(' · ') || '-')}</small></span>`;
         }).join('') || '<em>Tool 없음</em>'}</div>`).join('');
         const badge = loading?.badge || (status === 'ok' ? 'READ OK' : status === 'error' ? 'READ ERROR' : 'LOAD WAIT');
         const content = loading
@@ -4819,15 +4850,22 @@
     const s = state.simulationProgress || {};
     const total = Number(s.total || 0), processed = Number(s.processed || 0), rate = total > 0 ? Math.min(100, processed * 100 / total) : 0;
     const batchSize = state.simulationMode === 'blue' ? Number(ensureSimulationForm().blue.printEvery || 100) : Number(ensureSimulationForm().green.printEvery || 100);
-    return `<section class="vq43-sim-panel"><div class="vq43-sim-panel-head"><div><strong>Simulation Status</strong><span>Agent 상세 결과 · 분석 반영 Batch ${numberText(batchSize)}장</span></div>${state.simulationLiveActive?'<span class="vq43-live-badge">LIVE ANALYSIS</span>':''}</div><div class="vq43-sim-progress-head"><strong id="vq43-sim-progress-count">${numberText(processed)} / ${numberText(total)}</strong><b id="vq43-sim-progress-pct">${rate.toFixed(2)}%</b></div><div class="vq43-sim-progress"><i id="vq43-sim-progress-bar" style="width:${rate}%"></i></div><div class="vq43-sim-kpis"><div><span>OK</span><b id="vq43-sim-ok">${numberText(s.ok||0)}</b></div><div><span>NG</span><b id="vq43-sim-ng">${numberText(s.ng||0)}</b></div><div><span>LIVE ROWS</span><b id="vq43-sim-live-count">${numberText(state.simulationLiveRows||0)}</b></div><div class="current"><span>Current</span><b id="vq43-sim-current">${escapeHtml(s.current||'-')}</b></div></div><div class="vq43-sim-log" id="vq43-sim-log"><span>${s.error?'[ERROR]':s.running?'[RUN]':'[READY]'}</span> ${escapeHtml(s.message || 'Ready')}</div></section>`;
+    const connected = state.simulationAgent?.status === 'connected';
+    const actions = `<div class="vq43-sim-status-actions">${state.simulationLiveActive?'<span class="vq43-live-badge">LIVE ANALYSIS</span>':''}<button id="vq43-sim-stop" class="vq43-btn vq43-btn-red" data-vq-action="simulation-stop" ${s.running?'':'disabled'}>Stop</button><button id="vq43-sim-start" class="vq43-btn vq43-btn-blue" data-vq-action="simulation-start" ${connected&&!s.running?'':'disabled'}>Simulation Start</button></div>`;
+    return `<section class="vq43-sim-panel"><div class="vq43-sim-panel-head"><div><strong>Simulation Status</strong><span>Agent 상세 결과 · 분석 반영 Batch ${numberText(batchSize)}장</span></div>${actions}</div><div class="vq43-sim-progress-head"><strong id="vq43-sim-progress-count">${numberText(processed)} / ${numberText(total)}</strong><b id="vq43-sim-progress-pct">${rate.toFixed(2)}%</b></div><div class="vq43-sim-progress"><i id="vq43-sim-progress-bar" style="width:${rate}%"></i></div><div class="vq43-sim-kpis"><div><span>OK</span><b id="vq43-sim-ok">${numberText(s.ok||0)}</b></div><div><span>NG</span><b id="vq43-sim-ng">${numberText(s.ng||0)}</b></div><div><span>LIVE ROWS</span><b id="vq43-sim-live-count">${numberText(state.simulationLiveRows||0)}</b></div><div class="current"><span>Current</span><b id="vq43-sim-current">${escapeHtml(s.current||'-')}</b></div></div><div class="vq43-sim-log" id="vq43-sim-log"><span>${s.error?'[ERROR]':s.running?'[RUN]':'[READY]'}</span> ${escapeHtml(s.message || 'Ready')}</div></section>`;
+  }
+
+  function packageDownloadActionsHtml() {
+    return `<button class="vq43-btn" data-vq-action="simulation-agent-download" title="Agent 설치·프로토콜 등록·실행을 한 번에 진행하는 단일 EXE를 받습니다.">Agent 다운로드</button><button class="vq43-btn" data-vq-action="simulation-offline-download" title="인터넷 없이 VisionQC UI와 Agent를 사용하는 오프라인 패키지입니다.">오프라인 패키지</button>`;
   }
 
   function simulationTopActionsHtml() {
     const connected = state.simulationAgent?.status === 'connected';
-    return `<button class="vq43-btn" data-vq-action="simulation-agent-launch">Agent 실행</button><button class="vq43-btn vq43-btn-red" data-vq-action="simulation-agent-stop" ${connected?'':'disabled'}>Agent 종료</button><button class="vq43-btn" data-vq-action="simulation-agent-download" title="Agent 설치·프로토콜 등록·실행을 한 번에 진행하는 단일 EXE를 받습니다.">Agent 다운로드</button><button class="vq43-btn" data-vq-action="simulation-offline-download" title="인터넷 없이 VisionQC UI와 Agent를 사용하는 오프라인 패키지입니다.">오프라인 패키지</button>`;
+    return `<button class="vq43-btn" data-vq-action="simulation-agent-launch">Agent 실행</button><button class="vq43-btn vq43-btn-red" data-vq-action="simulation-agent-stop" ${connected?'':'disabled'}>Agent 종료</button>${packageDownloadActionsHtml()}`;
   }
 
-  function downloadFile(url, message) {
+  function downloadFile(url, message, label = '파일') {
+    if (!window.confirm(`${label}을 다운로드하시겠습니까?`)) return false;
     const link = document.createElement('a');
     link.href = url;
     link.download = '';
@@ -4836,14 +4874,15 @@
     link.click();
     link.remove();
     showToast(message);
+    return true;
   }
 
   function downloadAgentInstaller() {
-    downloadFile(AGENT_INSTALLER_URL, 'VisionQC Agent 설치 파일을 다운로드합니다. 실행하면 설치·등록·오프라인 UI 실행이 자동으로 진행됩니다.');
+    downloadFile(AGENT_INSTALLER_URL, 'VisionQC Agent 설치 파일을 다운로드합니다. 실행하면 설치·등록·오프라인 UI 실행이 자동으로 진행됩니다.', 'Agent 설치 파일');
   }
 
   function downloadOfflinePackage() {
-    downloadFile(OFFLINE_PACKAGE_URL, '오프라인 패키지를 다운로드합니다. 압축을 푼 뒤 VisionQC_Agent_Installer EXE를 실행하세요.');
+    downloadFile(OFFLINE_PACKAGE_URL, '오프라인 패키지를 다운로드합니다. 압축을 푼 뒤 VisionQC_Agent_Installer EXE를 실행하세요.', '오프라인 패키지');
   }
 
   function simulationAgentCardHtml() {
@@ -4891,7 +4930,7 @@
       <div class="vq43-topline"><div><div class="vq43-eyebrow">VPDL Local Simulation · Web v${VERSION} · Agent v${EXPECTED_AGENT_VERSION}</div><h1 class="vq43-title">VPDL 시뮬레이션</h1><p class="vq43-subtitle">DL_Simulation v1.13의 Runtime/Tool/Filter/Crop/Fallback 설정을 Web GUI에서 제어합니다.</p></div><div class="vq43-top-actions">${simulationTopActionsHtml()}</div></div>
       ${simulationAgentCardHtml()}
       <div class="vq43-sim-tabs"><button class="${mode==='integrated'?'active':''}" data-vq-action="simulation-mode" data-vq-mode="integrated">Integrated Simulation</button><button class="${mode==='green'?'active':''}" data-vq-action="simulation-mode" data-vq-mode="green">Green Simulation</button><button class="${mode==='blue'?'active':''}" data-vq-action="simulation-mode" data-vq-mode="blue">Blue Crop</button></div>
-      <div class="vq43-sim-layout"><main class="vq43-sim-maincol"><section class="vq43-sim-panel"><div class="vq43-sim-panel-head"><div><strong>${modeText}</strong><span>${modeDescription}</span></div><span class="vq43-sim-local-badge">LOCAL PC</span></div>${simulationPositionToolbar()}<div class="vq43-sim-position-list">${simulationPositionRows()}</div></section>${simulationOutputPanel()}${simulationWorkspaceInspectorPanel()}${simulationStatusPanel()}<section class="vq43-sim-runbar"><div><strong>Local VPDL 실행</strong><span>Runtime File Load 완료 후 Simulation Start를 누르면 즉시 실행합니다.</span></div><div><button id="vq43-sim-stop" class="vq43-btn vq43-btn-red" data-vq-action="simulation-stop" ${s.running?'':'disabled'}>Stop</button><button id="vq43-sim-start" class="vq43-btn vq43-btn-blue" data-vq-action="simulation-start" ${connected&&!s.running?'':'disabled'}>Simulation Start</button></div></section>${simulationExecutionLogPanel()}</main>${simulationOptionsPanel()}</div>
+      <div class="vq43-sim-layout"><main class="vq43-sim-maincol"><section class="vq43-sim-panel"><div class="vq43-sim-panel-head"><div><strong>${modeText}</strong><span>${modeDescription}</span></div><span class="vq43-sim-local-badge">LOCAL PC</span></div>${simulationPositionToolbar()}<div class="vq43-sim-position-list">${simulationPositionRows()}</div></section>${simulationOutputPanel()}${simulationWorkspaceInspectorPanel()}${simulationStatusPanel()}${simulationExecutionLogPanel()}</main>${simulationOptionsPanel()}</div>
       <div id="vq43-sim-preview-modal" class="vq43-sim-preview-modal"></div>
     </div>`;
   }
@@ -5750,6 +5789,34 @@
         state.simulationMode = 'integrated';
         ensureSimulationForm();
         setPage('simulation');
+      },
+      seedHistoryFilters() {
+        state.historyLoaded = true;
+        state.historyAttempted = true;
+        state.historyFilters.workspaceType = '';
+        state.historyFilters.workspaceKey = '';
+        state.historyData = { totalCount:0, ngCount:0, uniqueCellCount:0, daily:[], items:[], databasePath:'debug.db', filterOptions:{ positions:['AN(TOP)'], tools:['Crack'], workspaceTypes:['green','integrated'], workspaces:[
+          { value:'green-a', label:'green · Green A', workspaceType:'green' },
+          { value:'integrated-a', label:'integrated · Integrated A', workspaceType:'integrated' },
+          { value:'integrated-b', label:'integrated · Integrated B', workspaceType:'integrated' }
+        ] } };
+        setPage('history');
+      },
+      seedRuntimeToolColors() {
+        state.simulationMode = 'integrated';
+        state.simulationRuntimeToken = 'debug-runtime-token';
+        state.simulationAgent = { ...state.simulationAgent, status:'connected', runtimePreloaded:true };
+        const form = ensureSimulationForm();
+        const firstKey = simulationPositionDefs()[0]?.key;
+        const first = form.positions?.[firstKey];
+        if (first) {
+          first.greenWorkspacePath = first.greenWorkspacePath || 'H:\\Runtime\\Green.vrws';
+          first.greenWorkspaceInfo = { ok:true, workspaceName:'Green.vrws', streams:[{ name:'Default', tools:[{type:'GreenStandard',name:'Crack'},{type:'RedTool',name:'Blob'}] }] };
+          first.blueWorkspacePath = first.blueWorkspacePath || 'H:\\Runtime\\Blue.vrws';
+          first.blueWorkspaceInfo = { ok:true, workspaceName:'Blue.vrws', streams:[{ name:'Default', tools:[{type:'Blue',name:'Locate'}] }] };
+        }
+        setPage('simulation');
+        return $$('.vq43-workspace-tool').map((node) => node.className);
       },
       openSimulationPreview() {
         state.simulationMode = 'integrated';

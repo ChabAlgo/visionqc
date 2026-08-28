@@ -788,6 +788,25 @@ body.vq43-theme-light #vq43-shell .vq43-analysis-page{color:#172f46!important}bo
     overflow:visible!important
   }
 }
+
+/* v4.7.15 - contained threshold controls, typed Runtime tools and chained option scrolling */
+@media(min-width:1280px){
+  .vq43-main-dashboard .vq43-tool-donut-item{box-sizing:border-box!important;overflow:hidden!important;padding-left:8px!important;padding-right:8px!important}
+  .vq43-main-dashboard .vq43-tool-score-meta{box-sizing:border-box!important;width:100%!important;padding:5px 3px 0!important;overflow:hidden!important}
+  .vq43-main-dashboard .vq43-tool-score-meta label{box-sizing:border-box!important;width:100%!important;display:grid!important;grid-template-columns:minmax(0,1fr) 48px!important;align-items:center!important;justify-content:stretch!important;gap:2px!important;overflow:hidden!important}
+  .vq43-main-dashboard .vq43-threshold-input{appearance:auto!important;box-sizing:border-box!important;width:48px!important;min-width:48px!important;max-width:48px!important;flex:0 0 48px!important;height:30px!important;min-height:30px!important;padding:2px 0 2px 4px!important;font-size:9px!important;line-height:24px!important;overflow:hidden!important}
+}
+.vq43-workspace-tool.green{color:#34d399!important;border-color:#168760!important}.vq43-workspace-tool.green b{color:#6ee7b7!important}
+.vq43-workspace-tool.blue{color:#60a5fa!important;border-color:#2563a6!important}.vq43-workspace-tool.blue b{color:#93c5fd!important}
+.vq43-workspace-tool.red{color:#fb7185!important;border-color:#b4233d!important}.vq43-workspace-tool.red b{color:#fda4af!important}
+body.vq43-theme-light #vq43-shell .vq43-workspace-tool.green{color:#047857!important;border-color:#34a27a!important}body.vq43-theme-light #vq43-shell .vq43-workspace-tool.green :is(b,small){color:#047857!important}
+body.vq43-theme-light #vq43-shell .vq43-workspace-tool.blue{color:#1d4ed8!important;border-color:#5b8ed9!important}body.vq43-theme-light #vq43-shell .vq43-workspace-tool.blue :is(b,small){color:#1d4ed8!important}
+body.vq43-theme-light #vq43-shell .vq43-workspace-tool.red{color:#be123c!important;border-color:#df7188!important}body.vq43-theme-light #vq43-shell .vq43-workspace-tool.red :is(b,small){color:#be123c!important}
+.vq43-sim-status-actions{display:flex;align-items:center;justify-content:flex-end;gap:7px;flex-wrap:wrap}.vq43-sim-status-actions .vq43-btn{min-height:34px;padding:7px 12px}
+.vq43-sim-options{display:flex!important;flex-direction:column!important;padding:0!important;overflow:hidden!important;overscroll-behavior-y:auto!important}
+.vq43-sim-options-head{position:relative!important;top:auto!important;flex:0 0 auto!important;margin:0!important;padding:13px 14px!important}
+.vq43-sim-options-scroll{box-sizing:border-box;min-height:0;max-height:calc(100vh - 104px);overflow-x:hidden;overflow-y:auto;overscroll-behavior-y:auto;padding:14px}
+@media(max-width:1280px){.vq43-sim-options{display:block!important;max-height:none!important;overflow:visible!important}.vq43-sim-options-scroll{max-height:none;overflow:visible;padding:14px}}
 .vq43-analysis-left>.vq43-analysis-scope-note{margin:0!important;min-height:0;padding:9px 11px;line-height:1.45}
 #vq43-global-sim-progress{pointer-events:none!important}
 #vq43-global-sim-progress>button{pointer-events:auto!important}
