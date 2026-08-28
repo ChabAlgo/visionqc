@@ -226,8 +226,6 @@ body.vq43-theme-light :is(#vq43-chart-modal .vq43-chart-modal-viewport,#vq43-cha
 body.vq43-theme-light :is(#vq43-chart-modal .vq43-chart-modal-help,#vq43-chart-modal .vq43-chart-modal-tooltip){background:#fff!important;color:#1b344d!important;border-color:#b8d4e7!important}
 body.vq43-theme-light #vq43-modal .vq43-modal-nav{background:#fff!important;color:#234761!important;border-color:#aacbe2!important}
 
-/* v4.7.8: bright analysis-viewer Heatmap generation control. */
-body.vq43-theme-light #vq43-modal .vq43-modal-heatmap-create{background:#eef8ff!important;border-color:#c5ddea!important}body.vq43-theme-light #vq43-modal .vq43-modal-heatmap-create button{background:#e1f3ff!important;border-color:#68b8df!important;color:#075985!important}body.vq43-theme-light #vq43-modal .vq43-modal-heatmap-create small{color:#365a75!important}
 
 /* v4.7.9: light mode Runtime 상태와 Simulation 탭은 상태가 즉시 구분되어야 합니다. */
 body.vq43-theme-light #vq43-shell :is(.vq43-workspace-inspect.loading,.vq43-workspace-inspect.pending,.vq43-workspace-inspect.ok){background:#eff9ff!important;border-color:#9fcbe3!important;color:#173952!important}
@@ -237,3 +235,16 @@ body.vq43-theme-light #vq43-shell .vq43-sim-tabs{background:transparent!importan
 body.vq43-theme-light #vq43-shell .vq43-sim-tabs button{background:#f8fcff!important;color:#365a75!important;border-color:#bed7ea!important}
 body.vq43-theme-light #vq43-shell .vq43-sim-tabs button.active{background:#d9f1ff!important;color:#075985!important;border-color:#4aa3d1!important;box-shadow:inset 0 -4px 0 #0284c7!important;font-weight:900!important}
 body.vq43-theme-light #vq43-shell .vq43-sim-tabs button:hover:not(.active){background:#edf8ff!important;color:#075985!important;border-color:#7ebfe2!important}
+
+/* v4.7.10: light mode readability, full classification file name, and native date icon contrast. */
+body.vq43-theme-light #vq43-shell :is(.vq43-subtitle,.vq43-section-title p,.vq43-sim-panel-head span,.vq43-sim-option-note,.vq43-history-status,.vq43-history-filter label,.vq43-history-kpis span,.vq43-workspace-card header small,.vq43-workspace-kind-card header small,.vq43-workspace-kind-card p,.vq43-fallback-card>header span,.vq43-sim-runtime-metrics span,.vq43-sim-log-line,.vq43-main-history-kpis span,.vq43-naming-hint,.vq43-naming-example){color:#314e69!important}
+body.vq43-theme-light #vq43-shell :is(.vq43-sim-option-section,.vq43-sim-position-row,.vq43-sim-position-row-new,.vq43-workspace-inspect,.vq43-workspace-tool,.vq43-workspace-stream,.vq43-sim-runbar,.vq43-sim-log,.vq43-sim-detail-log,.vq43-sim-runtime-metrics>div) :is(span,small,p,label,b,strong){color:#163b59!important}
+body.vq43-theme-light[data-vq-page="classification"] #root :is([class*="text-slate-"],[class*="text-gray-"],[class*="text-zinc-"],[class~="text-white"]){color:#102f49!important}
+body.vq43-theme-light[data-vq-page="classification"] #root :is([class*="text-blue-"],[class*="text-indigo-"],[class*="text-cyan-"]){color:#075985!important}
+body.vq43-theme-light[data-vq-page="classification"] #root [class*="text-emerald-"]{color:#047857!important}
+body.vq43-theme-light[data-vq-page="classification"] #root :is([class*="text-rose-"],[class*="text-red-"],[class*="text-pink-"]){color:#b42338!important}
+body[data-vq-page="classification"] #root h2.text-lg.font-bold.text-slate-200.truncate{max-width:none!important;white-space:normal!important;overflow:visible!important;text-overflow:clip!important;overflow-wrap:anywhere!important}
+body:not(.vq43-theme-light) #vq43-shell input[type="date"]{color-scheme:dark}
+body:not(.vq43-theme-light) #vq43-shell input[type="date"]::-webkit-calendar-picker-indicator{filter:invert(1) brightness(1.9);opacity:1;cursor:pointer}
+body.vq43-theme-light #vq43-shell input[type="date"]{color-scheme:light}
+body.vq43-theme-light #vq43-shell input[type="date"]::-webkit-calendar-picker-indicator{filter:none;opacity:.9;cursor:pointer}

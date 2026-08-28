@@ -11,9 +11,8 @@ const agent = read('LocalAgent_v0.2.12/AgentServer.cs');
 const core = read('LocalAgent_v0.2.12/Engine/BlueCropCore.cs');
 const lightCss = read('visionqc-v4433-clean.css');
 
-test('v4.7.9 preserves Integrated Crop images for Viewer and makes light Simulation state identifiable', () => {
-  assert.match(web, /const VERSION = '4\.7\.9'/);
-  assert.match(web, /keepCropImages:true/);
+test('v4.7.10 preserves Integrated Crop images for Viewer and makes light Simulation state identifiable', () => {
+  assert.match(web, /const VERSION = '4\.7\.10'/);  assert.match(web, /keepCropImages:true/);
   assert.match(web, /viewerImageRetentionSchema/);
   assert.match(web, /결과 Crop 이미지 유지 \(Viewer용\)/);
   assert.match(agent, /_VisionQC_Integrated_Images/);
@@ -24,4 +23,8 @@ test('v4.7.9 preserves Integrated Crop images for Viewer and makes light Simulat
   assert.match(lightCss, /background:#eff9ff!important/);
   assert.match(lightCss, /vq43-sim-tabs button\.active\{background:#d9f1ff!important/);
   assert.match(lightCss, /box-shadow:inset 0 -4px 0 #0284c7!important/);
+  assert.match(web, /function originalPathForViewer/);
+  assert.match(web, /historyLookupPath/);
+  assert.match(lightCss, /webkit-calendar-picker-indicator/);
+  assert.match(lightCss, /text-slate-200.*truncate/);
 });

@@ -19,18 +19,33 @@ test('Integrated results keep original and processed Crop paths separately', () 
   assert.match(store, /processed_path/);
 });
 
-test('Viewer defaults to source and exposes Crop plus Heatmap safely', () => {
+test('Viewer defaults to inspection original and exposes Crop plus saved Heatmap safely', () => {
   assert.match(web, /function findProcessedPathColumn/);
   assert.match(web, /function modalImagesForView/);
   assert.match(web, /function selectModalCropImage/);
   assert.match(web, /modalImageSwitcherHtml/);
-  assert.match(web, /modalHeatmapCreateHtml/);
-  assert.match(web, /Simulation 실행 중에는 Runtime을 공유할 수 없습니다/);
+  assert.match(web, /function originalPathForViewer/);
+  assert.match(web, /historyLookupPath/);
+  assert.doesNotMatch(web, /modal-generate-heatmap/);
 });
-
 test('Single Green Heatmap accepts an Integrated-compatible preloaded Runtime', () => {
   const start = agent.indexOf('private object InspectSingleGreenImage');
   const end = agent.indexOf('private object InspectUploadedGreenImage', start);
   assert.ok(start >= 0 && end > start);
   assert.match(agent.slice(start, end), /HasCompatiblePreloadedRuntime\(req, signature\)/);
-});
+});
+
+test('Blue save options include explicit tooltips', () => {
+  assert.match(web, /saveAsJpeg:/);
+  assert.match(web, /skipExisting:/);
+  assert.match(web, /data-vq-tooltip/);
+});
+
+test('Saved Source tags restore an old Integrated Crop path to its configured Grab root', () => {
+  const helperStart = web.indexOf('function configuredOriginalImageRootsForViewer');
+  const helperEnd = web.indexOf('function modalImagesForView', helperStart);
+  const roots = ['H:\\내 드라이브\\1.Grab\\_IMG\\0.Test\\_set\\BAN\\1Line\\_BAN\\0202\\15', 'H:\\내 드라이브\\1.Grab\\_IMG\\0.Test\\_set\\BAN\\1Line\\_BAN\\0202\\16'];
+  const originalPathForViewer = new Function('ensureSimulationForm', 'normalizeImageRoots', 'imageRootsForPosition', web.slice(helperStart, helperEnd) + '; return originalPathForViewer;')(() => ({ integrated:{ keywordInputRoots:roots }, green:{}, positions:{} }), (value) => Array.isArray(value) ? value : [String(value || '')].filter(Boolean), () => []);  const cropPath = 'C:\\Temp\\Out\\_VisionQC_Integrated_Images\\AN(TOP)\\Source_01_15\\20260202_154148_P163GG22M210083116_TN1105_OK_CAM2_Blue.jpg';
+  const sourcePath = 'H:\\내 드라이브\\1.Grab\\_IMG\\0.Test\\_set\\BAN\\1Line\\_BAN\\0202\\15\\20260202_154148_P163GG22M210083116_TN1105_OK_CAM2_Blue.jpg';
+  assert.equal(originalPathForViewer(cropPath), sourcePath);
+});

@@ -181,12 +181,31 @@ test.describe('VisionQC v4.4.38 FHD interaction regression', () => {
     await page.goto('/index.html?vqDebug=1&browserRegression=1', { waitUntil: 'domcontentloaded' });
     await page.waitForFunction(() => Boolean(window.__VISIONQC_DEBUG__), null, { timeout: 15000 });
 
-    await page.locator('[data-vq-page="main"]').click();
+    await page.evaluate(() => window.__VISIONQC_DEBUG__.seedDashboard());
     await expect(page.locator('.vq43-main-history-dashboard')).toBeVisible();
+    await expect(page.locator('.vq43-main-dashboard')).toBeVisible();
+    await expect(page.locator('.vq43-main-cell')).toBeVisible();
+    await expect(page.locator('.vq43-main-position')).toBeVisible();
+    await expect(page.locator('.vq43-main-tools')).toBeVisible();
+    const mainLayout = await page.evaluate(() => {
+      const content = document.querySelector('.vq43-main-dashboard');
+      const history = document.querySelector('.vq43-main-history-dashboard')?.getBoundingClientRect();
+      const cell = document.querySelector('.vq43-main-cell')?.getBoundingClientRect();
+      return { display:getComputedStyle(content).display, sameRow:Math.abs((history?.y || 0) - (cell?.y || 0)) <= 1, noHorizontal:content.scrollWidth <= content.clientWidth + 1 };
+    });
+    expect(mainLayout).toEqual({ display:'grid', sameRow:true, noHorizontal:true });
 
     await page.locator('[data-vq-page="history"]').click();
     await expect(page.locator('.vq43-history-page')).toBeVisible();
-    await expect(page.locator('[data-history-field="cellId"]')).toBeVisible();
+    await expect(page.locator('[data-vq-action="history-cell-ids-open"]')).toBeVisible();
+    await expect(page.locator('[data-history-field="position"]')).toBeVisible();
+    await expect(page.locator('[data-history-field="tool"]')).toBeVisible();
+    await expect(page.locator('[data-history-field="workspaceType"]')).toBeVisible();
+    await expect(page.locator('[data-history-field="workspaceKey"]')).toBeVisible();
+    await page.locator('[data-vq-action="history-cell-ids-open"]').click();
+    await expect(page.locator('#vq43-history-cell-id-draft')).toBeVisible();
+    await page.locator('#vq43-history-cell-id-draft').fill('P163GG23M2100004\nP163GG23M2100005');
+    await page.locator('[data-vq-action="history-cell-ids-cancel"]').click();
     await expect(page.locator('.vq43-history-kpis')).toBeVisible();
 
     await expect(page.locator('[data-vq-page="inspection"]')).toHaveCount(0);
@@ -195,6 +214,29 @@ test.describe('VisionQC v4.4.38 FHD interaction regression', () => {
 
     const settingSvg = await page.locator('[data-vq-page="settings"] .vq43-icon-svg').count();
     expect(settingSvg).toBeGreaterThan(0);
+  });
+
+  test('viewer arrows keep the media centered and tabs preserve zoom and pan', async ({ page }) => {
+    await page.goto('/index.html?vqDebug=1&browserRegression=1', { waitUntil: 'domcontentloaded' });
+    await page.waitForFunction(() => Boolean(window.__VISIONQC_DEBUG__), null, { timeout: 15000 });
+    await page.evaluate(() => window.__VISIONQC_DEBUG__.openViewerRegression());
+    await expect(page.locator('#vq43-modal.open')).toBeVisible();
+    await expect(page.locator('.vq43-modal-nav')).toHaveCount(2);
+    const center = async () => page.locator('#vq43-modal-zoom-image').evaluate((img) => {
+      const rect = img.getBoundingClientRect();
+      return { x:Math.round(rect.x + rect.width / 2), y:Math.round(rect.y + rect.height / 2) };
+    });
+    const before = await center();
+    await page.locator('[data-vq-action="modal-next"]').click();
+    expect(await center()).toEqual(before);
+    await page.locator('#vq43-modal-viewport').hover();
+    await page.mouse.wheel(0, -220);
+    const zoom = await page.locator('#vq43-modal-zoom-value').textContent();
+    expect(zoom).not.toBe('100%');
+    await page.getByRole('button', { name:'Crack Heatmap' }).click();
+    await expect(page.locator('#vq43-modal-zoom-value')).toHaveText(zoom);
+    await page.getByRole('button', { name:'원본', exact:true }).click();
+    await expect(page.locator('#vq43-modal-zoom-value')).toHaveText(zoom);
   });
 
   test('split dark-white icon switches to a persisted white theme without rerendering state', async ({ page }) => {

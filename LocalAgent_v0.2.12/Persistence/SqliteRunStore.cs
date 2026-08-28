@@ -33,6 +33,12 @@ namespace VisionQC.LocalAgent.Persistence
             {
                 RunId = Guid.NewGuid().ToString("N"),
                 NamingProfile = request == null ? null : request.NamingProfile,
+                WorkspaceType = request == null ? "" : request.WorkspaceType,
+                WorkspaceName = request == null ? "" : request.WorkspaceName,
+                WorkspaceKey = request == null ? "" : request.WorkspaceKey,
+                WorkspacesByPosition = request == null || request.WorkspacesByPosition == null
+                    ? new Dictionary<string, HistoryWorkspaceValue>(StringComparer.OrdinalIgnoreCase)
+                    : request.WorkspacesByPosition,
                 Connection = new SQLiteConnection("Data Source=" + _databasePath + ";Version=3;Foreign Keys=True;")
             };
             session.Connection.Open();
@@ -61,6 +67,7 @@ VALUES (@run_id, @source_type, @mode, @source_name, @started_at_utc, 'running', 
         internal void AppendLiveRecord(RunStoreSession session, LiveAnalysisRecord record)
         {
             if (record == null) return;
+            HistoryWorkspaceValue workspace = ResolveWorkspace(session, record.Position);
             var tools = new List<HistoryToolValue>();
             foreach (LiveToolResult tool in record.Tools.Values)
                 tools.Add(new HistoryToolValue { Tool = tool.Tool, Result = tool.Result, Score = tool.Score, OverlayPath = tool.OverlayPath });
@@ -71,6 +78,9 @@ VALUES (@run_id, @source_type, @mode, @source_name, @started_at_utc, 'running', 
                 ProcessedPath = record.ProcessingPath,
                 CellId = record.CellId,
                 Position = record.Position,
+                WorkspaceType = workspace.Type,
+                WorkspaceName = workspace.Name,
+                WorkspaceKey = workspace.Key,
                 TotalResult = record.TotalResult,
                 Judgement = record.Judgement,
                 Tools = tools
@@ -80,6 +90,7 @@ VALUES (@run_id, @source_type, @mode, @source_name, @started_at_utc, 'running', 
         internal void AppendImportedRecord(RunStoreSession session, AgentHistoryRecordRequest record)
         {
             if (record == null) return;
+            HistoryWorkspaceValue workspace = ResolveWorkspace(session, record.position);
             var tools = new List<HistoryToolValue>();
             foreach (AgentHistoryToolResultRequest tool in record.tools ?? new List<AgentHistoryToolResultRequest>())
             {
@@ -93,6 +104,9 @@ VALUES (@run_id, @source_type, @mode, @source_name, @started_at_utc, 'running', 
                 ProcessedPath = record.processedPath,
                 CellId = record.cellId,
                 Position = record.position,
+                WorkspaceType = FirstNonEmpty(record.workspaceType, workspace.Type),
+                WorkspaceName = FirstNonEmpty(record.workspaceName, workspace.Name),
+                WorkspaceKey = FirstNonEmpty(record.workspaceKey, workspace.Key),
                 TotalResult = record.totalResult,
                 Judgement = record.judgement,
                 CaptureTimestamp = record.captureTimestamp,
@@ -143,8 +157,8 @@ VALUES (@run_id, @source_type, @mode, @source_name, @started_at_utc, 'running', 
             using (var command = session.Connection.CreateCommand())
             {
                 command.Transaction = session.Transaction;
-                command.CommandText = @"INSERT INTO images (run_id, sequence_no, source_file_name, source_row_number, full_path, processed_path, cell_id, position_key, total_result, judgement, capture_timestamp, inspected_at_utc)
-VALUES (@run_id, @sequence_no, @source_file_name, @source_row_number, @full_path, @processed_path, @cell_id, @position_key, @total_result, @judgement, @capture_timestamp, @inspected_at_utc);
+                command.CommandText = @"INSERT INTO images (run_id, sequence_no, source_file_name, source_row_number, full_path, processed_path, cell_id, position_key, workspace_type, workspace_name, workspace_key, total_result, judgement, capture_timestamp, inspected_at_utc)
+VALUES (@run_id, @sequence_no, @source_file_name, @source_row_number, @full_path, @processed_path, @cell_id, @position_key, @workspace_type, @workspace_name, @workspace_key, @total_result, @judgement, @capture_timestamp, @inspected_at_utc);
 SELECT last_insert_rowid();";
                 Add(command, "@run_id", session.RunId);
                 Add(command, "@sequence_no", session.RecordCount + 1);
@@ -154,6 +168,9 @@ SELECT last_insert_rowid();";
                 Add(command, "@processed_path", record.ProcessedPath);
                 Add(command, "@cell_id", cellId);
                 Add(command, "@position_key", record.Position);
+                Add(command, "@workspace_type", record.WorkspaceType);
+                Add(command, "@workspace_name", record.WorkspaceName);
+                Add(command, "@workspace_key", record.WorkspaceKey);
                 Add(command, "@total_result", record.TotalResult);
                 Add(command, "@judgement", record.Judgement);
                 Add(command, "@capture_timestamp", captureTimestamp);
@@ -200,6 +217,8 @@ SELECT last_insert_rowid();";
             using (var connection = new SQLiteConnection("Data Source=" + _databasePath + ";Version=3;Foreign Keys=True;Read Only=False;"))
             {
                 connection.Open();
+                PrepareCellIdFilter(connection, request);
+                PopulateFilterOptions(connection, response);
                 using (var command = connection.CreateCommand())
                 {
                     string where = BuildSearchWhere(command, request);
@@ -253,7 +272,8 @@ ORDER BY day_text DESC LIMIT 730;";
                     string where = BuildSearchWhere(command, request);
                     command.CommandText = BuildDeduplicatedHistoryCte(where) + @"
 SELECT d.image_id, d.run_id, d.source_file_name, d.source_row_number, d.full_path, d.processed_path,
- d.cell_id, d.position_key, d.total_result, d.judgement, d.capture_timestamp, d.inspected_at_utc
+ d.cell_id, d.position_key, d.workspace_type, d.workspace_name, d.workspace_key,
+ d.total_result, d.judgement, d.capture_timestamp, d.inspected_at_utc
 FROM deduped_images d
 ORDER BY COALESCE(NULLIF(d.capture_timestamp,''), d.inspected_at_utc) DESC, d.image_id DESC
 LIMIT @limit OFFSET @offset;";
@@ -273,10 +293,13 @@ LIMIT @limit OFFSET @offset;";
                                 processedPath = ReadString(reader, 5),
                                 cellId = ReadString(reader, 6),
                                 position = ReadString(reader, 7),
-                                totalResult = ReadString(reader, 8),
-                                judgement = ReadString(reader, 9),
-                                captureTimestamp = ReadString(reader, 10),
-                                inspectedAtUtc = ReadString(reader, 11)
+                                workspaceType = ReadString(reader, 8),
+                                workspaceName = ReadString(reader, 9),
+                                workspaceKey = ReadString(reader, 10),
+                                totalResult = ReadString(reader, 11),
+                                judgement = ReadString(reader, 12),
+                                captureTimestamp = ReadString(reader, 13),
+                                inspectedAtUtc = ReadString(reader, 14)
                             };
                             records[item.imageId] = item;
                             response.items.Add(item);
@@ -319,7 +342,7 @@ LIMIT @limit OFFSET @offset;";
             return response;
         }
 
-        // 원본 Run 이력은 추적 가능하도록 보존한다. 화면 조회/집계에서는 같은 Cell ID + Position을
+        // 원본 Run 이력은 추적 가능하도록 보존한다. 화면 조회/집계에서는 같은 Cell ID + Position + Workspace를
         // 하나의 검사 대상으로 보고 가장 마지막에 기록된 결과만 남긴다. Cell ID나 Position이 없는
         // 행은 서로 동일하다고 판단할 근거가 없으므로 중복 제거하지 않는다.
         private static string BuildDeduplicatedHistoryCte(string where)
@@ -332,6 +355,7 @@ LIMIT @limit OFFSET @offset;";
         SELECT 1 FROM filtered_images newer
         WHERE UPPER(IFNULL(newer.cell_id,''))=UPPER(IFNULL(f.cell_id,''))
           AND UPPER(IFNULL(newer.position_key,''))=UPPER(IFNULL(f.position_key,''))
+          AND UPPER(IFNULL(newer.workspace_key,''))=UPPER(IFNULL(f.workspace_key,''))
           AND (IFNULL(newer.inspected_at_utc,'') > IFNULL(f.inspected_at_utc,'')
                OR (IFNULL(newer.inspected_at_utc,'')=IFNULL(f.inspected_at_utc,'') AND newer.image_id > f.image_id))
     )
@@ -346,8 +370,11 @@ LIMIT @limit OFFSET @offset;";
             string dateExpression = "substr(COALESCE(NULLIF(i.capture_timestamp,''), i.inspected_at_utc),1,10)";
             if (!string.IsNullOrWhiteSpace(fromDate)) { conditions.Add(dateExpression + " >= @fromDate"); Add(command, "@fromDate", fromDate); }
             if (!string.IsNullOrWhiteSpace(toDate)) { conditions.Add(dateExpression + " <= @toDate"); Add(command, "@toDate", toDate); }
-            if (!string.IsNullOrWhiteSpace(request.cellId)) { conditions.Add("UPPER(IFNULL(i.cell_id,'')) LIKE @cellId"); Add(command, "@cellId", "%" + request.cellId.Trim().ToUpperInvariant() + "%"); }
+            if (request.cellIds != null && request.cellIds.Any(x => !string.IsNullOrWhiteSpace(x))) conditions.Add("EXISTS (SELECT 1 FROM temp_history_cell_ids ids WHERE ids.cell_id=UPPER(TRIM(IFNULL(i.cell_id,''))))");
+            else if (!string.IsNullOrWhiteSpace(request.cellId)) { conditions.Add("UPPER(IFNULL(i.cell_id,'')) LIKE @cellId"); Add(command, "@cellId", "%" + request.cellId.Trim().ToUpperInvariant() + "%"); }
             if (!string.IsNullOrWhiteSpace(request.position)) { conditions.Add("i.position_key = @position"); Add(command, "@position", request.position.Trim()); }
+            if (!string.IsNullOrWhiteSpace(request.workspaceType)) { conditions.Add("LOWER(IFNULL(i.workspace_type,'')) = @workspaceType"); Add(command, "@workspaceType", request.workspaceType.Trim().ToLowerInvariant()); }
+            if (!string.IsNullOrWhiteSpace(request.workspaceKey)) { conditions.Add("i.workspace_key = @workspaceKey"); Add(command, "@workspaceKey", request.workspaceKey.Trim()); }
             if (!string.IsNullOrWhiteSpace(request.totalResult)) { conditions.Add("UPPER(IFNULL(i.total_result,'')) = @totalResult"); Add(command, "@totalResult", request.totalResult.Trim().ToUpperInvariant()); }
             if (!string.IsNullOrWhiteSpace(request.fullPath)) { conditions.Add("LOWER(IFNULL(i.full_path,'')) = @fullPath"); Add(command, "@fullPath", request.fullPath.Trim().ToLowerInvariant()); }
             var sourceTypes = (request.sourceTypes ?? new List<string>()).Where(x => !string.IsNullOrWhiteSpace(x)).Select(x => x.Trim()).Distinct(StringComparer.OrdinalIgnoreCase).ToList();
@@ -375,6 +402,69 @@ LIMIT @limit OFFSET @offset;";
                 conditions.Add("EXISTS (SELECT 1 FROM tool_results tr WHERE " + string.Join(" AND ", toolWhere) + ")");
             }
             return string.Join(" AND ", conditions);
+        }
+
+        private static void PrepareCellIdFilter(SQLiteConnection connection, AgentHistorySearchRequest request)
+        {
+            using (var command = connection.CreateCommand())
+            {
+                command.CommandText = "CREATE TEMP TABLE IF NOT EXISTS temp_history_cell_ids (cell_id TEXT PRIMARY KEY); DELETE FROM temp_history_cell_ids;";
+                command.ExecuteNonQuery();
+            }
+            var ids = (request.cellIds ?? new List<string>())
+                .Where(x => !string.IsNullOrWhiteSpace(x))
+                .Select(x => x.Trim().ToUpperInvariant())
+                .Distinct(StringComparer.OrdinalIgnoreCase)
+                .Take(10000)
+                .ToList();
+            if (ids.Count == 0) return;
+            using (var transaction = connection.BeginTransaction())
+            using (var command = connection.CreateCommand())
+            {
+                command.Transaction = transaction;
+                command.CommandText = "INSERT OR IGNORE INTO temp_history_cell_ids (cell_id) VALUES (@cell_id);";
+                var parameter = command.Parameters.Add("@cell_id", System.Data.DbType.String);
+                foreach (string id in ids) { parameter.Value = id; command.ExecuteNonQuery(); }
+                transaction.Commit();
+            }
+        }
+
+        private static void PopulateFilterOptions(SQLiteConnection connection, AgentHistorySearchResponse response)
+        {
+            response.filterOptions.positions = ReadDistinctStrings(connection, "SELECT DISTINCT position_key FROM images WHERE TRIM(IFNULL(position_key,''))<>'' ORDER BY position_key;");
+            response.filterOptions.tools = ReadDistinctStrings(connection, "SELECT DISTINCT tool_name FROM tool_results WHERE TRIM(IFNULL(tool_name,''))<>'' ORDER BY tool_name;");
+            response.filterOptions.workspaceTypes = ReadDistinctStrings(connection, "SELECT DISTINCT workspace_type FROM images WHERE TRIM(IFNULL(workspace_type,''))<>'' ORDER BY workspace_type;");
+            using (var command = connection.CreateCommand())
+            {
+                command.CommandText = @"SELECT workspace_key, MAX(workspace_type), MAX(workspace_name)
+FROM images WHERE TRIM(IFNULL(workspace_key,''))<>'' GROUP BY workspace_key ORDER BY MAX(workspace_type), MAX(workspace_name);";
+                using (SQLiteDataReader reader = command.ExecuteReader())
+                {
+                    while (reader.Read())
+                    {
+                        string key = ReadString(reader, 0);
+                        string type = ReadString(reader, 1);
+                        string name = ReadString(reader, 2);
+                        response.filterOptions.workspaces.Add(new AgentHistoryWorkspaceOption
+                        {
+                            value = key,
+                            label = string.Join(" · ", new[] { type, name }.Where(x => !string.IsNullOrWhiteSpace(x)))
+                        });
+                    }
+                }
+            }
+        }
+
+        private static List<string> ReadDistinctStrings(SQLiteConnection connection, string sql)
+        {
+            var values = new List<string>();
+            using (var command = connection.CreateCommand())
+            {
+                command.CommandText = sql;
+                using (SQLiteDataReader reader = command.ExecuteReader())
+                    while (reader.Read()) values.Add(ReadString(reader, 0));
+            }
+            return values;
         }
 
         private static string NormalizeDate(string value)
@@ -435,10 +525,14 @@ CREATE INDEX IF NOT EXISTS idx_images_capture_result ON images(capture_timestamp
 CREATE INDEX IF NOT EXISTS idx_tool_results_run_tool ON tool_results(run_id, tool_name);";
                         command.ExecuteNonQuery();                    }
                     EnsureColumn(connection, "images", "processed_path", "TEXT");
+                    EnsureColumn(connection, "images", "workspace_type", "TEXT");
+                    EnsureColumn(connection, "images", "workspace_name", "TEXT");
+                    EnsureColumn(connection, "images", "workspace_key", "TEXT");
                     using (var command = connection.CreateCommand())
                     {
                         command.CommandText = @"CREATE INDEX IF NOT EXISTS idx_images_processed_path ON images(processed_path);
-UPDATE schema_info SET schema_version = CASE WHEN schema_version < 2 THEN 2 ELSE schema_version END;";
+CREATE INDEX IF NOT EXISTS idx_images_workspace ON images(workspace_type, workspace_key, position_key);
+UPDATE schema_info SET schema_version = CASE WHEN schema_version < 3 THEN 3 ELSE schema_version END;";
                         command.ExecuteNonQuery();
                     }
                 }
@@ -481,12 +575,29 @@ UPDATE schema_info SET schema_version = CASE WHEN schema_version < 2 THEN 2 ELSE
             return "";
         }
 
+        private static HistoryWorkspaceValue ResolveWorkspace(RunStoreSession session, string position)
+        {
+            HistoryWorkspaceValue value;
+            if (session != null && !string.IsNullOrWhiteSpace(position) && session.WorkspacesByPosition != null && session.WorkspacesByPosition.TryGetValue(position.Trim(), out value) && value != null)
+                return value;
+            return new HistoryWorkspaceValue
+            {
+                Type = session == null ? "" : session.WorkspaceType,
+                Name = session == null ? "" : session.WorkspaceName,
+                Key = session == null ? "" : session.WorkspaceKey
+            };
+        }
+
         public void Dispose() { }
 
         internal sealed class RunStoreSession
         {
             internal string RunId;
             internal NamingProfile NamingProfile;
+            internal string WorkspaceType;
+            internal string WorkspaceName;
+            internal string WorkspaceKey;
+            internal Dictionary<string, HistoryWorkspaceValue> WorkspacesByPosition;
             internal SQLiteConnection Connection;
             internal SQLiteTransaction Transaction;
             internal int RecordCount;
@@ -505,6 +616,17 @@ UPDATE schema_info SET schema_version = CASE WHEN schema_version < 2 THEN 2 ELSE
             internal string ConfigJson;
             internal string NamingProfileJson;
             internal NamingProfile NamingProfile;
+            internal string WorkspaceType;
+            internal string WorkspaceName;
+            internal string WorkspaceKey;
+            internal Dictionary<string, HistoryWorkspaceValue> WorkspacesByPosition;
+        }
+
+        internal sealed class HistoryWorkspaceValue
+        {
+            internal string Type;
+            internal string Name;
+            internal string Key;
         }
 
         private sealed class HistoryRecordValue
@@ -515,6 +637,9 @@ UPDATE schema_info SET schema_version = CASE WHEN schema_version < 2 THEN 2 ELSE
             internal string ProcessedPath;
             internal string CellId;
             internal string Position;
+            internal string WorkspaceType;
+            internal string WorkspaceName;
+            internal string WorkspaceKey;
             internal string TotalResult;
             internal string Judgement;
             internal string CaptureTimestamp;

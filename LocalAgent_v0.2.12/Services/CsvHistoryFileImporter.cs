@@ -38,7 +38,10 @@ namespace VisionQC.LocalAgent.Services
                     AgentVersion = Program.AgentVersion,
                     WebVersion = request.webVersion ?? "",
                     NamingProfile = request.namingProfile,
-                    NamingProfileJson = _json.Serialize(request.namingProfile ?? new NamingProfile())
+                    NamingProfileJson = _json.Serialize(request.namingProfile ?? new NamingProfile()),
+                    WorkspaceType = "csv-analysis",
+                    WorkspaceName = FirstNonEmpty(request.sourceName, Path.GetFileName(filePath)),
+                    WorkspaceKey = "csv|" + FirstNonEmpty(request.sourceName, Path.GetFileName(filePath)).Trim().ToLowerInvariant()
                 });
 
                 using (var reader = new StreamReader(filePath, Encoding.Default, true, 1024 * 128))

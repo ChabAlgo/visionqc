@@ -50,7 +50,10 @@ namespace VisionQC.LocalAgent.Services
                             AgentVersion = Program.AgentVersion,
                             WebVersion = request.webVersion ?? "",
                             NamingProfile = request.namingProfile,
-                            NamingProfileJson = _json.Serialize(request.namingProfile ?? new NamingProfile())
+                            NamingProfileJson = _json.Serialize(request.namingProfile ?? new NamingProfile()),
+                            WorkspaceType = "csv-analysis",
+                            WorkspaceName = request.sourceName ?? "CSV 분석 결과",
+                            WorkspaceKey = "csv|" + (request.sourceName ?? "CSV 분석 결과").Trim().ToLowerInvariant()
                         });
                         _browserImports[importId] = session;
                     }

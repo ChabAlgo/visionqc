@@ -1,7 +1,7 @@
 (() => {
   'use strict';
 
-  const VERSION = '4.7.9';
+  const VERSION = '4.7.10';
   const DEFAULT_POSITION_DEFS = [
     { key:'CA_TOP', name:'CA(TOP)' },
     { key:'AN_TOP', name:'AN(TOP)' },
@@ -126,13 +126,16 @@
     analysisPoints: [],
     analysisPointMap: new Map(),
     analysisLiveRenderPending: false,
+    analysisDropdownOpenKind: '',
     historyImporting: false,
     historyLoaded: false,
     historyLoading: false,
     historyData: null,
-    historyFilters: { fromDate:'', toDate:'', cellId:'', position:'', tool:'', toolResult:'', totalResult:'', sourceName:'', page:1, pageSize:50 },
+    historyFilters: { fromDate:'', toDate:'', cellId:'', cellIds:[], position:'', tool:'', workspaceType:'', workspaceKey:'', toolResult:'', totalResult:'', sourceName:'', page:1, pageSize:50 },
+    historyCellDialogOpen: false,
+    historyCellIdDraft: '',
     historyFileImport: null,
-    modalOverlayPath: '', modalImageView: 'source', modalHeatmapLoading: false,
+    modalOverlayPath: '', modalImageView: 'source',
     simulationMode: 'integrated',
     simulationAgent: { status: 'idle', version: '-', vpdl: '-', installedVpdl: '-', activeVpdlApiVersion: '-', availableVpdl: [], license: '-', gpu: '-', message: 'Local Agent 연결 전' },
     simulationAgentPollInFlight: false,
@@ -169,6 +172,7 @@
     modalPanX: 0,
     modalPanY: 0,
     modalDragging: false,
+    modalMovePending: false,
     modalDragStartX: 0,
     modalDragStartY: 0,
     chartModalZoom: 1,
@@ -603,6 +607,76 @@
     document.title = `VisionQC DirectExport v${VERSION}`;
     attachHorizontalWheel(children[1]);
     attachHorizontalWheel(children[2]);
+
+    // 상단 Header에 이미 있는 Organize Folder와 중복되는 분류 하단 버튼만 숨깁니다.
+    $$('#root > div > main button').forEach((button) => {
+      const label = (button.textContent || '').replace(/\s+/g, ' ').trim();
+      button.classList.toggle('vq43-hidden-duplicate-organize', /^Organize Folder$/i.test(label));
+    });
+  }
+
+  let classificationViewportSnapshot = null;
+
+  function classificationImageViewport() {
+    const images = $$('#root > div > main img').filter((image) => {
+      const rect = image.getBoundingClientRect();
+      return rect.width > 240 && rect.height > 160;
+    }).sort((a, b) => {
+      const ar = a.getBoundingClientRect(), br = b.getBoundingClientRect();
+      return (br.width * br.height) - (ar.width * ar.height);
+    });
+    const image = images[0];
+    const viewport = image?.parentElement?.parentElement;
+    if (!image || !viewport) return null;
+    return { image, viewport };
+  }
+
+  function captureClassificationViewport() {
+    if (state.page !== 'classification') return;
+    const current = classificationImageViewport();
+    if (!current) return;
+    const { image, viewport } = current;
+    const width = Math.max(1, image.offsetWidth || image.getBoundingClientRect().width);
+    const height = Math.max(1, image.offsetHeight || image.getBoundingClientRect().height);
+    classificationViewportSnapshot = {
+      xRatio:(viewport.scrollLeft + viewport.clientWidth / 2) / width,
+      yRatio:(viewport.scrollTop + viewport.clientHeight / 2) / height,
+      capturedAt:Date.now()
+    };
+  }
+
+  function restoreClassificationViewport() {
+    if (!classificationViewportSnapshot || state.page !== 'classification') return;
+    const current = classificationImageViewport();
+    if (!current) return;
+    const restore = () => {
+      const { image, viewport } = classificationImageViewport() || {};
+      if (!image || !viewport) return;
+      const width = Math.max(1, image.offsetWidth || image.getBoundingClientRect().width);
+      const height = Math.max(1, image.offsetHeight || image.getBoundingClientRect().height);
+      viewport.scrollLeft = classificationViewportSnapshot.xRatio * width - viewport.clientWidth / 2;
+      viewport.scrollTop = classificationViewportSnapshot.yRatio * height - viewport.clientHeight / 2;
+    };
+    requestAnimationFrame(() => requestAnimationFrame(restore));
+    setTimeout(restore, 90);
+  }
+
+  function installClassificationViewportGuard() {
+    if (window.__VISIONQC_CLASSIFICATION_VIEWPORT_GUARD__) return;
+    window.__VISIONQC_CLASSIFICATION_VIEWPORT_GUARD__ = true;
+    document.addEventListener('keydown', (event) => {
+      if (state.page !== 'classification') return;
+      if (['ArrowLeft','ArrowRight','ArrowUp','ArrowDown','Enter',' '].includes(event.key)) captureClassificationViewport();
+    }, true);
+    document.addEventListener('pointerdown', (event) => {
+      if (state.page !== 'classification') return;
+      const button = event.target.closest?.('#root > div > main .group.relative button');
+      if (button) captureClassificationViewport();
+    }, true);
+    document.addEventListener('load', (event) => {
+      if (state.page !== 'classification' || event.target?.tagName !== 'IMG') return;
+      restoreClassificationViewport();
+    }, true);
   }
 
   function attachHorizontalWheel(element) {
@@ -675,10 +749,14 @@
     else if (action === 'history-page') changeHistoryPage(Number(control.dataset.vqHistoryPage));
     else if (action === 'history-open-image') openHistoryImage(Number(control.dataset.vqHistoryImageId));
     else if (action === 'history-import-file') chooseHistoryCsvImport();
+    else if (action === 'history-cell-ids-open') openHistoryCellIdDialog();
+    else if (action === 'history-cell-ids-clear') clearHistoryCellIds();
+    else if (action === 'history-cell-ids-cancel') closeHistoryCellIdDialog();
+    else if (action === 'history-cell-ids-apply') applyHistoryCellIds();
     else if (action === 'modal-original-image') selectModalOriginalImage();
     else if (action === 'modal-crop-image') selectModalCropImage();
     else if (action === 'modal-overlay-image') selectModalOverlayImage(control.dataset.vqModalOverlay || '');
-    else if (action === 'modal-generate-heatmap') generateModalHeatmap();
+    else if (action === 'modal-move-delet') moveCurrentActualNgImage();
     else if (action === 'choose-ng-folder') chooseNgFolder();
     else if (action === 'clear-inputs') clearAnalysisInputs();
     else if (action === 'miss-tab') {
@@ -702,7 +780,7 @@
   }
 
   function isAnalysisDropdownOpen() {
-    return !!$('.vq43-dropdown.open');
+    return !!state.analysisDropdownOpenKind || !!$('.vq43-dropdown.open');
   }
 
   function flushPendingAnalysisRender() {
@@ -713,11 +791,12 @@
   }
 
   function closeAnalysisDropdowns(except = null) {
-    $('.vq43-dropdown.open').forEach((dropdown) => {
+    $$('.vq43-dropdown.open').forEach((dropdown) => {
       if (dropdown === except) return;
       dropdown.classList.remove('open');
       dropdown.querySelector('.vq43-dropdown-button')?.setAttribute('aria-expanded', 'false');
     });
+    state.analysisDropdownOpenKind = except?.classList.contains('open') ? (except.dataset.vqDropdown || '') : '';
   }
 
   function setAnalysisFilter(kind, value) {
@@ -727,6 +806,7 @@
     else if (kind === 'compare') state.analysisScoreCompare = value;
     else return;
     state.analysisLiveRenderPending = false;
+    state.analysisDropdownOpenKind = '';
     closeAnalysisDropdowns();
     renderAnalysis();
     bindPageControls();
@@ -743,6 +823,7 @@
         closeAnalysisDropdowns(dropdown);
         dropdown.classList.toggle('open', nextOpen);
         button.setAttribute('aria-expanded', String(nextOpen));
+        state.analysisDropdownOpenKind = nextOpen ? (dropdown.dataset.vqDropdown || '') : '';
         if (!nextOpen) flushPendingAnalysisRender();
       };
       dropdown.querySelectorAll('.vq43-dropdown-option').forEach((option) => {
@@ -783,6 +864,7 @@
     });
     bindAnalysisDropdowns();
     bindInlineScoreChartControls(shell);
+    applyMainDashboardLayout();
 
     const cutoffInput = $('#vq43-score-cutoff', shell);
     if (cutoffInput) {
@@ -930,6 +1012,8 @@
     jpegQuality:'저장 JPEG 품질입니다. 1~100 범위입니다.',
     printEvery:'이 수만큼 처리할 때마다 상세 결과와 진행률을 Web으로 전송합니다.',
     keepSubfolders:'입력 폴더의 하위 디렉터리 구조를 출력에도 유지합니다.',
+    saveAsJpeg:'켜면 Blue Crop 결과를 JPEG(.jpg)로 저장하고 JPEG Quality 값을 적용합니다. 끄면 원본 확장자 기준으로 저장합니다.',
+    skipExisting:'켜면 같은 출력 경로에 Crop 파일이 이미 있을 때 Blue Crop을 다시 계산·저장하지 않습니다. 원본 또는 Crop 조건을 바꿨다면 끄고 다시 실행하세요.',
     heatmapImageSave:'Green 단독 검사에서만 NG 원본 위에 HeatMap을 합성해 결과 폴더에 저장합니다. 원본 파일은 변경하지 않습니다.',
     forceJet:'회색 HeatMap을 Jet 컬러맵으로 변환해 표시합니다.',
     heatmapAlpha:'원본 이미지 위 HeatMap의 투명도 비율입니다.',
@@ -956,15 +1040,16 @@
 
   function applySimulationTooltips(root = document) {
     if (state.page !== 'simulation') return;
-    $$('input,select,textarea,button', root).forEach((element) => {
+    $$('input,select,textarea,button,label.vq43-sim-check', root).forEach((element) => {
       if (!element.closest('.vq43-sim-page')) return;
-      const field = element.dataset.simFallbackField || element.dataset.simToolField || element.dataset.simJudgementField || element.dataset.simField;
+      const input = element.matches('label.vq43-sim-check') ? element.querySelector('input') : element;
+      const field = input?.dataset.simFallbackField || input?.dataset.simToolField || input?.dataset.simJudgementField || input?.dataset.simField;
       const action = element.dataset.vqAction;
       const actionText = action === 'simulation-runtime-load' ? '선택한 Workspace를 VPDL Runtime에 실제로 로드해 Simulation 시작 시 재사용합니다.'
         : action === 'simulation-start' ? '사전 로드된 Runtime으로 즉시 Simulation을 시작합니다.'
         : action === 'simulation-tool-remove' ? '선택 열에 체크된 Tool 행을 설정에서 삭제합니다.'
         : action === 'simulation-browse' ? 'Windows 파일 또는 폴더 선택 창을 엽니다.' : '';
-      const text = SIMULATION_TOOLTIPS[field] || actionText;
+      const text = element.dataset.vqTooltip || input?.dataset.vqTooltip || SIMULATION_TOOLTIPS[field] || actionText;
       if (!text) return;
       element.dataset.vqTooltip = text;
       if (element.dataset.vqTooltipBound === '1') return;
@@ -1056,6 +1141,16 @@
       const tx = db.transaction(STORE_NAME, 'readwrite');
       tx.objectStore(STORE_NAME).put({ key, handle, name: handle?.name || '', updatedAt: Date.now() });
       await transactionDone(tx);
+    } finally { db.close(); }
+  }
+
+  async function loadHandleByKey(key) {
+    const db = await openDatabase();
+    try {
+      const tx = db.transaction(STORE_NAME, 'readonly');
+      const value = await requestPromise(tx.objectStore(STORE_NAME).get(key));
+      await transactionDone(tx);
+      return value?.handle || null;
     } finally { db.close(); }
   }
 
@@ -1439,7 +1534,10 @@
       for await (const [name, handle] of directory.entries()) {
         if (limitToLoadedResults && pendingTargets.size === 0) return;
         const next = [...parts, name];
-        if (handle.kind === 'directory') await walk(handle, next);
+        if (handle.kind === 'directory') {
+          if (name.toUpperCase() === 'DELET') continue;
+          await walk(handle, next);
+        }
         else if (handle.kind === 'file' && IMG_RE.test(name)) {
           const position = next.map(normalizePosition).find(Boolean);
           if (!position) { unknownPosition += 1; continue; }
@@ -1458,6 +1556,7 @@
     if (unknownPosition) warnings.push(`Position 폴더 밖 이미지 ${numberText(unknownPosition)}개 제외`);
     if (limitToLoadedResults) warnings.push(`불러온 결과 CSV에 있는 Cell ID만 빠르게 색인했습니다 (${numberText(images.length)}개).`);
     if (!images.length) warnings.push('분석 가능한 실제 NG 이미지가 없습니다.');
+    images.forEach((image) => { image.actualNg = true; image.rootHandleKey = NG_ROOT_KEY; });
     return { rootName: rootHandle.name || 'NG Images', images, warnings };
   }
 
@@ -1477,7 +1576,10 @@
       for await (const [name, handle] of directory.entries()) {
         if (limitToLoadedResults && pendingTargets.size === 0) return;
         const next = [...parts, name];
-        if (handle.kind === 'directory') await walk(handle, next);
+        if (handle.kind === 'directory') {
+          if (name.toUpperCase() === 'DELET') continue;
+          await walk(handle, next);
+        }
         else if (handle.kind === 'file' && IMG_RE.test(name)) {
           const cellId = extractCellId(name) || extractCellId(next.join('/'));
           if (!cellId) { invalidCell += 1; continue; }
@@ -1493,6 +1595,7 @@
     if (invalidCell) warnings.push(`Cell ID 추출 실패 이미지 ${numberText(invalidCell)}개 제외`);
     if (limitToLoadedResults) warnings.push(`불러온 결과 CSV에 있는 Cell ID만 빠르게 색인했습니다 (${numberText(images.length)}개).`);
     if (!images.length) warnings.push('분석 가능한 실제 NG 이미지가 없습니다.');
+    images.forEach((image) => { image.actualNg = true; image.rootHandleKey = `${NG_POSITION_PREFIX}${position}`; });
     return { rootName:rootHandle.name || position, images, warnings };
   }
 
@@ -2261,6 +2364,74 @@
     return `<svg viewBox="0 0 ${width} ${height}" data-vq-scatter-svg="1">${grid}${lines}${poly}${dots}<text x="${left}" y="${height-(options.large?18:12)}" font-size="${options.large?17:13}" fill="#7c8da8">낮은 Score</text><text x="${width-right}" y="${height-(options.large?18:12)}" text-anchor="end" font-size="${options.large?17:13}" fill="#7c8da8">높은 Score</text></svg>`;
   }
 
+  function parseHistoryCellIds(value) {
+    const source = Array.isArray(value) ? value : String(value || '').split(/[\r\n,;\t ]+/);
+    const seen = new Set();
+    const ids = [];
+    source.forEach((item) => {
+      const id = String(item || '').trim().toUpperCase();
+      if (!id || seen.has(id) || ids.length >= 10000) return;
+      seen.add(id);
+      ids.push(id);
+    });
+    return ids;
+  }
+
+  function applyMainDashboardLayout() {
+    if (state.page !== 'main') return;
+    const content = $('#vq43-page > .vq43-content');
+    if (!content) return;
+    content.classList.add('vq43-main-dashboard');
+    $$('.vq43-section', content).forEach((section) => {
+      const title = section.querySelector('.vq43-section-title h3')?.textContent?.trim() || '';
+      if (title === 'Cell별 NG') section.classList.add('vq43-main-cell');
+      else if (title === 'Position별 NG') section.classList.add('vq43-main-position');
+      else if (title === 'Position별 Tool NG 구성') section.classList.add('vq43-main-tools');
+      else if (title === 'Position별 미검 Cell ID') section.classList.add('vq43-main-misses');
+    });
+  }
+
+  function openHistoryCellIdDialog() {
+    state.historyCellIdDraft = (state.historyFilters.cellIds || []).join('\n');
+    state.historyCellDialogOpen = true;
+    renderHistory();
+    bindPageControls();
+    setTimeout(() => $('#vq43-history-cell-id-draft')?.focus(), 0);
+  }
+
+  function closeHistoryCellIdDialog() {
+    state.historyCellDialogOpen = false;
+    renderHistory();
+    bindPageControls();
+  }
+
+  function applyHistoryCellIds() {
+    const input = $('#vq43-history-cell-id-draft');
+    const ids = parseHistoryCellIds(input?.value ?? state.historyCellIdDraft);
+    state.historyFilters.cellIds = ids;
+    state.historyFilters.cellId = '';
+    state.historyCellIdDraft = ids.join('\n');
+    state.historyCellDialogOpen = false;
+    refreshHistory(true);
+  }
+
+  function clearHistoryCellIds() {
+    state.historyFilters.cellIds = [];
+    state.historyFilters.cellId = '';
+    state.historyCellIdDraft = '';
+    state.historyCellDialogOpen = false;
+    refreshHistory(true);
+  }
+
+  function historySelectOptions(items, selected, allLabel = '전체') {
+    const normalized = (Array.isArray(items) ? items : []).map((item) => typeof item === 'string'
+      ? { value:item, label:item }
+      : { value:String(item?.value ?? item?.key ?? ''), label:String(item?.label ?? item?.name ?? item?.value ?? '') })
+      .filter((item) => item.value);
+    if (selected && !normalized.some((item) => item.value === selected)) normalized.unshift({ value:selected, label:selected });
+    return '<option value="">' + escapeHtml(allLabel) + '</option>' + normalized.map((item) =>
+      '<option value="' + escapeHtml(item.value) + '" ' + (item.value === selected ? 'selected' : '') + '>' + escapeHtml(item.label) + '</option>').join('');
+  }
 
   function bindHistoryControls(shell) {
     if (state.page !== 'history') return;
@@ -2275,9 +2446,15 @@
       };
       input.onclick = (event) => event.stopPropagation();
     });
+    const draft = $('#vq43-history-cell-id-draft', shell);
+    if (draft) {
+      draft.oninput = () => { state.historyCellIdDraft = draft.value; };
+      draft.onclick = (event) => event.stopPropagation();
+      draft.onkeydown = (event) => event.stopPropagation();
+    }
   }
 
-  function historyDateBars(daily) {
+  function historyCountBarsLegacy(daily) {
     const rows = (Array.isArray(daily) ? daily : []).slice(-90);
     if (!rows.length) return '<div class="vq43-history-empty">표시할 날짜별 이력이 없습니다.</div>';
     const max = Math.max(1, ...rows.map((row) => Number(row.total || 0)));
@@ -2289,7 +2466,30 @@
     }).join('')}</div>`;
   }
 
-  function historyRecordRows(items) {
+  // 날짜별 NG율은 건수 높이가 아니라 0~100% 축의 선 그래프로 표시해 즉시 비교할 수 있게 합니다.
+  function historyDateBars(daily) {
+    const rows = (Array.isArray(daily) ? daily : []).slice(-90);
+    if (!rows.length) return '<div class="vq43-history-empty">표시할 날짜별 이력이 없습니다.</div>';
+    const width = Math.max(760, rows.length * 64);
+    const height = 220, left = 52, right = 24, top = 26, bottom = 42;
+    const plotW = width - left - right, plotH = height - top - bottom;
+    const x = (index) => left + (rows.length <= 1 ? plotW / 2 : plotW * index / (rows.length - 1));
+    const y = (rate) => top + plotH * (1 - Math.max(0, Math.min(1, Number(rate || 0))));
+    const grid = [0, .2, .4, .6, .8, 1].map((rate) =>
+      '<line x1="' + left + '" x2="' + (width-right) + '" y1="' + y(rate) + '" y2="' + y(rate) + '"/><text x="' + (left-9) + '" y="' + (y(rate)+4) + '" text-anchor="end">' + Math.round(rate*100) + '%</text>').join('');
+    const points = rows.map((row, index) => x(index) + ',' + y(row.ngRate)).join(' ');
+    const labelEvery = Math.max(1, Math.ceil(rows.length / 12));
+    const dots = rows.map((row, index) => {
+      const total = Number(row.total || 0), ng = Number(row.ng || 0), rate = Number(row.ngRate || 0);
+      const date = escapeHtml(row.date || '');
+      const dateLabel = index % labelEvery === 0 || index === rows.length - 1
+        ? '<text class="date" x="' + x(index) + '" y="' + (height-15) + '" text-anchor="middle">' + escapeHtml(String(row.date || '').slice(5)) + '</text>' : '';
+      return '<g class="vq43-history-point" data-vq-action="history-day" data-vq-history-day="' + date + '" tabindex="0"><title>' + date + ' · 전체 ' + numberText(total) + ' · NG ' + numberText(ng) + ' (' + rateText(rate) + ')</title><circle cx="' + x(index) + '" cy="' + y(rate) + '" r="5"/><text class="rate" x="' + x(index) + '" y="' + Math.max(14,y(rate)-10) + '" text-anchor="middle">' + rateText(rate) + '</text>' + dateLabel + '</g>';
+    }).join('');
+    return '<div class="vq43-history-line-scroll"><svg class="vq43-history-line" viewBox="0 0 ' + width + ' ' + height + '" style="min-width:' + width + 'px">' + grid + '<polyline points="' + points + '"/>' + dots + '</svg></div>';
+  }
+
+  function historyRecordRowsLegacy(items) {
     if (!items?.length) return '<div class="vq43-history-empty">조건에 맞는 검사 이력이 없습니다.</div>';
     return `<div class="vq43-history-table"><div class="vq43-history-row head"><span>촬영/검사 시각</span><span>Cell ID</span><span>Position</span><span>결과</span><span>Tool Score</span><span>이미지</span></div>${items.map((item) => {
       const toolText = (item.tools || []).map((tool) => `<small class="${String(tool.result).toUpperCase()==='NG'?'ng':''}">${escapeHtml(tool.tool)} ${escapeHtml(tool.result || '-')} ${Number.isFinite(tool.score)?Number(tool.score).toFixed(4):'-'}</small>`).join('');
@@ -2298,13 +2498,63 @@
     }).join('')}</div>`;
   }
 
-  function renderHistory() {
+  function historyRecordRows(items) {
+    if (!items?.length) return '<div class="vq43-history-empty">조건에 맞는 검사 이력이 없습니다.</div>';
+    const head = '<div class="vq43-history-row head"><span>촬영/검사 시각</span><span>Cell ID</span><span>Position</span><span>Workspace</span><span>결과</span><span>Tool Score</span><span>이미지</span></div>';
+    const rows = items.map((item) => {
+      const toolText = (item.tools || []).map((tool) => '<small class="' + (String(tool.result).toUpperCase() === 'NG' ? 'ng' : '') + '">' + escapeHtml(tool.tool) + ' ' + escapeHtml(tool.result || '-') + ' ' + (Number.isFinite(tool.score) ? Number(tool.score).toFixed(4) : '-') + '</small>').join('');
+      const result = String(item.totalResult || '-').toUpperCase();
+      const workspace = [item.workspaceType, item.workspaceName].filter(Boolean).join(' · ') || '-';
+      const imageEnabled = item.fullPath || (item.tools || []).some((tool) => tool.overlayPath);
+      return '<div class="vq43-history-row" data-vq-history-row="' + item.imageId + '"><span title="' + escapeHtml(item.inspectedAtUtc || '') + '">' + escapeHtml(item.captureTimestamp || item.inspectedAtUtc || '-') + '</span><strong>' + escapeHtml(item.cellId || '-') + '</strong><span>' + escapeHtml(item.position || '-') + '</span><span class="vq43-history-workspace" title="' + escapeHtml(item.workspaceKey || workspace) + '">' + escapeHtml(workspace) + '</span><b class="' + (result === 'NG' ? 'ng' : 'ok') + '">' + escapeHtml(result) + '</b><span class="vq43-history-tools">' + (toolText || '-') + '</span><button class="vq43-btn" data-vq-action="history-open-image" data-vq-history-image-id="' + item.imageId + '" ' + (imageEnabled ? '' : 'disabled') + '>이미지</button></div>';
+    }).join('');
+    return '<div class="vq43-history-table">' + head + rows + '</div>';
+  }
+
+  function renderHistoryLegacy() {
     const data = state.historyData || { totalCount:0, ngCount:0, uniqueCellCount:0, daily:[], items:[] };
     const f = state.historyFilters;
     const totalPages = Math.max(1, Math.ceil(Number(data.totalCount || 0) / Number(f.pageSize || 50)));
     const page = Math.max(1, Math.min(Number(f.page || 1), totalPages));
     const status = state.historyLoading ? 'SQLite 이력 조회 중...' : (state.historyFileImport?.running ? `대용량 CSV 저장 중 · ${numberText(state.historyFileImport.processed)}행` : `SQLite DB · ${escapeHtml(data.databasePath || 'Local Agent 연결 후 확인')}`);
     $('#vq43-page').innerHTML = `<div class="vq43-content vq43-history-page"><div class="vq43-topline"><div><div class="vq43-eyebrow">Persistent Inspection History</div><h1 class="vq43-title">검사 이력 · 날짜별 NG율</h1><p class="vq43-subtitle">SQLite에서 조건을 먼저 검색한 뒤 페이지 단위로 가져옵니다. 같은 Cell ID + Position은 마지막 기록을 대표값으로 집계합니다. 원본 이미지는 복사하지 않고 필요한 한 장만 Local Agent가 표시합니다.</p></div><div class="vq43-top-actions"><button class="vq43-btn vq43-btn-blue" data-vq-action="history-refresh" ${state.historyLoading?'disabled':''}>${state.historyLoading?'조회 중...':'조회'}</button><button class="vq43-btn vq43-btn-green" data-vq-action="history-import-file" ${state.historyFileImport?.running?'disabled':''}>대용량 CSV 직접 저장</button></div></div><section class="vq43-history-filter"><label>시작일<input type="date" data-history-field="fromDate" value="${escapeHtml(f.fromDate)}"></label><label>종료일<input type="date" data-history-field="toDate" value="${escapeHtml(f.toDate)}"></label><label>Cell ID<input data-history-field="cellId" value="${escapeHtml(f.cellId)}" placeholder="부분 검색"></label><label>Position<input data-history-field="position" value="${escapeHtml(f.position)}" placeholder="예: CA(TOP)"></label><label>Tool<input data-history-field="tool" value="${escapeHtml(f.tool)}" placeholder="예: Crack"></label><label>Tool 결과<select data-history-field="toolResult"><option value="" ${!f.toolResult?'selected':''}>전체</option><option value="NG" ${f.toolResult==='NG'?'selected':''}>NG</option><option value="OK" ${f.toolResult==='OK'?'selected':''}>OK</option></select></label><label>전체 결과<select data-history-field="totalResult"><option value="" ${!f.totalResult?'selected':''}>전체</option><option value="NG" ${f.totalResult==='NG'?'selected':''}>NG</option><option value="OK" ${f.totalResult==='OK'?'selected':''}>OK</option></select></label></section><p class="vq43-history-status">${status}</p><section class="vq43-history-kpis"><div><span>검사 Cell·Position</span><strong>${numberText(data.totalCount)}</strong></div><div class="ng"><span>NG Cell·Position</span><strong>${numberText(data.ngCount)}</strong></div><div><span>고유 Cell·Position</span><strong>${numberText(data.uniqueCellCount)}</strong></div><div><span>NG율</span><strong>${rateText(data.totalCount ? data.ngCount / data.totalCount : 0)}</strong></div></section><section class="vq43-section vq43-history-chart"><div class="vq43-section-title"><div><h3>날짜별 NG율</h3><p>촬영 시각이 없으면 검사 시각을 사용합니다. 막대 위에 마우스를 올리면 전체/NG 건수를 확인할 수 있습니다.</p></div></div>${historyDateBars(data.daily)}</section><section class="vq43-section"><div class="vq43-section-title"><div><h3>Cell 이미지 탐색</h3><p>원본 FullPath와 Green Tool Heatmap Overlay 경로를 같은 Viewer에서 전환할 수 있습니다.</p></div><span>${numberText(data.totalCount)}건 · ${page} / ${totalPages} 페이지</span></div>${historyRecordRows(data.items)}<div class="vq43-history-pagination"><button class="vq43-btn" data-vq-action="history-page" data-vq-history-page="${page-1}" ${page<=1?'disabled':''}>이전</button><span>${page} / ${totalPages}</span><button class="vq43-btn" data-vq-action="history-page" data-vq-history-page="${page+1}" ${page>=totalPages?'disabled':''}>다음</button></div></section></div>`;
+    if (!state.historyLoaded && !state.historyLoading) setTimeout(() => refreshHistory(false), 0);
+  }
+
+  function historyResultOptions(selected) {
+    return '<option value="" ' + (!selected ? 'selected' : '') + '>전체</option><option value="NG" ' + (selected === 'NG' ? 'selected' : '') + '>NG</option><option value="OK" ' + (selected === 'OK' ? 'selected' : '') + '>OK</option>';
+  }
+
+  function renderHistory() {
+    const data = state.historyData || { totalCount:0, ngCount:0, uniqueCellCount:0, daily:[], items:[], filterOptions:{} };
+    const f = state.historyFilters;
+    const options = data.filterOptions || {};
+    const totalPages = Math.max(1, Math.ceil(Number(data.totalCount || 0) / Number(f.pageSize || 50)));
+    const page = Math.max(1, Math.min(Number(f.page || 1), totalPages));
+    const status = state.historyLoading ? 'SQLite 이력 조회 중...' : (state.historyFileImport?.running
+      ? '대용량 CSV 저장 중 · ' + numberText(state.historyFileImport.processed) + '행'
+      : 'SQLite DB · ' + escapeHtml(data.databasePath || 'Local Agent 연결 후 확인'));
+    const cellIds = parseHistoryCellIds(f.cellIds || []);
+    const cellLabel = cellIds.length ? numberText(cellIds.length) + '개 Cell ID' : '여러 Cell ID 입력';
+    const filter = '<section class="vq43-history-filter">'
+      + '<label>시작일<input type="date" data-history-field="fromDate" value="' + escapeHtml(f.fromDate) + '"></label>'
+      + '<label>종료일<input type="date" data-history-field="toDate" value="' + escapeHtml(f.toDate) + '"></label>'
+      + '<label>Cell ID<button type="button" class="vq43-history-cell-button ' + (cellIds.length ? 'active' : '') + '" data-vq-action="history-cell-ids-open">' + cellLabel + '</button></label>'
+      + '<label>Position<select data-history-field="position">' + historySelectOptions(options.positions, f.position) + '</select></label>'
+      + '<label>Tool<select data-history-field="tool">' + historySelectOptions(options.tools, f.tool) + '</select></label>'
+      + '<label>검사 모드<select data-history-field="workspaceType">' + historySelectOptions(options.workspaceTypes, f.workspaceType) + '</select></label>'
+      + '<label>Workspace<select data-history-field="workspaceKey">' + historySelectOptions(options.workspaces, f.workspaceKey) + '</select></label>'
+      + '<label>Tool 결과<select data-history-field="toolResult">' + historyResultOptions(f.toolResult) + '</select></label>'
+      + '<label>Position 결과<select data-history-field="totalResult">' + historyResultOptions(f.totalResult) + '</select></label>'
+      + '</section>';
+    const top = '<div class="vq43-topline"><div><div class="vq43-eyebrow">Persistent Inspection History</div><h1 class="vq43-title">검사 이력 · 날짜별 NG율</h1><p class="vq43-subtitle">Cell ID를 최대 10,000개까지 한 번에 조회하고, DB에 저장된 Position·Tool·Workspace 조건으로 결과를 구분합니다.</p></div><div class="vq43-top-actions"><button class="vq43-btn vq43-btn-blue" data-vq-action="history-refresh" ' + (state.historyLoading ? 'disabled' : '') + '>' + (state.historyLoading ? '조회 중...' : '조회') + '</button><button class="vq43-btn vq43-btn-green" data-vq-action="history-import-file" ' + (state.historyFileImport?.running ? 'disabled' : '') + '>대용량 CSV 직접 저장</button></div></div>';
+    const kpis = '<section class="vq43-history-kpis"><div><span>검사 Cell·Position</span><strong>' + numberText(data.totalCount) + '</strong></div><div class="ng"><span>NG Cell·Position</span><strong>' + numberText(data.ngCount) + '</strong></div><div><span>고유 Cell·Position</span><strong>' + numberText(data.uniqueCellCount) + '</strong></div><div class="ng"><span>NG율</span><strong>' + rateText(data.totalCount ? data.ngCount / data.totalCount : 0) + '</strong></div></section>';
+    const chart = '<section class="vq43-section vq43-history-chart"><div class="vq43-section-title"><div><h3>날짜별 NG율</h3><p>촬영 시각이 없으면 검사 시각을 사용하며, 각 점에 NG율을 직접 표시합니다.</p></div></div>' + historyDateBars(data.daily) + '</section>';
+    const records = '<section class="vq43-section vq43-history-records"><div class="vq43-section-title"><div><h3>Cell 이미지 탐색</h3><p>원본 FullPath와 검사 때 저장된 Green Tool Heatmap Overlay를 같은 Viewer에서 전환합니다.</p></div><span>' + numberText(data.totalCount) + '건 · ' + page + ' / ' + totalPages + ' 페이지</span></div>' + historyRecordRows(data.items) + '<div class="vq43-history-pagination"><button class="vq43-btn" data-vq-action="history-page" data-vq-history-page="' + (page-1) + '" ' + (page <= 1 ? 'disabled' : '') + '>이전</button><span>' + page + ' / ' + totalPages + '</span><button class="vq43-btn" data-vq-action="history-page" data-vq-history-page="' + (page+1) + '" ' + (page >= totalPages ? 'disabled' : '') + '>다음</button></div></section>';
+    const cellDialog = state.historyCellDialogOpen
+      ? '<div class="vq43-history-cell-modal"><div class="vq43-history-cell-card"><header><div><strong>Cell ID 다중 검색</strong><small>줄바꿈·쉼표·공백으로 구분 · 최대 10,000개</small></div><button data-vq-action="history-cell-ids-cancel">×</button></header><textarea id="vq43-history-cell-id-draft" placeholder="P163GG23M2100004&#10;P163GG23M2100005">' + escapeHtml(state.historyCellIdDraft) + '</textarea><footer><button class="vq43-btn" data-vq-action="history-cell-ids-clear">초기화</button><button class="vq43-btn vq43-btn-blue" data-vq-action="history-cell-ids-apply">적용</button></footer></div></div>'
+      : '';
+    $('#vq43-page').innerHTML = '<div class="vq43-content vq43-history-page">' + top + filter + '<p class="vq43-history-status">' + status + '</p>' + kpis + chart + records + '</div>' + cellDialog;
     if (!state.historyLoaded && !state.historyLoading) setTimeout(() => refreshHistory(false), 0);
   }
 
@@ -2374,7 +2624,9 @@
     if (!item) return;
     const images = [];
     const overlayImages = [];
-    if (item.fullPath) images.push({ fullPath:item.fullPath, relativePath:item.fullPath, name:item.fullPath.split(/[\\/]/).pop() || item.fullPath, kind:'원본', viewKind:'source' });
+    const storedSourcePath = String(item.fullPath || '').trim();
+    const sourcePath = originalPathForViewer(storedSourcePath);
+    if (sourcePath) images.push({ fullPath:sourcePath, relativePath:sourcePath, historyLookupPath:storedSourcePath, name:sourcePath.split(/[\\/]/).pop() || sourcePath, kind:'원본', viewKind:'source' });
     if (item.processedPath && String(item.processedPath).toLowerCase() !== String(item.fullPath || '').toLowerCase())
       images.push({ fullPath:item.processedPath, relativePath:item.processedPath, name:item.processedPath.split(/[\\/]/).pop() || item.processedPath, kind:'Crop', viewKind:'crop' });
     (item.tools || []).forEach((tool) => {
@@ -4353,8 +4605,10 @@
 
   function simulationCheck(scope, field, label, tooltip = '') {
     const target = simulationScopeObject(scope, '');
-    const title = tooltip ? ` title="${escapeHtml(tooltip)}"` : '';
-    return `<label class="vq43-sim-check"${title}><input type="checkbox" data-sim-scope="${scope}" data-sim-field="${field}"${title} ${target?.[field]?'checked':''}><span>${escapeHtml(label)}</span></label>`;
+    const help = tooltip || SIMULATION_TOOLTIPS[field] || '';
+    const title = help ? ` title="${escapeHtml(help)}"` : '';
+    const dataTooltip = help ? ` data-vq-tooltip="${escapeHtml(help)}"` : '';
+    return `<label class="vq43-sim-check"${title}${dataTooltip}><input type="checkbox" data-sim-scope="${scope}" data-sim-field="${field}"${title}${dataTooltip} ${target?.[field]?'checked':''}><span>${escapeHtml(label)}</span></label>`;
   }
 
   function simulationNumber(scope, field, label, min='', max='', step='1') {
@@ -4875,7 +5129,7 @@
     const overlayImages = overlayImagesForRecord(record);
     if (!images.length && !overlayImages.length) return showToast('CSV FullPath, 실제 NG 이미지 또는 Heatmap Overlay가 없습니다.', true);
     state.modalMissKey = null;
-    state.modalItem = { key: point.recordKey, cellId: point.cellId, position: point.position, record, images, overlayImages, label: csvImages.length ? 'CSV FullPath Image' : 'Actual NG Image' };
+    state.modalItem = { key: point.recordKey, cellId: point.cellId, position: point.position, record, images, overlayImages, label: csvImages.length ? '검사 원본 이미지' : 'Actual NG Image' };
     state.modalIndex = 0;
     state.modalImageView = 'source';
     state.modalOverlayPath = images.length ? '' : (overlayImages[0]?.fullPath || '');
@@ -4889,11 +5143,12 @@
     const cropPaths = new Set();
     const images = [];
     (record?.sourceRows || []).forEach((row) => {
-      const sourcePath = String(row.fullPath || '').trim();
+      const storedSourcePath = String(row.originalFullPath || row.fullPath || '').trim();
+      const sourcePath = originalPathForViewer(storedSourcePath);
       const cropPath = String(row.processedPath || '').trim();
       if (sourcePath && !sourcePaths.has(sourcePath.toLowerCase())) {
         sourcePaths.add(sourcePath.toLowerCase());
-        images.push({ fullPath:sourcePath, relativePath:sourcePath, name:sourcePath.split(/[\\/]/).pop() || sourcePath, kind:'원본', viewKind:'source' });
+        images.push({ fullPath:sourcePath, relativePath:sourcePath, historyLookupPath:storedSourcePath, name:sourcePath.split(/[\\/]/).pop() || sourcePath, kind:'원본', viewKind:'source' });
       }
       if (cropPath && cropPath.toLowerCase() !== sourcePath.toLowerCase() && !cropPaths.has(cropPath.toLowerCase())) {
         cropPaths.add(cropPath.toLowerCase());
@@ -4901,6 +5156,46 @@
       }
     });
     return images;
+  }
+
+  function configuredOriginalImageRootsForViewer() {
+    const form = ensureSimulationForm();
+    const roots = [];
+    const seen = new Set();
+    const addAll = (items) => normalizeImageRoots(items, '').forEach((path) => {
+      const normalized = String(path || '').trim().replace(/[\\/]+$/, '');
+      const key = normalized.toLowerCase();
+      if (!normalized || seen.has(key)) return;
+      seen.add(key);
+      roots.push(normalized);
+    });
+    addAll(form.integrated?.keywordInputRoots || form.integrated?.keywordInputRoot || '');
+    addAll(form.green?.keywordInputRoots || form.green?.keywordInputRoot || '');
+    Object.values(form.positions || {}).forEach((position) => {
+      addAll(imageRootsForPosition(position, 'blueImageRoot'));
+      addAll(imageRootsForPosition(position, 'greenImageRoot'));
+    });
+    return roots;
+  }
+
+  function inputRootTagForViewer(inputRoot, index) {
+    const normalized = String(inputRoot || '').trim().replace(/[\\/]+$/, '');
+    const name = (normalized.split(/[\\/]/).pop() || 'Root').replace(/[<>:"/\\|?*]/g, '_');
+    return `Source_${String(index + 1).padStart(2, '0')}_${name || 'Root'}`;
+  }
+
+  function originalPathForViewer(path) {
+    const storedPath = String(path || '').trim();
+    if (!storedPath || !/[\\/]_?VisionQC_(?:Integrated_Images|BlueCrop_Temp)[\\/]/i.test(storedPath)) return storedPath;
+    const parts = storedPath.replace(/\//g, '\\').split('\\').filter(Boolean);
+    const sourceIndex = parts.findIndex((part) => /^Source_\d{2}_/i.test(part));
+    if (sourceIndex < 0 || sourceIndex >= parts.length - 1) return storedPath;
+    const tag = parts[sourceIndex].toLowerCase();
+    const roots = configuredOriginalImageRootsForViewer();
+    const rootIndex = roots.findIndex((root, index) => inputRootTagForViewer(root, index).toLowerCase() === tag);
+    if (rootIndex < 0) return storedPath;
+    const root = roots[rootIndex];
+    return `${root}\\${parts.slice(sourceIndex + 1).join('\\')}`;
   }
 
   function modalImagesForView(miss, view = state.modalImageView) {
@@ -4919,66 +5214,9 @@
       return { fullPath, relativePath:fullPath, name:`${toolName} Heatmap Overlay`, kind:'Heatmap Overlay', toolName };
     }).filter(Boolean);
   }
-  function modalRuntimeHeatmapSource(miss) {
-    // 통합 시뮬레이션은 Green이 실제로 검사한 Blue Crop을 먼저 재검사한다.
-    return modalImagesForView(miss, 'crop').find((image) => !!image?.fullPath && !image?.file && !image?.fileHandle)
-      || modalImagesForView(miss, 'source').find((image) => !!image?.fullPath && !image?.file && !image?.fileHandle)
-      || null;
-  }
-
-  function buildModalHeatmapInspectionRequest(imagePath) {
-    const request = buildSimulationRequest();
-    if (request.mode === 'blue') throw new Error('Green Heatmap은 Green 또는 Integrated 모드에서만 생성할 수 있습니다.');
-    if (!request.positions?.length) throw new Error('Green Heatmap에 사용할 활성 Position이 없습니다.');
-    request.green = cloneSimulation(request.green || {});
-    request.green.heatmapImageSave = true;
-    request.imagePath = String(imagePath || '');
-    return request;
-  }
-
-  async function generateModalHeatmap() {
-    const miss = state.modalItem;
-    const source = modalRuntimeHeatmapSource(miss);
-    if (!miss || !source?.fullPath || state.modalHeatmapLoading) return;
-    if (state.simulationStartPending || state.simulationProgress?.running) {
-      showToast('Simulation 실행 중에는 Runtime을 공유할 수 없습니다. 완료 후 Green Heatmap을 생성하세요.', true);
-      return;
-    }
-    let request;
-    try { request = buildModalHeatmapInspectionRequest(source.fullPath); }
-    catch (error) { showToast(error?.message || String(error), true); return; }
-    const modalKey = miss.key;
-    state.modalHeatmapLoading = true;
-    renderModal();
-    try {
-      const data = await agentFetch('/api/classification/inspect', {
-        method:'POST', timeout:300000, body:request,
-        timeoutMessage:'Green Heatmap 생성이 5분을 초과했습니다.'
-      });
-      if (!data?.ok) throw new Error(data?.error || 'Green Heatmap 생성 실패');
-      if (state.modalItem?.key !== modalKey) return;
-      const overlays = overlayImagesForRecord(data.record || {});
-      if (!overlays.length) throw new Error('Green 검사 결과에 저장된 Heatmap Overlay가 없습니다. Heatmap 저장 설정을 확인하세요.');
-      const existing = Array.isArray(miss.overlayImages) ? miss.overlayImages : [];
-      const paths = new Set(existing.map((image) => String(image.fullPath || '').toLowerCase()));
-      const added = overlays.filter((image) => !paths.has(String(image.fullPath || '').toLowerCase()));
-      miss.overlayImages = [...existing, ...added];
-      state.modalOverlayPath = (added[0] || overlays[0]).fullPath;
-      resetModalView();
-      showToast(`${data.position || miss.position} Green Heatmap 생성 완료`);
-    } catch (error) {
-      showToast(`Green Heatmap을 만들지 못했습니다: ${error?.message || error}`, true);
-    } finally {
-      if (state.modalItem?.key === modalKey) {
-        state.modalHeatmapLoading = false;
-        renderModal();
-      }
-    }
-  }
-
-
   async function hydrateModalOverlaysFromHistory(record, modalKey) {
-    const fullPath = csvImagesForRecord(record)[0]?.fullPath || '';
+    const image = csvImagesForRecord(record)[0];
+    const fullPath = image?.historyLookupPath || image?.fullPath || '';
     if (!fullPath) return;
     try {
       const data = await agentFetch('/api/history/search', {
@@ -5007,14 +5245,6 @@
     return '<div class="vq43-modal-image-switcher">' + original + crop + overlays + '</div>';
   }
 
-  function modalHeatmapCreateHtml(overlayImages, heatmapSource) {
-    if (overlayImages.length || !heatmapSource) return '';
-    const runtimeBusy = !!state.simulationStartPending || !!state.simulationProgress?.running;
-    const disabled = state.modalHeatmapLoading || runtimeBusy ? 'disabled' : '';
-    const label = state.modalHeatmapLoading ? 'Green Heatmap 생성 중...' : 'Green Heatmap 생성';
-    const guide = runtimeBusy ? 'Simulation 실행 중에는 Runtime을 공유할 수 없습니다. 완료 후 생성하세요.' : '현재 사전 로드된 Green Runtime으로 실제 검사 Crop 이미지 1장을 다시 검사합니다.';
-    return '<div class="vq43-modal-heatmap-create"><button type="button" data-vq-action="modal-generate-heatmap" ' + disabled + '>' + label + '</button><small>' + guide + '</small></div>';
-  }
   function renderModal() {
     const modal = $('#vq43-modal');
     const miss = state.modalItem;
@@ -5036,10 +5266,11 @@
     const modalImageRequestKey = state.modalImageRequestKey;
     const scores = Object.values(miss.record?.tools || {}).map((tool) => `<span class="vq43-score-chip">${escapeHtml(tool.tool)}: <b style="color:${tool.result==='NG'?'#f87171':'#34d399'}">${tool.result}</b> <b>${scoreText(tool.representativeScore ?? tool.score)}</b></span>`).join('');
     const switcher = modalImageSwitcherHtml(sourceImages, cropImages, overlayImages, selectedOverlay);
-    const heatmapSource = modalRuntimeHeatmapSource(miss);
-    const heatmapCreate = modalHeatmapCreateHtml(overlayImages, heatmapSource);
+    const heatmapCreate = '';
     const countText = selectedOverlay ? ('Heatmap ' + (overlayImages.findIndex((candidate) => candidate.fullPath === selectedOverlay.fullPath) + 1) + ' / ' + overlayImages.length) : ((state.modalIndex+1) + ' / ' + displayImages.length);
-    modal.innerHTML = `<div class="vq43-modal-card"><div class="vq43-modal-head"><div><small>${escapeHtml(miss.label || 'Actual NG Image')}</small><strong>${escapeHtml(miss.cellId)} · ${miss.position}</strong></div><button class="vq43-close" data-vq-action="close-modal">×</button></div>${switcher}${heatmapCreate}<div class="vq43-modal-image" id="vq43-modal-viewport"><img id="vq43-modal-zoom-image" draggable="false" src="${state.modalUrl}" alt="${escapeHtml(image.file?.name || image.name || image.relativePath)}"><div class="vq43-modal-zoom-tools"><span id="vq43-modal-zoom-value">100%</span><button data-vq-action="modal-reset">원위치</button></div><div class="vq43-modal-help">마우스 휠: 확대/축소 · 드래그: 이동 · 더블클릭: 원위치</div>${!selectedOverlay && displayImages.length>1?`<button class="vq43-modal-nav prev" data-vq-action="modal-prev" ${state.modalIndex===0?'disabled':''}>‹</button><button class="vq43-modal-nav next" data-vq-action="modal-next" ${state.modalIndex>=displayImages.length-1?'disabled':''}>›</button>`:''}</div><div class="vq43-modal-foot"><div class="vq43-modal-path"><span>${escapeHtml(image.relativePath)}</span><b>${countText}</b></div><div class="vq43-modal-scores">${scores}</div></div></div>`;
+    const canMoveActualNg = !selectedOverlay && !!image.actualNg && !!image.fileHandle && !!image.rootHandleKey;
+    const moveButton = canMoveActualNg ? '<button type="button" class="vq43-modal-delete" data-vq-action="modal-move-delet">이미지 제외</button>' : '';
+    modal.innerHTML = `<div class="vq43-modal-card"><div class="vq43-modal-head"><div><small>${escapeHtml(miss.label || 'Actual NG Image')}</small><strong>${escapeHtml(miss.cellId)} · ${miss.position}</strong></div><div class="vq43-modal-head-actions">${moveButton}<button class="vq43-close" data-vq-action="close-modal">×</button></div></div>${switcher}${heatmapCreate}<div class="vq43-modal-image" id="vq43-modal-viewport"><div class="vq43-modal-media-layer"><img id="vq43-modal-zoom-image" draggable="false" src="${state.modalUrl}" alt="${escapeHtml(image.file?.name || image.name || image.relativePath)}"></div><div class="vq43-modal-zoom-tools"><span id="vq43-modal-zoom-value">100%</span><button data-vq-action="modal-reset">원위치</button></div><div class="vq43-modal-help">마우스 휠: 확대/축소 · 드래그: 이동 · 더블클릭: 원위치</div>${!selectedOverlay && displayImages.length>1?`<button class="vq43-modal-nav prev" data-vq-action="modal-prev" ${state.modalIndex===0?'disabled':''}>‹</button><button class="vq43-modal-nav next" data-vq-action="modal-next" ${state.modalIndex>=displayImages.length-1?'disabled':''}>›</button>`:''}</div><div class="vq43-modal-foot"><div class="vq43-modal-path"><span>${escapeHtml(image.relativePath)}</span><b>${countText}</b></div><div class="vq43-modal-scores">${scores}</div></div></div>`;
     modal.classList.add('open');
     applyModalTransform();
     bindModalImageControls();
@@ -5057,6 +5288,11 @@
       event.preventDefault();
       event.stopPropagation();
       resetModalView();
+    });
+    modal.querySelector('[data-vq-action="modal-move-delet"]')?.addEventListener('click', (event) => {
+      event.preventDefault();
+      event.stopPropagation();
+      moveCurrentActualNgImage();
     });
     modal.querySelector('[data-vq-action="modal-prev"]')?.addEventListener('click', (event) => {
       event.preventDefault();
@@ -5135,7 +5371,6 @@
     if (!miss || state.modalOverlayPath) return;
     const images = modalImagesForView(miss);
     state.modalIndex = Math.max(0, Math.min(images.length - 1, state.modalIndex + delta));
-    resetModalView();
     renderModal();
   }
 
@@ -5144,7 +5379,6 @@
     state.modalOverlayPath = '';
     state.modalImageView = 'source';
     state.modalIndex = 0;
-    resetModalView();
     renderModal();
   }
 
@@ -5153,15 +5387,86 @@
     state.modalOverlayPath = '';
     state.modalImageView = 'crop';
     state.modalIndex = 0;
-    resetModalView();
     renderModal();
   }
 
   function selectModalOverlayImage(path) {
     if (!path || !state.modalItem?.overlayImages?.some((image) => image.fullPath === path)) return;
     state.modalOverlayPath = path;
-    resetModalView();
     renderModal();
+  }
+
+  function currentModalImage() {
+    const miss = state.modalItem;
+    if (!miss || state.modalOverlayPath) return null;
+    const images = modalImagesForView(miss);
+    return images[state.modalIndex] || null;
+  }
+
+  async function ensureWritableHandle(handle) {
+    if (!handle?.queryPermission) return true;
+    let permission = await handle.queryPermission({ mode:'readwrite' });
+    if (permission !== 'granted' && handle.requestPermission) permission = await handle.requestPermission({ mode:'readwrite' });
+    return permission === 'granted';
+  }
+
+  async function uniqueFileName(directory, fileName) {
+    const dot = fileName.lastIndexOf('.');
+    const base = dot > 0 ? fileName.slice(0, dot) : fileName;
+    const extension = dot > 0 ? fileName.slice(dot) : '';
+    let candidate = fileName;
+    for (let index = 1; index < 10000; index += 1) {
+      try {
+        await directory.getFileHandle(candidate, { create:false });
+        candidate = base + '_' + index + extension;
+      } catch (error) {
+        if (error?.name === 'NotFoundError') return candidate;
+        throw error;
+      }
+    }
+    throw new Error('DELET 폴더에서 사용할 파일 이름을 만들지 못했습니다.');
+  }
+
+  async function moveCurrentActualNgImage() {
+    if (state.modalMovePending) return;
+    const image = currentModalImage();
+    if (!image?.actualNg || !image.fileHandle || !image.rootHandleKey) return;
+    if (!window.confirm('이 이미지를 실제 NG 목록에서 제외하시겠습니까?\n원본은 삭제하지 않고 선택한 실제 NG 폴더의 DELET 폴더로 이동합니다.')) return;
+    state.modalMovePending = true;
+    try {
+      const root = await loadHandleByKey(image.rootHandleKey);
+      if (!root) throw new Error('저장된 실제 NG 폴더를 찾지 못했습니다. 폴더를 다시 선택해 주세요.');
+      if (!(await ensureWritableHandle(root))) throw new Error('실제 NG 폴더 쓰기 권한이 필요합니다.');
+      const relativeParts = String(image.relativePath || '').split(/[\\/]+/).filter(Boolean);
+      if (relativeParts[0]?.toLowerCase() === String(root.name || '').toLowerCase()) relativeParts.shift();
+      const sourceName = relativeParts.pop() || image.fileHandle.name;
+      let sourceParent = root;
+      for (const part of relativeParts) sourceParent = await sourceParent.getDirectoryHandle(part, { create:false });
+      let targetParent = await root.getDirectoryHandle('DELET', { create:true });
+      for (const part of relativeParts) targetParent = await targetParent.getDirectoryHandle(part, { create:true });
+      const targetName = await uniqueFileName(targetParent, sourceName);
+      const sourceFile = await image.fileHandle.getFile();
+      const targetHandle = await targetParent.getFileHandle(targetName, { create:true });
+      const writable = await targetHandle.createWritable();
+      try { await writable.write(sourceFile); await writable.close(); }
+      catch (error) { try { await writable.abort(); } catch (_) { } throw error; }
+      try { await sourceParent.removeEntry(sourceName); }
+      catch (error) {
+        try { await targetParent.removeEntry(targetName); } catch (_) { }
+        throw new Error('DELET 복사 후 원본 이동을 완료하지 못했습니다: ' + (error.message || error));
+      }
+      const removedKey = image.key;
+      state.ngImages = state.ngImages.filter((item) => item.key !== removedKey);
+      state.modalItem.images = (state.modalItem.images || []).filter((item) => item.key !== removedKey);
+      rebuildModel(false);
+      const remaining = modalImagesForView(state.modalItem);
+      if (!remaining.length) closeModal();
+      else { state.modalIndex = Math.min(state.modalIndex, remaining.length - 1); renderModal(); }
+      showToast('이미지를 실제 NG 폴더의 DELET 폴더로 이동했습니다.');
+    } catch (error) {
+      console.error(error);
+      showToast('이미지를 이동하지 못했습니다: ' + (error.message || error), true);
+    } finally { state.modalMovePending = false; }
   }
 
   function closeModal() {
@@ -5176,7 +5481,6 @@
     state.modalIndex = 0;
     state.modalImageView = 'source';
     state.modalOverlayPath = '';
-    state.modalHeatmapLoading = false;
     state.modalZoom = 1;
     state.modalPanX = 0;
     state.modalPanY = 0;
@@ -5238,6 +5542,21 @@
         const miss = { key, cellId: 'P163GG22M2100001', position: 'CA(TOP)', images: [{ file: blob, relativePath: 'debug/CA(TOP)/sample.png' }], record: { tools: { Crack: { tool: 'Crack', result: 'OK', representativeScore: 0.75 } } } };
         if (!state.model) state.model = { tools: ['Crack'], records: [], misses: [], detectedActual: new Set() };
         state.model.misses = [miss]; openMissModal(key);
+      },
+      openViewerRegression() {
+        const svg = (label, color) => new File([`<svg xmlns="http://www.w3.org/2000/svg" width="1000" height="600"><rect width="100%" height="100%" fill="${color}"/><text x="50%" y="50%" fill="white" font-size="52" text-anchor="middle">${label}</text></svg>`], `${label}.svg`, {type:'image/svg+xml'});
+        const record = { tools:{ Crack:{tool:'Crack',result:'NG',representativeScore:.74} } };
+        state.modalMissKey = null;
+        state.modalItem = {
+          key:'debug-viewer', cellId:'P163GG23M2100004', position:'AN(TOP)', label:'Viewer Regression', record,
+          images:[
+            { file:svg('Original 1','#14213d'), relativePath:'debug/original-1.svg', name:'original-1.svg', viewKind:'source' },
+            { file:svg('Original 2','#1d3557'), relativePath:'debug/original-2.svg', name:'original-2.svg', viewKind:'source' },
+            { file:svg('Crop','#264653'), relativePath:'debug/crop.svg', name:'crop.svg', viewKind:'crop' }
+          ],
+          overlayImages:[{ file:svg('Crack Heatmap','#7f1d1d'), fullPath:'debug/heatmap.svg', relativePath:'debug/heatmap.svg', name:'Crack Heatmap', toolName:'Crack' }]
+        };
+        state.modalIndex = 0; state.modalImageView = 'source'; state.modalOverlayPath = ''; resetModalView(); renderModal();
       },
       openSimulation() {
         state.simulationMode = 'integrated';
@@ -5343,6 +5662,7 @@
     applyTheme();
     createExtensionDom();
     installInteractionGuards();
+    installClassificationViewportGuard();
     installLegacyAiSuggestRuntimeBridge();
     patchReactHeader();
     const observer = new MutationObserver(() => patchReactHeader());

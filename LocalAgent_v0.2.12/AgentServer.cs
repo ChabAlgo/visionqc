@@ -1334,7 +1334,9 @@ namespace VisionQC.LocalAgent
                         OutputRoot = request.outputRoot ?? "",
                         ConfigJson = _json.Serialize(request),
                         NamingProfile = request.namingProfile,
-                        NamingProfileJson = _json.Serialize(request.namingProfile ?? new NamingProfile())
+                        NamingProfileJson = _json.Serialize(request.namingProfile ?? new NamingProfile()),
+                        WorkspaceType = (request.mode ?? "green").Trim().ToLowerInvariant(),
+                        WorkspacesByPosition = BuildHistoryWorkspaceMap(request)
                     });
                     _simulationHistoryWriteFailed = false;
                 }
@@ -1344,6 +1346,36 @@ namespace VisionQC.LocalAgent
                 _simulationHistorySession = null;
                 AppendAgentLog("WARN", "SQLite Simulation 이력 시작 실패(검사는 계속 진행): " + ex.Message);
             }
+        }
+
+        private static Dictionary<string, SqliteRunStore.HistoryWorkspaceValue> BuildHistoryWorkspaceMap(AgentStartRequest request)
+        {
+            var result = new Dictionary<string, SqliteRunStore.HistoryWorkspaceValue>(StringComparer.OrdinalIgnoreCase);
+            string mode = (request == null ? "green" : request.mode ?? "green").Trim().ToLowerInvariant();
+            foreach (AgentPositionRequest position in request == null || request.positions == null ? new List<AgentPositionRequest>() : request.positions)
+            {
+                if (position == null || !position.enabled) continue;
+                string greenPath = mode == "blue" ? "" : FirstNonEmpty(position.greenWorkspacePath, position.workspacePath);
+                string bluePath = mode == "green" ? "" : FirstNonEmpty(position.blueWorkspacePath, position.workspacePath);
+                string greenName = string.IsNullOrWhiteSpace(greenPath) ? "" : Path.GetFileName(greenPath);
+                string blueName = string.IsNullOrWhiteSpace(bluePath) ? "" : Path.GetFileName(bluePath);
+                string name = mode == "integrated"
+                    ? string.Join(" + ", new[] { greenName, blueName }.Where(x => !string.IsNullOrWhiteSpace(x)))
+                    : FirstNonEmpty(mode == "blue" ? blueName : greenName, greenName, blueName);
+                string key = mode + "|G:" + NormalizeHistoryWorkspacePath(greenPath) + "|B:" + NormalizeHistoryWorkspacePath(bluePath);
+                var value = new SqliteRunStore.HistoryWorkspaceValue { Type = mode, Name = name, Key = key };
+                string displayName = FirstNonEmpty(position.displayName, position.key);
+                if (!string.IsNullOrWhiteSpace(displayName)) result[displayName] = value;
+                if (!string.IsNullOrWhiteSpace(position.key)) result[position.key] = value;
+            }
+            return result;
+        }
+
+        private static string NormalizeHistoryWorkspacePath(string path)
+        {
+            if (string.IsNullOrWhiteSpace(path)) return "";
+            try { return Path.GetFullPath(path.Trim()).TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar).ToLowerInvariant(); }
+            catch { return path.Trim().ToLowerInvariant(); }
         }
 
         private void AppendSimulationHistory(LiveAnalysisRecord record)

@@ -77,6 +77,9 @@ namespace VisionQC.LocalAgent
         public string processedPath { get; set; }
         public string cellId { get; set; }
         public string position { get; set; }
+        public string workspaceType { get; set; }
+        public string workspaceName { get; set; }
+        public string workspaceKey { get; set; }
         public string totalResult { get; set; }
         public string judgement { get; set; }
         // CSV 열 또는 파일명 규칙에서 계산한 촬영 시각입니다. 없으면 파일명 규칙 결과를 사용합니다.
@@ -98,8 +101,11 @@ namespace VisionQC.LocalAgent
         public string fromDate { get; set; }
         public string toDate { get; set; }
         public string cellId { get; set; }
+        public List<string> cellIds { get; set; }
         public string position { get; set; }
         public string tool { get; set; }
+        public string workspaceType { get; set; }
+        public string workspaceKey { get; set; }
         public string toolResult { get; set; }
         public string totalResult { get; set; }
         public string sourceName { get; set; }
@@ -121,6 +127,21 @@ namespace VisionQC.LocalAgent
         public long uniqueCellCount { get; set; }
         public List<AgentHistoryDailySummary> daily { get; set; } = new List<AgentHistoryDailySummary>();
         public List<AgentHistoryImageRecord> items { get; set; } = new List<AgentHistoryImageRecord>();
+        public AgentHistoryFilterOptions filterOptions { get; set; } = new AgentHistoryFilterOptions();
+    }
+
+    public sealed class AgentHistoryFilterOptions
+    {
+        public List<string> positions { get; set; } = new List<string>();
+        public List<string> tools { get; set; } = new List<string>();
+        public List<string> workspaceTypes { get; set; } = new List<string>();
+        public List<AgentHistoryWorkspaceOption> workspaces { get; set; } = new List<AgentHistoryWorkspaceOption>();
+    }
+
+    public sealed class AgentHistoryWorkspaceOption
+    {
+        public string value { get; set; }
+        public string label { get; set; }
     }
 
     public sealed class AgentHistoryDailySummary
@@ -141,6 +162,9 @@ namespace VisionQC.LocalAgent
         public string processedPath { get; set; }
         public string cellId { get; set; }
         public string position { get; set; }
+        public string workspaceType { get; set; }
+        public string workspaceName { get; set; }
+        public string workspaceKey { get; set; }
         public string totalResult { get; set; }
         public string judgement { get; set; }
         public string captureTimestamp { get; set; }

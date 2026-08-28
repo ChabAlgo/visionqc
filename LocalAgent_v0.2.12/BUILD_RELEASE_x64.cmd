@@ -17,7 +17,7 @@ if not exist "%VSWHERE%" (
   pause
   exit /b 1
 )
-for /f "usebackq delims=" %%I in ("%VSWHERE% -latest -products * -requires Microsoft.Component.MSBuild -find MSBuild\**\Bin\MSBuild.exe") do set "MSBUILD=%%I"
+for /f "usebackq delims=" %%I in (`"%VSWHERE%" -latest -products * -requires Microsoft.Component.MSBuild -find MSBuild\**\Bin\MSBuild.exe`) do set "MSBUILD=%%I"
 if not defined MSBUILD (
   echo [FAILED] MSBuild.exe not found
   pause

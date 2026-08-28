@@ -12,8 +12,9 @@ test('CSV FullPath is retained and used before manually selected Actual NG image
   assert.match(js, /function findFullPathColumn/);
   assert.match(js, /fullPath: fullPathIndex >= 0/);
   assert.match(js, /function csvImagesForRecord/);
-  assert.match(js, /CSV FullPath Image/);
-  assert.match(js, /\/api\/image\/preview/);
+  assert.match(js, /검사 원본 이미지/);
+  assert.match(js, /function originalPathForViewer/);
+  assert.match(js, /historyLookupPath/);  assert.match(js, /\/api\/image\/preview/);
   const start = js.indexOf('function csvFullPathValue');
   const end = js.indexOf('function findFullPathColumn', start);
   const csvFullPathValue = new Function(`${js.slice(start, end)}; return csvFullPathValue;`)();

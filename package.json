@@ -1,11 +1,9 @@
 {
   "name": "visionqc-browser-regression",
   "private": true,
-  "version": "4.7.9",
-  "type": "module",
+  "version": "4.7.10",  "type": "module",
   "scripts": {
-    "test": "node --test tests/v4434-regression.test.mjs tests/picker-multi-folder-regression.test.mjs tests/offline-package.test.mjs tests/naming-profile-regression.test.mjs tests/history-image-regression.test.mjs tests/v470-history-inspection-regression.test.mjs tests/v477-classification-light-theme.test.mjs tests/v478-analysis-heatmap.test.mjs tests/v479-integrated-viewer.test.mjs LocalAgent_v0.2.12/tests/v0212-static.test.mjs",
-    "test:browser": "playwright test"
+    "test": "node --test tests/v4434-regression.test.mjs tests/picker-multi-folder-regression.test.mjs tests/offline-package.test.mjs tests/naming-profile-regression.test.mjs tests/history-image-regression.test.mjs tests/v470-history-inspection-regression.test.mjs tests/v477-classification-light-theme.test.mjs tests/v478-analysis-heatmap.test.mjs tests/v479-integrated-viewer.test.mjs tests/v4710-original-crop-viewer.test.mjs tests/v4710-dashboard-history-viewer-refinement.test.mjs LocalAgent_v0.2.12/tests/v0212-static.test.mjs",    "test:browser": "playwright test"
   },
   "devDependencies": {
     "@playwright/test": "1.62.1"
