@@ -1,7 +1,7 @@
 (() => {
   'use strict';
 
-  const VERSION = '4.7.13';
+  const VERSION = '4.7.14';
   const DEFAULT_POSITION_DEFS = [
     { key:'CA_TOP', name:'CA(TOP)' },
     { key:'AN_TOP', name:'AN(TOP)' },
@@ -25,8 +25,8 @@
   const NG_POSITION_PREFIX = 'ng-position:';
   const IMG_RE = /\.(png|jpe?g|bmp|gif|webp|tif?f)$/i;
   const LOCAL_AGENT_URL = 'http://127.0.0.1:17891';
-  const EXPECTED_AGENT_VERSION = '1.3.3';
-  const AGENT_INSTALLER_URL = './downloads/VisionQC_Agent_Installer_v1.3.3.exe';
+  const EXPECTED_AGENT_VERSION = '1.3.4';
+  const AGENT_INSTALLER_URL = './downloads/VisionQC_Agent_Installer_v1.3.4.exe';
   const OFFLINE_PACKAGE_URL = './downloads/VisionQC_Offline_v4.7.9.zip';
   // SQLite에는 사용자가 명시적으로 남기려는 두 종류의 결과만 표시한다.
   // 이전 버전의 단발 검사(single-inspection) 이력은 보존하되 화면 집계에서는 제외한다.
@@ -127,6 +127,9 @@
     analysisPointMap: new Map(),
     analysisLiveRenderPending: false,
     analysisDropdownOpenKind: '',
+    liveUiPointerActive: false,
+    liveUiRenderPending: false,
+    liveUiRenderTimer: null,
     historyImporting: false,
     historyLoaded: false,
     historyLoading: false,
@@ -401,7 +404,17 @@
     if (!window.__VISIONQC_V437_GLOBAL_EVENTS_BOUND__) {
       window.__VISIONQC_V437_GLOBAL_EVENTS_BOUND__ = true;
       document.body.addEventListener('click', handleDelegatedClick);
-      document.addEventListener('click', () => { closeAnalysisDropdowns(); flushPendingAnalysisRender(); });
+      document.addEventListener('click', () => { closeAnalysisDropdowns(); flushPendingAnalysisRender(); flushPendingLiveUiRender(); });
+      document.addEventListener('pointerdown', (event) => {
+        state.liveUiPointerActive = !!event.target?.closest?.('#vq43-page');
+      }, true);
+      const finishLiveUiPointer = () => {
+        if (!state.liveUiPointerActive) return;
+        state.liveUiPointerActive = false;
+        setTimeout(flushPendingLiveUiRender, 0);
+      };
+      document.addEventListener('pointerup', finishLiveUiPointer, true);
+      document.addEventListener('pointercancel', finishLiveUiPointer, true);
       window.addEventListener('keydown', (event) => {
         if (event.key === 'Escape') {
           if (state.notificationPanelOpen) closeNotificationCenter();
@@ -753,6 +766,34 @@
     if (state.page !== 'analysis' || !state.analysisLiveRenderPending || isAnalysisDropdownOpen()) return;
     state.analysisLiveRenderPending = false;
     renderAnalysisPreserveDropdown();
+  }
+
+  function flushPendingLiveUiRender() {
+    if (!state.liveUiRenderPending || state.liveUiPointerActive) return;
+    state.liveUiRenderPending = false;
+    if (state.liveUiRenderTimer) {
+      clearTimeout(state.liveUiRenderTimer);
+      state.liveUiRenderTimer = null;
+    }
+    if (state.page === 'main') {
+      renderDashboard();
+      bindPageControls();
+    } else if (state.page === 'analysis') {
+      if (isAnalysisDropdownOpen()) {
+        state.analysisLiveRenderPending = true;
+        return;
+      }
+      renderAnalysisPreserveDropdown();
+    }
+  }
+
+  function queueLiveUiRender() {
+    state.liveUiRenderPending = true;
+    if (state.liveUiRenderTimer) return;
+    state.liveUiRenderTimer = setTimeout(() => {
+      state.liveUiRenderTimer = null;
+      flushPendingLiveUiRender();
+    }, 100);
   }
 
   function closeAnalysisDropdowns(except = null) {
@@ -1675,6 +1716,7 @@
         const ngScores = observations.filter((item) => item.result === 'NG' && Number.isFinite(item.score)).map((item) => item.score);
         const okScores = observations.filter((item) => item.result === 'OK' && Number.isFinite(item.score)).map((item) => item.score);
         const representative = baseResult === 'NG' ? ngScores : baseResult === 'OK' ? okScores : scores;
+        const overlayPath = observations.map((item) => String(item.overlayPath || '').trim()).find(Boolean) || '';
         tools[tool] = {
           tool,
           baseResult,
@@ -1683,6 +1725,7 @@
           ngScores,
           okScores,
           representativeScore: representative.length ? Math.min(...representative) : null,
+          overlayPath,
           threshold: 0.50
         };
       });
@@ -2230,7 +2273,7 @@
   function downloadScoreFilterCsv() {
     const cutoffInput = $('#vq43-score-cutoff');
     state.analysisScoreCutoff = clampScore(cutoffInput?.value ?? state.analysisScoreCutoff, 0.80);
-    const points = scorePoints(state.analysisTool, state.analysisScope, state.analysisPosition, analysisScorePointOptions());
+    const points = sortAnalysisScorePoints(scorePoints(state.analysisTool, state.analysisScope, state.analysisPosition, analysisScorePointOptions()));
     const filtered = points.filter((point) => state.analysisScoreCompare === 'LTE' ? point.score <= state.analysisScoreCutoff : point.score >= state.analysisScoreCutoff);
     if (!filtered.length) return showToast('조건에 맞는 Score 데이터가 없습니다.', true);
     const lines = [['Cell ID', 'Position', 'Tool', 'Result', 'Score', 'Condition', 'FullPath', 'Source_File', 'Source_Row'].map(csvCell).join(',')];
@@ -2243,6 +2286,16 @@
   function customDropdown(kind, label, value, options) {
     const selected = options.find((option) => option.value === value) || options[0];
     return `<div class="vq43-dropdown-field"><label>${escapeHtml(label)}</label><div class="vq43-dropdown" data-vq-dropdown="${kind}"><button type="button" class="vq43-dropdown-button" aria-haspopup="listbox" aria-expanded="false"><span>${escapeHtml(selected?.label || '')}</span><b aria-hidden="true">⌄</b></button><div class="vq43-dropdown-menu" role="listbox">${options.map((option) => `<button type="button" class="vq43-dropdown-option ${option.value === value ? 'selected' : ''}" data-value="${escapeHtml(option.value)}" role="option" aria-selected="${option.value === value}">${escapeHtml(option.label)}</button>`).join('')}</div></div></div>`;
+  }
+
+  function sortAnalysisScorePoints(points) {
+    return [...(points || [])].sort((left, right) =>
+      Number(left.score || 0) - Number(right.score || 0) ||
+      String(left.position || '').localeCompare(String(right.position || '')) ||
+      String(left.cellId || '').localeCompare(String(right.cellId || '')) ||
+      Number(left.sourceRowNumber || 0) - Number(right.sourceRowNumber || 0) ||
+      String(left.key || '').localeCompare(String(right.key || ''))
+    );
   }
 
   function renderAnalysis() {
@@ -2267,8 +2320,7 @@
     }[state.analysisScope];
     $('#vq43-page').innerHTML = `
       <div class="vq43-content vq43-analysis-page"><div class="vq43-eyebrow" style="color:#a78bfa">Detailed Analysis</div><h1 class="vq43-title">Tool별 Score 분석</h1><p class="vq43-subtitle">Tool 판정 결과와 Score를 조건별로 분리하여 분석합니다.</p>
-        <div class="vq43-analysis-upper-grid"><div class="vq43-analysis-left"><div class="vq43-filter">${customDropdown('position', 'Position', state.analysisPosition, [{ value: 'ALL', label: '전체 Position' }, ...positionNames().map((position) => ({ value: position, label: position }))])}${customDropdown('tool', 'Tool', state.analysisTool, model.tools.map((tool) => ({ value: tool, label: tool })))}${customDropdown('scope', '분석 범위', state.analysisScope, [{ value: 'TOOL_OK', label: '선택 Tool의 OK Score' }, { value: 'TOOL_NG', label: '선택 Tool의 NG Score' }, { value: 'ACTUAL_NG_TOOL_NG', label: 'NG Image를 NG로 검출한 Score' }, { value: 'ACTUAL_NG_TOOL_OK', label: 'NG Image를 OK로 판정한 Score' }])}</div><div class="vq43-kpi-grid">${kpi('Score 데이터', numberText(points.length), `OK ${okValues.length} · NG ${ngValues.length}`)}${kpi('평균 Score', scoreText(avg), '그래프 파란 점선', 'blue')}${kpi('최소 Score', scoreText(min), '그래프 노란 강조', 'amber')}${kpi('최대 / 중앙값', scoreText(max), `Median ${scoreText(med)}`)}</div></div><div class="vq43-analysis-right"><div class="vq43-analysis-export"><div><strong>Score 조건 CSV 저장</strong><span>현재 Position · Tool · 분석 범위 안에서 Score 조건으로 필터합니다.</span></div><label>Score<input id="vq43-score-cutoff" type="number" inputmode="decimal" min="0.50" max="1.00" step="0.01" value="${state.analysisScoreCutoff.toFixed(2)}"></label>${customDropdown('compare', '조건', state.analysisScoreCompare, [{ value: 'GTE', label: '이상 (≥)' }, { value: 'LTE', label: '이하 (≤)' }])}<button class="vq43-btn vq43-btn-green" data-vq-action="download-score-filter">CSV 저장</button></div><section class="vq43-actual-ng-minimum"><div><strong>실제 NG 검출 최소 Score</strong><p>선택 Tool이 실제 NG 이미지를 NG로 검출한 점수만 대상으로 계산합니다. 다른 Tool이 함께 NG이고 아래 기준 이상이면 그 행은 최소값 후보에서 제외합니다.</p></div><label>다른 Tool NG 제외 기준<input id="vq43-actual-ng-exclusion-score" type="number" inputmode="decimal" min="0.50" max="1.00" step="0.01" value="${actualNgMinimum.threshold.toFixed(2)}"></label><div class="vq43-actual-ng-minimum-value"><span>조건 적용 최소</span><b>${scoreText(actualNgMinimum.min)}</b><small>후보 ${numberText(actualNgMinimum.eligible.length)} · 제외 ${numberText(actualNgMinimum.excluded.length)} / 전체 ${numberText(actualNgMinimum.candidates.length)}</small></div></section><div class="vq43-table vq43-summary-table"><div class="vq43-table-row head"><span>구분</span><span>개수</span><span>평균</span><span>최소</span><span>최대</span><span>중앙값</span></div>${scoreSummaryRow('OK', okValues)}${scoreSummaryRow('NG', ngValues)}</div></div></div>
-        <div class="vq43-note" style="margin-top:16px">${escapeHtml(scopeInfo.text)}</div>
+        <div class="vq43-analysis-upper-grid"><div class="vq43-analysis-left"><div class="vq43-filter">${customDropdown('position', 'Position', state.analysisPosition, [{ value: 'ALL', label: '전체 Position' }, ...positionNames().map((position) => ({ value: position, label: position }))])}${customDropdown('tool', 'Tool', state.analysisTool, model.tools.map((tool) => ({ value: tool, label: tool })))}${customDropdown('scope', '분석 범위', state.analysisScope, [{ value: 'TOOL_OK', label: '선택 Tool의 OK Score' }, { value: 'TOOL_NG', label: '선택 Tool의 NG Score' }, { value: 'ACTUAL_NG_TOOL_NG', label: 'NG Image를 NG로 검출한 Score' }, { value: 'ACTUAL_NG_TOOL_OK', label: 'NG Image를 OK로 판정한 Score' }])}</div><div class="vq43-note vq43-analysis-scope-note">${escapeHtml(scopeInfo.text)}</div><div class="vq43-kpi-grid">${kpi('Score 데이터', numberText(points.length), `OK ${okValues.length} · NG ${ngValues.length}`)}${kpi('평균 Score', scoreText(avg), '그래프 파란 점선', 'blue')}${kpi('최소 Score', scoreText(min), '그래프 노란 강조', 'amber')}${kpi('최대 / 중앙값', scoreText(max), `Median ${scoreText(med)}`)}</div></div><div class="vq43-analysis-right"><div class="vq43-analysis-export"><div><strong>Score 조건 CSV 저장</strong><span>현재 Position · Tool · 분석 범위 안에서 Score 조건으로 필터합니다.</span></div><label>Score<input id="vq43-score-cutoff" type="number" inputmode="decimal" min="0.50" max="1.00" step="0.01" value="${state.analysisScoreCutoff.toFixed(2)}"></label>${customDropdown('compare', '조건', state.analysisScoreCompare, [{ value: 'GTE', label: '이상 (≥)' }, { value: 'LTE', label: '이하 (≤)' }])}<button class="vq43-btn vq43-btn-green" data-vq-action="download-score-filter">CSV 저장</button></div><section class="vq43-actual-ng-minimum"><div><strong>실제 NG 검출 최소 Score</strong><p>선택 Tool이 실제 NG 이미지를 NG로 검출한 점수만 대상으로 계산합니다. 다른 Tool이 함께 NG이고 아래 기준 이상이면 그 행은 최소값 후보에서 제외합니다.</p></div><label>다른 Tool NG 제외 기준<input id="vq43-actual-ng-exclusion-score" type="number" inputmode="decimal" min="0.50" max="1.00" step="0.01" value="${actualNgMinimum.threshold.toFixed(2)}"></label><div class="vq43-actual-ng-minimum-value"><span>조건 적용 최소</span><b>${scoreText(actualNgMinimum.min)}</b><small>후보 ${numberText(actualNgMinimum.eligible.length)} · 제외 ${numberText(actualNgMinimum.excluded.length)} / 전체 ${numberText(actualNgMinimum.candidates.length)}</small></div></section><div class="vq43-table vq43-summary-table"><div class="vq43-table-row head"><span>구분</span><span>개수</span><span>평균</span><span>최소</span><span>최대</span><span>중앙값</span></div>${scoreSummaryRow('OK', okValues)}${scoreSummaryRow('NG', ngValues)}</div></div></div>
         <div class="vq43-chart-grid"><div class="vq43-chart-card"><div class="vq43-chart-head"><div><h3>Score 분포</h3><p>${escapeHtml(scopeInfo.color)}</p></div><span>▥</span></div><div class="vq43-chart-area">${points.length ? histogramSvg(points) : '<div class="vq43-chart-empty">해당 조건의 Score가 없습니다.</div>'}</div></div><div class="vq43-chart-card"><div class="vq43-chart-head"><div><h3>Cell별 Score</h3><p>낮은 Score부터 정렬 · 점 클릭 시 CSV FullPath 또는 실제 NG 이미지를 표시합니다.</p></div><button class="vq43-chart-expand-btn" type="button" data-vq-action="open-chart-modal" ${points.length ? '' : 'disabled'}>⛶ 확대 보기</button></div><div class="vq43-chart-area vq43-analysis-scatter">${points.length ? scatterSvg(points,{interactive:true}) : '<div class="vq43-chart-empty">해당 조건의 Score가 없습니다.</div>'}</div></div></div>
       </div>`;
   }
@@ -2303,7 +2355,7 @@
   }
 
   function scatterSvg(points, options = {}) {
-    const sorted = [...points].sort((a,b) => a.score-b.score), values = sorted.map((point) => point.score), avg = mean(values), min = values.length ? Math.min(...values) : null;
+    const sorted = sortAnalysisScorePoints(points), values = sorted.map((point) => point.score), avg = mean(values), min = values.length ? Math.min(...values) : null;
     const width=options.width || 900,height=options.height || 300,left=options.large?72:54,right=options.large?34:20,top=options.large?38:24,bottom=options.large?58:42,plotW=width-left-right,plotH=height-top-bottom;
     const minScore = 0.50, maxScore = 1.00, step = 0.05;
     const y = (score) => {
@@ -4023,12 +4075,7 @@
     if (data?.state && typeof data.state === 'object') state.simulationProgress = { ...state.simulationProgress, ...data.state };
     else if (Number.isFinite(Number(data?.processed))) state.simulationProgress.processed = Number(data.processed);
     rebuildModel(false);
-    if (state.page === 'main') {
-      renderDashboard();
-      bindPageControls();
-    } else if (state.page === 'analysis') {
-      renderAnalysisPreserveDropdown();
-    }
+    if (state.page === 'main' || state.page === 'analysis') queueLiveUiRender();
     updateSimulationStatusDom();
   }
 
@@ -5114,24 +5161,87 @@
     renderModal();
   }
 
-  function openScorePointImage(pointKey) {
-    const point = state.analysisPointMap.get(pointKey);
-    if (!point) return;
-    const record = state.model?.recordMap.get(point.recordKey);
-    if (!record) return;
+  function viewerImagePathKey(image) {
+    return String(image?.fullPath || image?.relativePath || image?.name || '')
+      .trim().replace(/\//g, '\\').replace(/\\+/g, '\\').toLowerCase();
+  }
+
+  function viewerImageBaseName(image) {
+    return viewerImagePathKey(image).split('\\').pop() || '';
+  }
+
+  function mergeScoreViewerImages(csvImages, actualImages) {
+    const merged = [];
+    [...(csvImages || []), ...(actualImages || [])].forEach((candidate) => {
+      const candidateView = candidate?.viewKind === 'crop' ? 'crop' : 'source';
+      const candidatePath = viewerImagePathKey(candidate);
+      const candidateName = viewerImageBaseName(candidate);
+      const index = merged.findIndex((existing) => {
+        const existingView = existing?.viewKind === 'crop' ? 'crop' : 'source';
+        if (existingView !== candidateView) return false;
+        const existingPath = viewerImagePathKey(existing);
+        return !!candidatePath && (existingPath === candidatePath || (!!candidateName && viewerImageBaseName(existing) === candidateName));
+      });
+      if (index < 0) {
+        merged.push({ ...candidate, viewKind:candidateView });
+        return;
+      }
+      const existing = merged[index];
+      merged[index] = {
+        ...existing,
+        ...candidate,
+        viewKind:candidateView,
+        fullPath:existing.fullPath || candidate.fullPath || '',
+        relativePath:existing.relativePath || candidate.relativePath || candidate.fullPath || '',
+        historyLookupPath:existing.historyLookupPath || candidate.historyLookupPath || '',
+        name:existing.name || candidate.name || '',
+        key:candidate.key || existing.key,
+        file:candidate.file || existing.file,
+        fileHandle:candidate.fileHandle || existing.fileHandle,
+        rootHandleKey:candidate.rootHandleKey || existing.rootHandleKey,
+        actualNg:Boolean(existing.actualNg || candidate.actualNg)
+      };
+    });
+    return merged;
+  }
+
+  function scorePointMedia(point) {
+    const record = state.model?.recordMap.get(point?.recordKey);
+    if (!record) return null;
     const csvImages = csvImagesForRecord(record);
     const actualImages = state.model?.actualMap.get(point.recordKey) || [];
-    const images = [...csvImages, ...actualImages];
-    const overlayImages = overlayImagesForRecord(record);
+    return {
+      record,
+      csvImages,
+      actualImages,
+      images:mergeScoreViewerImages(csvImages, actualImages),
+      overlayImages:overlayImagesForRecord(record)
+    };
+  }
+
+  function openScorePointImage(pointKey, options = {}) {
+    const point = state.analysisPointMap.get(pointKey);
+    if (!point) return;
+    const media = scorePointMedia(point);
+    if (!media) return;
+    const { record, csvImages, images, overlayImages } = media;
     if (!images.length && !overlayImages.length) return showToast('CSV FullPath, 실제 NG 이미지 또는 Heatmap Overlay가 없습니다.', true);
+    const preserveView = !!options.preserveView;
+    const previousView = state.modalImageView;
+    const previousOverlay = state.modalItem?.overlayImages?.find((item) => item.fullPath === state.modalOverlayPath);
+    const pointIndex = state.analysisPoints.findIndex((candidate) => candidate.key === point.key);
+    const modalKey = `score:${point.key}`;
     state.modalMissKey = null;
-    state.modalItem = { key: point.recordKey, cellId: point.cellId, position: point.position, record, images, overlayImages, label: csvImages.length ? '검사 원본 이미지' : 'Actual NG Image' };
+    state.modalItem = { key:modalKey, scorePointKey:point.key, scorePointIndex:pointIndex, cellId: point.cellId, position: point.position, record, images, overlayImages, label: csvImages.length ? '검사 원본 이미지' : 'Actual NG Image' };
     state.modalIndex = 0;
-    state.modalImageView = 'source';
-    state.modalOverlayPath = images.length ? '' : (overlayImages[0]?.fullPath || '');
-    resetModalView();
+    state.modalImageView = preserveView && previousView === 'crop' && images.some((image) => image.viewKind === 'crop') ? 'crop' : 'source';
+    const matchingOverlay = preserveView && previousOverlay
+      ? overlayImages.find((overlay) => overlay.toolName === previousOverlay.toolName)
+      : null;
+    state.modalOverlayPath = matchingOverlay?.fullPath || (images.length ? '' : (overlayImages[0]?.fullPath || ''));
+    if (!preserveView) resetModalView();
     renderModal();
-    if (!overlayImages.length) hydrateModalOverlaysFromHistory(record, point.recordKey);
+    if (!overlayImages.length) hydrateModalOverlaysFromHistory(record, modalKey);
   }
 
   function csvImagesForRecord(record) {
@@ -5265,10 +5375,18 @@
     const heatmapCreate = '';
     const navigationImages = selectedOverlay ? overlayImages : displayImages;
     const navigationIndex = selectedOverlay ? Math.max(0, overlayImages.findIndex((candidate) => candidate.fullPath === selectedOverlay.fullPath)) : state.modalIndex;
-    const countText = selectedOverlay ? ('Heatmap ' + (navigationIndex + 1) + ' / ' + overlayImages.length) : ((state.modalIndex+1) + ' / ' + displayImages.length);
+    const scorePointIndex = Number.isInteger(miss.scorePointIndex) ? miss.scorePointIndex : -1;
+    const scorePointCount = scorePointIndex >= 0 ? state.analysisPoints.length : 0;
+    const scoreNavigation = scorePointCount > 1;
+    const countText = scorePointIndex >= 0
+      ? ('Score ' + (scorePointIndex + 1) + ' / ' + scorePointCount)
+      : selectedOverlay ? ('Heatmap ' + (navigationIndex + 1) + ' / ' + overlayImages.length) : ((state.modalIndex+1) + ' / ' + displayImages.length);
+    const showNavigation = scoreNavigation || navigationImages.length > 1;
+    const previousDisabled = scoreNavigation ? scorePointIndex <= 0 : navigationIndex === 0;
+    const nextDisabled = scoreNavigation ? scorePointIndex >= scorePointCount - 1 : navigationIndex >= navigationImages.length - 1;
     const canMoveActualNg = !selectedOverlay && !!image.actualNg && !!image.fileHandle && !!image.rootHandleKey;
     const moveButton = canMoveActualNg ? '<button type="button" class="vq43-modal-delete" data-vq-action="modal-move-delet">이미지 제외</button>' : '';
-    modal.innerHTML = `<div class="vq43-modal-card"><div class="vq43-modal-head"><div><small>${escapeHtml(miss.label || 'Actual NG Image')}</small><strong>${escapeHtml(miss.cellId)} · ${miss.position}</strong></div><div class="vq43-modal-head-actions">${moveButton}<button class="vq43-close" data-vq-action="close-modal">×</button></div></div>${switcher}${heatmapCreate}<div class="vq43-modal-image" id="vq43-modal-viewport"><div class="vq43-modal-media-layer"><img id="vq43-modal-zoom-image" draggable="false" src="${state.modalUrl}" alt="${escapeHtml(image.file?.name || image.name || image.relativePath)}"></div><div class="vq43-modal-zoom-tools"><span id="vq43-modal-zoom-value">100%</span><button data-vq-action="modal-reset">원위치</button></div><div class="vq43-modal-help">마우스 휠: 확대/축소 · 드래그: 이동 · 더블클릭: 원위치</div>${navigationImages.length>1?`<button class="vq43-modal-nav prev" data-vq-action="modal-prev" ${navigationIndex===0?'disabled':''}>‹</button><button class="vq43-modal-nav next" data-vq-action="modal-next" ${navigationIndex>=navigationImages.length-1?'disabled':''}>›</button>`:''}</div><div class="vq43-modal-foot"><div class="vq43-modal-path"><span>${escapeHtml(image.relativePath)}</span><b>${countText}</b></div><div class="vq43-modal-scores">${scores}</div></div></div>`;
+    modal.innerHTML = `<div class="vq43-modal-card"><div class="vq43-modal-head"><div><small>${escapeHtml(miss.label || 'Actual NG Image')}</small><strong>${escapeHtml(miss.cellId)} · ${miss.position}</strong></div><div class="vq43-modal-head-actions">${moveButton}<button class="vq43-close" data-vq-action="close-modal">×</button></div></div>${switcher}${heatmapCreate}<div class="vq43-modal-image" id="vq43-modal-viewport"><div class="vq43-modal-media-layer"><img id="vq43-modal-zoom-image" draggable="false" src="${state.modalUrl}" alt="${escapeHtml(image.file?.name || image.name || image.relativePath)}"></div><div class="vq43-modal-zoom-tools"><span id="vq43-modal-zoom-value">100%</span><button data-vq-action="modal-reset">원위치</button></div><div class="vq43-modal-help">마우스 휠: 확대/축소 · 드래그: 이동 · 더블클릭: 원위치</div>${showNavigation?`<button class="vq43-modal-nav prev" data-vq-action="modal-prev" ${previousDisabled?'disabled':''}>‹</button><button class="vq43-modal-nav next" data-vq-action="modal-next" ${nextDisabled?'disabled':''}>›</button>`:''}</div><div class="vq43-modal-foot"><div class="vq43-modal-path"><span>${escapeHtml(image.relativePath)}</span><b>${countText}</b></div><div class="vq43-modal-scores">${scores}</div></div></div>`;
     modal.classList.add('open');
     applyModalTransform();
     bindModalImageControls();
@@ -5367,6 +5485,10 @@
   function changeModalImage(delta) {
     const miss = state.modalItem;
     if (!miss) return;
+    if (Number.isInteger(miss.scorePointIndex)) {
+      changeScorePointImage(delta);
+      return;
+    }
     if (state.modalOverlayPath) {
       const overlays = Array.isArray(miss.overlayImages) ? miss.overlayImages : [];
       const current = overlays.findIndex((image) => image.fullPath === state.modalOverlayPath);
@@ -5377,6 +5499,19 @@
       state.modalIndex = Math.max(0, Math.min(images.length - 1, state.modalIndex + delta));
     }
     renderModal();
+  }
+
+  function changeScorePointImage(delta) {
+    const currentIndex = Number(state.modalItem?.scorePointIndex);
+    if (!Number.isInteger(currentIndex) || !delta) return;
+    const direction = delta < 0 ? -1 : 1;
+    for (let index = currentIndex + direction; index >= 0 && index < state.analysisPoints.length; index += direction) {
+      const point = state.analysisPoints[index];
+      const media = scorePointMedia(point);
+      if (!media || (!media.images.length && !media.overlayImages.length)) continue;
+      openScorePointImage(point.key, { preserveView:true });
+      return;
+    }
   }
 
   function selectModalOriginalImage() {
@@ -5562,6 +5697,54 @@
           overlayImages:[{ file:svg('Crack Heatmap','#7f1d1d'), fullPath:'debug/crack-heatmap.svg', relativePath:'debug/crack-heatmap.svg', name:'Crack Heatmap', toolName:'Crack' },{ file:svg('Welding Heatmap','#78350f'), fullPath:'debug/welding-heatmap.svg', relativePath:'debug/welding-heatmap.svg', name:'Welding Heatmap', toolName:'Welding' }]
         };
         state.modalIndex = 0; state.modalImageView = 'source'; state.modalOverlayPath = ''; resetModalView(); renderModal();
+      },
+      openScoreViewerRegression() {
+        const svg = (label, color) => new File([`<svg xmlns="http://www.w3.org/2000/svg" width="1800" height="2600"><rect width="100%" height="100%" fill="${color}"/><text x="50%" y="50%" fill="white" font-size="72" text-anchor="middle">${label}</text></svg>`], `${label}.svg`, {type:'image/svg+xml'});
+        const specs = [
+          { cellId:'P163GG23M2100001', score:.61, color:'#14213d' },
+          { cellId:'P163GG23M2100002', score:.72, color:'#1d3557' },
+          { cellId:'P163GG23M2100003', score:.83, color:'#264653' }
+        ];
+        const rows = specs.map((spec, index) => {
+          const name = `score-${index + 1}.svg`;
+          return {
+            sourceFileName:'score-viewer.csv',
+            sourceRowNumber:index + 2,
+            fullPath:`H:\\Grab\\${name}`,
+            cellId:spec.cellId,
+            position:'AN(TOP)',
+            totalResult:'NG',
+            tools:{ Crack:{tool:'Crack',result:'NG',score:spec.score,overlayPath:`H:\\Heatmap\\${name}`} }
+          };
+        });
+        state.resultInputs = { 'AN(TOP)':{ rows, fileName:'score-viewer.csv', fileSize:100, warnings:[] } };
+        state.ngImages = specs.map((spec, index) => {
+          const name = `score-${index + 1}.svg`;
+          return {
+            key:`debug-ng-${index + 1}`,
+            position:'AN(TOP)',
+            cellId:spec.cellId,
+            file:svg(`Score ${index + 1}`, spec.color),
+            fileHandle:{ name },
+            rootHandleKey:'debug-score-root',
+            actualNg:true,
+            relativePath:`NG/AN(TOP)/${name}`,
+            name
+          };
+        });
+        state.initialized = true;
+        rebuildModel();
+        state.analysisPosition = 'AN(TOP)';
+        state.analysisTool = 'Crack';
+        state.analysisScope = 'TOOL_NG';
+        setPage('analysis');
+        const first = state.analysisPoints[0];
+        if (first) openScorePointImage(first.key);
+        return { points:state.analysisPoints.length, images:state.modalItem?.images?.length || 0 };
+      },
+      queueLiveUiRefresh() {
+        queueLiveUiRender();
+        return true;
       },
       openSimulation() {
         state.simulationMode = 'integrated';

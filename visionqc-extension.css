@@ -769,3 +769,29 @@ body:not(.vq43-theme-light) #vq43-shell input[type="date"]::-webkit-calendar-pic
 body.vq43-theme-light #vq43-shell .vq43-analysis-page{color:#172f46!important}body.vq43-theme-light #vq43-shell .vq43-analysis-page :is(.vq43-subtitle,.vq43-filter label,.vq43-dropdown-field>label,.vq43-kpi>span,.vq43-kpi>small,.vq43-chart-head p,.vq43-analysis-export>div:first-child span,.vq43-analysis-export>label,.vq43-actual-ng-minimum p,.vq43-actual-ng-minimum label,.vq43-actual-ng-minimum-value span,.vq43-actual-ng-minimum-value small,.vq43-table-row){color:#36516c!important}body.vq43-theme-light #vq43-shell .vq43-analysis-page :is(.vq43-title,.vq43-dropdown-button,.vq43-kpi>strong,.vq43-chart-head h3,.vq43-analysis-export strong,.vq43-actual-ng-minimum strong,.vq43-table-row .tool){color:#122a42!important}body.vq43-theme-light #vq43-shell .vq43-analysis-page :is(.vq43-dropdown-button,.vq43-dropdown-menu,.vq43-analysis-export input,.vq43-actual-ng-minimum input){background:#fff!important;color:#142f49!important;border-color:#9fbed8!important}
 @media(max-width:1279px){.vq43-analysis-upper-grid{grid-template-columns:1fr}.vq43-analysis-right>.vq43-analysis-export{grid-template-columns:minmax(180px,1fr) 100px 145px auto}}
 #vq43-global-sim-progress{position:fixed;left:calc(var(--vq-rail-collapsed) + 12px);right:12px;bottom:10px;z-index:2147483000;display:grid;grid-template-columns:minmax(180px,1fr) auto 72px minmax(180px,2fr) auto;align-items:center;gap:10px;padding:8px 10px;border:1px solid #2563eb;border-radius:12px;background:rgba(5,13,24,.96);box-shadow:0 10px 35px rgba(0,0,0,.35);color:#dbeafe;backdrop-filter:blur(10px)}#vq43-global-sim-progress[hidden]{display:none!important}#vq43-global-sim-progress>div{display:flex;align-items:center;gap:8px;min-width:0}#vq43-global-sim-progress>div strong{font-size:11px;color:#60a5fa}#vq43-global-sim-progress>div span{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:10px;color:#9fb2ce}#vq43-global-sim-progress>b,#vq43-global-sim-progress>em{font-size:11px;font-style:normal;white-space:nowrap}#vq43-global-sim-progress>i{display:block;height:6px;border-radius:99px;background:#17243a;overflow:hidden}#vq43-global-sim-progress>i span{display:block;height:100%;border-radius:inherit;background:linear-gradient(90deg,#2563eb,#38bdf8)}#vq43-global-sim-progress>button{height:28px;border:1px solid #365b89;border-radius:7px;background:#102441;color:#dbeafe;padding:0 10px;font-size:10px;font-weight:800;cursor:pointer}body.vq43-menu-expanded #vq43-global-sim-progress{left:calc(var(--vq-rail-expanded) + 12px)}body.vq43-theme-light #vq43-global-sim-progress{background:rgba(246,251,255,.97);border-color:#6aa8da;color:#173852}body.vq43-theme-light #vq43-global-sim-progress>div span{color:#365a75}body.vq43-theme-light #vq43-global-sim-progress>button{background:#e8f4ff;color:#173f61;border-color:#8bb7d8}@media(max-width:900px){#vq43-global-sim-progress{left:10px;right:10px;grid-template-columns:1fr auto 58px}#vq43-global-sim-progress>i{grid-column:1/-1}#vq43-global-sim-progress>button{display:none}}
+
+/* v4.7.14 - unclipped threshold spinner, stable live clicks and full-fit score viewer */
+@media(min-width:1280px){
+  .vq43-main-dashboard .vq43-tool-score-meta{overflow:visible!important}
+  .vq43-main-dashboard .vq43-tool-score-meta label{overflow:visible!important}
+  .vq43-main-dashboard .vq43-threshold-input{
+    appearance:auto!important;
+    box-sizing:border-box!important;
+    width:64px!important;
+    min-width:64px!important;
+    flex:0 0 64px!important;
+    height:32px!important;
+    min-height:32px!important;
+    padding:3px 4px!important;
+    font-size:10px!important;
+    line-height:normal!important;
+    overflow:visible!important
+  }
+}
+.vq43-analysis-left>.vq43-analysis-scope-note{margin:0!important;min-height:0;padding:9px 11px;line-height:1.45}
+#vq43-global-sim-progress{pointer-events:none!important}
+#vq43-global-sim-progress>button{pointer-events:auto!important}
+#vq43-modal{padding:12px!important}
+#vq43-modal .vq43-modal-card{width:calc(100vw - 24px)!important;height:calc(100vh - 24px)!important;max-width:none!important;max-height:none!important}
+#vq43-modal .vq43-modal-media-layer{position:absolute!important;inset:0!important;padding:0!important;display:block!important;overflow:hidden!important}
+#vq43-modal .vq43-modal-media-layer img{position:absolute!important;inset:0!important;width:100%!important;height:100%!important;max-width:none!important;max-height:none!important;object-fit:contain!important;object-position:center center!important}

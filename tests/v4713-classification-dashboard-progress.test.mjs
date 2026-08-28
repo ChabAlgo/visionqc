@@ -31,7 +31,7 @@ test('main dashboard uses two Position columns and nests misses below Position N
   assert.match(js, /<span>정상 검출<\/span>/);
   assert.match(js, /const misses = \$\('\.vq43-main-misses', content\);[\s\S]*left\.append\(misses\)/);
   assert.match(css, /vq43-main-dashboard \.vq43-position-grid\{grid-template-columns:repeat\(2,minmax\(0,1fr\)\)!important/);
-  assert.match(css, /vq43-threshold-input[^{]*\{[^}]*width:56px!important[^}]*font-size:9px!important/);
+  assert.match(css, /vq43-threshold-input[^{]*\{[^}]*width:64px!important[^}]*font-size:10px!important/);
 });
 
 test('analysis upper area follows left filters and right condition-summary order', () => {

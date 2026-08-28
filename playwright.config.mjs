@@ -2,7 +2,7 @@ import { defineConfig } from '@playwright/test';
 
 export default defineConfig({
   testDir: './tests',
-  testMatch: ['browser-regression.spec.mjs', 'v4712-browser.spec.mjs', 'v4713-browser.spec.mjs'],
+  testMatch: ['browser-regression.spec.mjs', 'v4712-browser.spec.mjs', 'v4713-browser.spec.mjs', 'v4714-browser.spec.mjs'],
   fullyParallel: false,
   workers: 1,
   retries: process.env.CI ? 1 : 0,

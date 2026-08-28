@@ -24,8 +24,9 @@ test('classification relies on the native generation-safe focal restoration only
 test('analysis live render preserves an open dropdown instead of freezing updates', () => {
   assert.ok(js.includes('function renderAnalysisPreserveDropdown()'));
   assert.ok(js.includes("restored.classList.add('open')"));
-  assert.match(js, /else if \(state\.page === 'analysis'\) \{\s*renderAnalysisPreserveDropdown\(\);/);
-  assert.ok(!js.includes('if (isAnalysisDropdownOpen()) state.analysisLiveRenderPending = true'));
+  assert.ok(js.includes('function queueLiveUiRender()'));
+  assert.match(js, /if \(isAnalysisDropdownOpen\(\)\) \{\s*state\.analysisLiveRenderPending = true;/);
+  assert.match(js, /state\.page === 'main' \|\| state\.page === 'analysis'\) queueLiveUiRender\(\)/);
 });
 
 test('viewer arrow keys navigate four directions and retain modal transform state', () => {

@@ -78,8 +78,8 @@ test('dashboard chart, Position cards, misses and Threshold inputs fit the reque
   expect(result.positionColumns).toBe(2);
   expect(result.labels).toEqual(['실제 NG','CSV 매칭','정상 검출','미검']);
   expect(result.missesNested).toBe(true);
-  expect(result.thresholdWidth).toBeGreaterThanOrEqual(55);
-  expect(result.thresholdFont).toBeLessThanOrEqual(9);
+  expect(result.thresholdWidth).toBeGreaterThanOrEqual(63);
+  expect(result.thresholdFont).toBeLessThanOrEqual(10);
 });
 
 test('analysis uses the requested left-right order and readable compact light text', async ({ page }) => {
