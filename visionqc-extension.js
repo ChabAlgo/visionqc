@@ -1,7 +1,7 @@
 (() => {
   'use strict';
 
-  const VERSION = '4.7.11';
+  const VERSION = '4.7.12';
   const DEFAULT_POSITION_DEFS = [
     { key:'CA_TOP', name:'CA(TOP)' },
     { key:'AN_TOP', name:'AN(TOP)' },
@@ -25,8 +25,8 @@
   const NG_POSITION_PREFIX = 'ng-position:';
   const IMG_RE = /\.(png|jpe?g|bmp|gif|webp|tif?f)$/i;
   const LOCAL_AGENT_URL = 'http://127.0.0.1:17891';
-  const EXPECTED_AGENT_VERSION = '1.3.1';
-  const AGENT_INSTALLER_URL = './downloads/VisionQC_Agent_Installer_v1.3.1.exe';
+  const EXPECTED_AGENT_VERSION = '1.3.2';
+  const AGENT_INSTALLER_URL = './downloads/VisionQC_Agent_Installer_v1.3.2.exe';
   const OFFLINE_PACKAGE_URL = './downloads/VisionQC_Offline_v4.7.9.zip';
   // SQLite에는 사용자가 명시적으로 남기려는 두 종류의 결과만 표시한다.
   // 이전 버전의 단발 검사(single-inspection) 이력은 보존하되 화면 집계에서는 제외한다.
@@ -130,6 +130,8 @@
     historyImporting: false,
     historyLoaded: false,
     historyLoading: false,
+    historyAttempted: false,
+    historyLastError: '',
     historyData: null,
     historyFilters: { fromDate:'', toDate:'', cellId:'', cellIds:[], position:'', tool:'', workspaceType:'', workspaceKey:'', toolResult:'', totalResult:'', sourceName:'', page:1, pageSize:50 },
     historyCellDialogOpen: false,
@@ -2025,7 +2027,7 @@
   function positionCard(summary) {
     if (!summary.input) return `<div class="vq43-position-card disabled"><div class="vq43-card-head"><strong>${summary.position}</strong><span class="vq43-pill">미입력</span></div><div class="vq43-no-data">설정에서 결과 파일을 선택하세요.</div></div>`;
     const matched = Math.max(0, summary.actualNg - summary.unmatched);
-    return `<div class="vq43-position-card"><div class="vq43-card-head"><strong>${summary.position}</strong><span class="vq43-pill ready">입력됨</span></div><div class="vq43-flex-between"><div><div class="vq43-rate-label">NG Rate</div><div class="vq43-rate-value">${rateText(summary.ngRate)}</div></div><div class="vq43-count"><b>${numberText(summary.ng)}</b> / ${numberText(summary.total)}</div></div>${rateBar(summary.ngRate, true)}<div class="vq43-mini-grid four"><div><span>실제 NG</span><b>${numberText(summary.actualNg)}</b></div><div><span>CSV 매칭</span><b class="blue">${numberText(matched)}</b></div><div><span>정상 검출</span><b class="green">${numberText(summary.detected)}</b></div><div><span>미검</span><b class="amber">${numberText(summary.misses)}</b></div></div>${summary.unmatched ? `<div class="vq43-unmatched warn">CSV Cell ID와 미매칭 실제 NG ${numberText(summary.unmatched)}건</div>` : ''}</div>`;
+    return `<div class="vq43-position-card"><div class="vq43-card-head"><strong>${summary.position}</strong><span class="vq43-pill ready">입력됨</span></div><div class="vq43-flex-between"><div><div class="vq43-rate-label">NG Rate</div><div class="vq43-rate-value">${rateText(summary.ngRate)}</div></div><div class="vq43-count"><b>${numberText(summary.ng)}</b> / ${numberText(summary.total)}</div></div>${rateBar(summary.ngRate, true)}<div class="vq43-mini-grid four"><div><span>실제<br>NG</span><b>${numberText(summary.actualNg)}</b></div><div><span>CSV<br>매칭</span><b class="blue">${numberText(matched)}</b></div><div><span>정상<br>검출</span><b class="green">${numberText(summary.detected)}</b></div><div><span>미검</span><b class="amber">${numberText(summary.misses)}</b></div></div>${summary.unmatched ? `<div class="vq43-unmatched warn">CSV Cell ID와 미매칭 실제 NG ${numberText(summary.unmatched)}건</div>` : ''}</div>`;
   }
 
   function positionToolCharts(summaries) {
@@ -2261,11 +2263,11 @@
       ACTUAL_NG_TOOL_OK: { text: 'NG 이미지 폴더에 동일 Cell ID + Position 이미지가 있고, 선택 Tool이 OK로 판정한 Score만 표시합니다.', label: 'NG Image를 OK로 판정한 Score', color: '초록: 실제 NG 이미지 중 Tool OK Score' }
     }[state.analysisScope];
     $('#vq43-page').innerHTML = `
-      <div class="vq43-content"><div class="vq43-eyebrow" style="color:#a78bfa">Detailed Analysis</div><h1 class="vq43-title">Tool별 Score 분석</h1><p class="vq43-subtitle">Tool 판정 결과와 Score를 조건별로 분리하여 분석합니다.</p>
+      <div class="vq43-content vq43-analysis-page"><div class="vq43-eyebrow" style="color:#a78bfa">Detailed Analysis</div><h1 class="vq43-title">Tool별 Score 분석</h1><p class="vq43-subtitle">Tool 판정 결과와 Score를 조건별로 분리하여 분석합니다.</p>
         <div class="vq43-filter">${customDropdown('position', 'Position', state.analysisPosition, [{ value: 'ALL', label: '전체 Position' }, ...positionNames().map((position) => ({ value: position, label: position }))])}${customDropdown('tool', 'Tool', state.analysisTool, model.tools.map((tool) => ({ value: tool, label: tool })))}${customDropdown('scope', '분석 범위', state.analysisScope, [{ value: 'TOOL_OK', label: '선택 Tool의 OK Score' }, { value: 'TOOL_NG', label: '선택 Tool의 NG Score' }, { value: 'ACTUAL_NG_TOOL_NG', label: 'NG Image를 NG로 검출한 Score' }, { value: 'ACTUAL_NG_TOOL_OK', label: 'NG Image를 OK로 판정한 Score' }])}</div>
         <div class="vq43-kpi-grid">${kpi('Score 데이터', numberText(points.length), `OK ${okValues.length} · NG ${ngValues.length}`)}${kpi('평균 Score', scoreText(avg), '그래프 파란 점선', 'blue')}${kpi('최소 Score', scoreText(min), '그래프 노란 강조', 'amber')}${kpi('최대 / 중앙값', scoreText(max), `Median ${scoreText(med)}`)}</div>
-        <section class="vq43-actual-ng-minimum"><div><strong>실제 NG 검출 최소 Score</strong><p>선택 Tool이 실제 NG 이미지를 NG로 검출한 점수만 대상으로 계산합니다. 다른 Tool이 함께 NG이고 아래 기준 이상이면 그 행은 최소값 후보에서 제외합니다.</p></div><label>다른 Tool NG 제외 기준<input id="vq43-actual-ng-exclusion-score" type="number" inputmode="decimal" min="0.50" max="1.00" step="0.01" value="${actualNgMinimum.threshold.toFixed(2)}"></label><div class="vq43-actual-ng-minimum-value"><span>조건 적용 최소</span><b>${scoreText(actualNgMinimum.min)}</b><small>후보 ${numberText(actualNgMinimum.eligible.length)} · 제외 ${numberText(actualNgMinimum.excluded.length)} / 전체 ${numberText(actualNgMinimum.candidates.length)}</small></div></section>
-        <div class="vq43-analysis-export"><div><strong>Score 조건 CSV 저장</strong><span>현재 Position · Tool · 분석 범위 안에서 Score 조건으로 필터합니다.</span></div><label>Score<input id="vq43-score-cutoff" type="number" inputmode="decimal" min="0.50" max="1.00" step="0.01" value="${state.analysisScoreCutoff.toFixed(2)}"></label>${customDropdown('compare', '조건', state.analysisScoreCompare, [{ value: 'GTE', label: '이상 (≥)' }, { value: 'LTE', label: '이하 (≤)' }])}<button class="vq43-btn vq43-btn-green" data-vq-action="download-score-filter">CSV 저장</button></div>
+        <div class="vq43-analysis-control-grid"><section class="vq43-actual-ng-minimum"><div><strong>실제 NG 검출 최소 Score</strong><p>선택 Tool이 실제 NG 이미지를 NG로 검출한 점수만 대상으로 계산합니다. 다른 Tool이 함께 NG이고 아래 기준 이상이면 그 행은 최소값 후보에서 제외합니다.</p></div><label>다른 Tool NG 제외 기준<input id="vq43-actual-ng-exclusion-score" type="number" inputmode="decimal" min="0.50" max="1.00" step="0.01" value="${actualNgMinimum.threshold.toFixed(2)}"></label><div class="vq43-actual-ng-minimum-value"><span>조건 적용 최소</span><b>${scoreText(actualNgMinimum.min)}</b><small>후보 ${numberText(actualNgMinimum.eligible.length)} · 제외 ${numberText(actualNgMinimum.excluded.length)} / 전체 ${numberText(actualNgMinimum.candidates.length)}</small></div></section>
+        <div class="vq43-analysis-export"><div><strong>Score 조건 CSV 저장</strong><span>현재 Position · Tool · 분석 범위 안에서 Score 조건으로 필터합니다.</span></div><label>Score<input id="vq43-score-cutoff" type="number" inputmode="decimal" min="0.50" max="1.00" step="0.01" value="${state.analysisScoreCutoff.toFixed(2)}"></label>${customDropdown('compare', '조건', state.analysisScoreCompare, [{ value: 'GTE', label: '이상 (≥)' }, { value: 'LTE', label: '이하 (≤)' }])}<button class="vq43-btn vq43-btn-green" data-vq-action="download-score-filter">CSV 저장</button></div></div>
         <div class="vq43-note" style="margin-top:16px">${escapeHtml(scopeInfo.text)}</div>
         <div class="vq43-chart-grid"><div class="vq43-chart-card"><div class="vq43-chart-head"><div><h3>Score 분포</h3><p>${escapeHtml(scopeInfo.color)}</p></div><span>▥</span></div><div class="vq43-chart-area">${points.length ? histogramSvg(points) : '<div class="vq43-chart-empty">해당 조건의 Score가 없습니다.</div>'}</div></div><div class="vq43-chart-card"><div class="vq43-chart-head"><div><h3>Cell별 Score</h3><p>낮은 Score부터 정렬 · 점 클릭 시 CSV FullPath 또는 실제 NG 이미지를 표시합니다.</p></div><button class="vq43-chart-expand-btn" type="button" data-vq-action="open-chart-modal" ${points.length ? '' : 'disabled'}>⛶ 확대 보기</button></div><div class="vq43-chart-area vq43-analysis-scatter">${points.length ? scatterSvg(points,{interactive:true}) : '<div class="vq43-chart-empty">해당 조건의 Score가 없습니다.</div>'}</div></div></div>
         <div class="vq43-table vq43-summary-table" style="margin-bottom:30px"><div class="vq43-table-row head"><span>구분</span><span>개수</span><span>평균</span><span>최소</span><span>최대</span><span>중앙값</span></div>${scoreSummaryRow('OK', okValues)}${scoreSummaryRow('NG', ngValues)}</div>
@@ -2349,6 +2351,17 @@
       else if (title === 'Position별 Tool NG 구성') section.classList.add('vq43-main-tools');
       else if (title === 'Position별 미검 Cell ID') section.classList.add('vq43-main-misses');
     });
+    const cell = $('.vq43-main-cell', content), position = $('.vq43-main-position', content);
+    const history = $('.vq43-main-history-dashboard', content), tools = $('.vq43-main-tools', content);
+    if (cell && position && history && tools) {
+      const left = document.createElement('div'), right = document.createElement('div');
+      left.className = 'vq43-main-column vq43-main-column-left';
+      right.className = 'vq43-main-column vq43-main-column-right';
+      content.insertBefore(left, cell);
+      content.insertBefore(right, cell);
+      left.append(cell, position);
+      right.append(history, tools);
+    }
   }
 
   function openHistoryCellIdDialog() {
@@ -2430,14 +2443,16 @@
   function historyDateBars(daily) {
     const rows = (Array.isArray(daily) ? daily : []).slice(-90);
     if (!rows.length) return '<div class="vq43-history-empty">표시할 날짜별 이력이 없습니다.</div>';
-    const width = Math.max(760, rows.length * 64);
-    const height = 220, left = 52, right = 24, top = 26, bottom = 42;
+    const width = Math.max(520, rows.length * 58);
+    const height = 220, left = 36, right = 12, top = 26, bottom = 42;
     const plotW = width - left - right, plotH = height - top - bottom;
     const x = (index) => left + (rows.length <= 1 ? plotW / 2 : plotW * index / (rows.length - 1));
     const y = (rate) => top + plotH * (1 - Math.max(0, Math.min(1, Number(rate || 0))));
     const grid = [0, .2, .4, .6, .8, 1].map((rate) =>
       '<line x1="' + left + '" x2="' + (width-right) + '" y1="' + y(rate) + '" y2="' + y(rate) + '"/><text x="' + (left-9) + '" y="' + (y(rate)+4) + '" text-anchor="end">' + Math.round(rate*100) + '%</text>').join('');
-    const points = rows.map((row, index) => x(index) + ',' + y(row.ngRate)).join(' ');
+    const points = rows.length === 1
+      ? left + ',' + y(rows[0].ngRate) + ' ' + (width-right) + ',' + y(rows[0].ngRate)
+      : rows.map((row, index) => x(index) + ',' + y(row.ngRate)).join(' ');
     const labelEvery = Math.max(1, Math.ceil(rows.length / 12));
     const dots = rows.map((row, index) => {
       const total = Number(row.total || 0), ng = Number(row.ng || 0), rate = Number(row.ngRate || 0);
@@ -2478,7 +2493,7 @@
     const page = Math.max(1, Math.min(Number(f.page || 1), totalPages));
     const status = state.historyLoading ? 'SQLite 이력 조회 중...' : (state.historyFileImport?.running ? `대용량 CSV 저장 중 · ${numberText(state.historyFileImport.processed)}행` : `SQLite DB · ${escapeHtml(data.databasePath || 'Local Agent 연결 후 확인')}`);
     $('#vq43-page').innerHTML = `<div class="vq43-content vq43-history-page"><div class="vq43-topline"><div><div class="vq43-eyebrow">Persistent Inspection History</div><h1 class="vq43-title">검사 이력 · 날짜별 NG율</h1><p class="vq43-subtitle">SQLite에서 조건을 먼저 검색한 뒤 페이지 단위로 가져옵니다. 같은 Cell ID + Position은 마지막 기록을 대표값으로 집계합니다. 원본 이미지는 복사하지 않고 필요한 한 장만 Local Agent가 표시합니다.</p></div><div class="vq43-top-actions"><button class="vq43-btn vq43-btn-blue" data-vq-action="history-refresh" ${state.historyLoading?'disabled':''}>${state.historyLoading?'조회 중...':'조회'}</button><button class="vq43-btn vq43-btn-green" data-vq-action="history-import-file" ${state.historyFileImport?.running?'disabled':''}>대용량 CSV 직접 저장</button></div></div><section class="vq43-history-filter"><label>시작일<input type="date" data-history-field="fromDate" value="${escapeHtml(f.fromDate)}"></label><label>종료일<input type="date" data-history-field="toDate" value="${escapeHtml(f.toDate)}"></label><label>Cell ID<input data-history-field="cellId" value="${escapeHtml(f.cellId)}" placeholder="부분 검색"></label><label>Position<input data-history-field="position" value="${escapeHtml(f.position)}" placeholder="예: CA(TOP)"></label><label>Tool<input data-history-field="tool" value="${escapeHtml(f.tool)}" placeholder="예: Crack"></label><label>Tool 결과<select data-history-field="toolResult"><option value="" ${!f.toolResult?'selected':''}>전체</option><option value="NG" ${f.toolResult==='NG'?'selected':''}>NG</option><option value="OK" ${f.toolResult==='OK'?'selected':''}>OK</option></select></label><label>전체 결과<select data-history-field="totalResult"><option value="" ${!f.totalResult?'selected':''}>전체</option><option value="NG" ${f.totalResult==='NG'?'selected':''}>NG</option><option value="OK" ${f.totalResult==='OK'?'selected':''}>OK</option></select></label></section><p class="vq43-history-status">${status}</p><section class="vq43-history-kpis"><div><span>검사 Cell·Position</span><strong>${numberText(data.totalCount)}</strong></div><div class="ng"><span>NG Cell·Position</span><strong>${numberText(data.ngCount)}</strong></div><div><span>고유 Cell·Position</span><strong>${numberText(data.uniqueCellCount)}</strong></div><div><span>NG율</span><strong>${rateText(data.totalCount ? data.ngCount / data.totalCount : 0)}</strong></div></section><section class="vq43-section vq43-history-chart"><div class="vq43-section-title"><div><h3>날짜별 NG율</h3><p>촬영 시각이 없으면 검사 시각을 사용합니다. 막대 위에 마우스를 올리면 전체/NG 건수를 확인할 수 있습니다.</p></div></div>${historyDateBars(data.daily)}</section><section class="vq43-section"><div class="vq43-section-title"><div><h3>Cell 이미지 탐색</h3><p>원본 FullPath와 Green Tool Heatmap Overlay 경로를 같은 Viewer에서 전환할 수 있습니다.</p></div><span>${numberText(data.totalCount)}건 · ${page} / ${totalPages} 페이지</span></div>${historyRecordRows(data.items)}<div class="vq43-history-pagination"><button class="vq43-btn" data-vq-action="history-page" data-vq-history-page="${page-1}" ${page<=1?'disabled':''}>이전</button><span>${page} / ${totalPages}</span><button class="vq43-btn" data-vq-action="history-page" data-vq-history-page="${page+1}" ${page>=totalPages?'disabled':''}>다음</button></div></section></div>`;
-    if (!state.historyLoaded && !state.historyLoading) setTimeout(() => refreshHistory(false), 0);
+    if (!state.historyLoaded && !state.historyLoading && !state.historyAttempted) setTimeout(() => refreshHistory(false, false), 0);
   }
 
   function historyResultOptions(selected) {
@@ -2515,23 +2530,26 @@
       ? '<div class="vq43-history-cell-modal"><div class="vq43-history-cell-card"><header><div><strong>Cell ID 다중 검색</strong><small>줄바꿈·쉼표·공백으로 구분 · 최대 10,000개</small></div><button data-vq-action="history-cell-ids-cancel">×</button></header><textarea id="vq43-history-cell-id-draft" placeholder="P163GG23M2100004&#10;P163GG23M2100005">' + escapeHtml(state.historyCellIdDraft) + '</textarea><footer><button class="vq43-btn" data-vq-action="history-cell-ids-clear">초기화</button><button class="vq43-btn vq43-btn-blue" data-vq-action="history-cell-ids-apply">적용</button></footer></div></div>'
       : '';
     $('#vq43-page').innerHTML = '<div class="vq43-content vq43-history-page">' + top + filter + '<p class="vq43-history-status">' + status + '</p>' + kpis + chart + records + '</div>' + cellDialog;
-    if (!state.historyLoaded && !state.historyLoading) setTimeout(() => refreshHistory(false), 0);
+    if (!state.historyLoaded && !state.historyLoading && !state.historyAttempted) setTimeout(() => refreshHistory(false, false), 0);
   }
 
-  async function refreshHistory(resetPage = false) {
+  async function refreshHistory(resetPage = false, notifyOnError = true) {
     if (state.historyLoading) return;
     if (resetPage) state.historyFilters.page = 1;
+    state.historyAttempted = true;
     state.historyLoading = true;
     if (state.page === 'history') renderHistory();
     try {
-      const data = await agentFetch('/api/history/search', { method:'POST', timeout:120000, body:{ ...state.historyFilters, sourceTypes:PERSISTED_HISTORY_SOURCE_TYPES } });
+      const data = await agentFetch('/api/history/search', { method:'POST', timeout:30000, body:{ ...state.historyFilters, sourceTypes:PERSISTED_HISTORY_SOURCE_TYPES } });
       if (!data.ok) throw new Error(data.error || 'SQLite 이력 조회 실패');
       state.historyData = data;
       state.historyLoaded = true;
+      state.historyLastError = '';
       const maxPage = Math.max(1, Math.ceil(Number(data.totalCount || 0) / Number(state.historyFilters.pageSize || 50)));
       state.historyFilters.page = Math.min(Math.max(1, Number(data.page || 1)), maxPage);
     } catch (error) {
-      showToast(`SQLite 이력 조회 실패: ${error.message || error}`, true);
+      state.historyLastError = String(error.message || error);
+      if (notifyOnError) showToast(`SQLite 이력 조회 실패: ${state.historyLastError}`, true);
     } finally {
       state.historyLoading = false;
       if (state.page === 'history') { renderHistory(); bindPageControls(); }
@@ -5225,10 +5243,12 @@
     const scores = Object.values(miss.record?.tools || {}).map((tool) => `<span class="vq43-score-chip">${escapeHtml(tool.tool)}: <b style="color:${tool.result==='NG'?'#f87171':'#34d399'}">${tool.result}</b> <b>${scoreText(tool.representativeScore ?? tool.score)}</b></span>`).join('');
     const switcher = modalImageSwitcherHtml(sourceImages, cropImages, overlayImages, selectedOverlay);
     const heatmapCreate = '';
-    const countText = selectedOverlay ? ('Heatmap ' + (overlayImages.findIndex((candidate) => candidate.fullPath === selectedOverlay.fullPath) + 1) + ' / ' + overlayImages.length) : ((state.modalIndex+1) + ' / ' + displayImages.length);
+    const navigationImages = selectedOverlay ? overlayImages : displayImages;
+    const navigationIndex = selectedOverlay ? Math.max(0, overlayImages.findIndex((candidate) => candidate.fullPath === selectedOverlay.fullPath)) : state.modalIndex;
+    const countText = selectedOverlay ? ('Heatmap ' + (navigationIndex + 1) + ' / ' + overlayImages.length) : ((state.modalIndex+1) + ' / ' + displayImages.length);
     const canMoveActualNg = !selectedOverlay && !!image.actualNg && !!image.fileHandle && !!image.rootHandleKey;
     const moveButton = canMoveActualNg ? '<button type="button" class="vq43-modal-delete" data-vq-action="modal-move-delet">이미지 제외</button>' : '';
-    modal.innerHTML = `<div class="vq43-modal-card"><div class="vq43-modal-head"><div><small>${escapeHtml(miss.label || 'Actual NG Image')}</small><strong>${escapeHtml(miss.cellId)} · ${miss.position}</strong></div><div class="vq43-modal-head-actions">${moveButton}<button class="vq43-close" data-vq-action="close-modal">×</button></div></div>${switcher}${heatmapCreate}<div class="vq43-modal-image" id="vq43-modal-viewport"><div class="vq43-modal-media-layer"><img id="vq43-modal-zoom-image" draggable="false" src="${state.modalUrl}" alt="${escapeHtml(image.file?.name || image.name || image.relativePath)}"></div><div class="vq43-modal-zoom-tools"><span id="vq43-modal-zoom-value">100%</span><button data-vq-action="modal-reset">원위치</button></div><div class="vq43-modal-help">마우스 휠: 확대/축소 · 드래그: 이동 · 더블클릭: 원위치</div>${!selectedOverlay && displayImages.length>1?`<button class="vq43-modal-nav prev" data-vq-action="modal-prev" ${state.modalIndex===0?'disabled':''}>‹</button><button class="vq43-modal-nav next" data-vq-action="modal-next" ${state.modalIndex>=displayImages.length-1?'disabled':''}>›</button>`:''}</div><div class="vq43-modal-foot"><div class="vq43-modal-path"><span>${escapeHtml(image.relativePath)}</span><b>${countText}</b></div><div class="vq43-modal-scores">${scores}</div></div></div>`;
+    modal.innerHTML = `<div class="vq43-modal-card"><div class="vq43-modal-head"><div><small>${escapeHtml(miss.label || 'Actual NG Image')}</small><strong>${escapeHtml(miss.cellId)} · ${miss.position}</strong></div><div class="vq43-modal-head-actions">${moveButton}<button class="vq43-close" data-vq-action="close-modal">×</button></div></div>${switcher}${heatmapCreate}<div class="vq43-modal-image" id="vq43-modal-viewport"><div class="vq43-modal-media-layer"><img id="vq43-modal-zoom-image" draggable="false" src="${state.modalUrl}" alt="${escapeHtml(image.file?.name || image.name || image.relativePath)}"></div><div class="vq43-modal-zoom-tools"><span id="vq43-modal-zoom-value">100%</span><button data-vq-action="modal-reset">원위치</button></div><div class="vq43-modal-help">마우스 휠: 확대/축소 · 드래그: 이동 · 더블클릭: 원위치</div>${navigationImages.length>1?`<button class="vq43-modal-nav prev" data-vq-action="modal-prev" ${navigationIndex===0?'disabled':''}>‹</button><button class="vq43-modal-nav next" data-vq-action="modal-next" ${navigationIndex>=navigationImages.length-1?'disabled':''}>›</button>`:''}</div><div class="vq43-modal-foot"><div class="vq43-modal-path"><span>${escapeHtml(image.relativePath)}</span><b>${countText}</b></div><div class="vq43-modal-scores">${scores}</div></div></div>`;
     modal.classList.add('open');
     applyModalTransform();
     bindModalImageControls();
@@ -5326,9 +5346,16 @@
 
   function changeModalImage(delta) {
     const miss = state.modalItem;
-    if (!miss || state.modalOverlayPath) return;
-    const images = modalImagesForView(miss);
-    state.modalIndex = Math.max(0, Math.min(images.length - 1, state.modalIndex + delta));
+    if (!miss) return;
+    if (state.modalOverlayPath) {
+      const overlays = Array.isArray(miss.overlayImages) ? miss.overlayImages : [];
+      const current = overlays.findIndex((image) => image.fullPath === state.modalOverlayPath);
+      const next = Math.max(0, Math.min(overlays.length - 1, current + delta));
+      if (overlays[next]?.fullPath) state.modalOverlayPath = overlays[next].fullPath;
+    } else {
+      const images = modalImagesForView(miss);
+      state.modalIndex = Math.max(0, Math.min(images.length - 1, state.modalIndex + delta));
+    }
     renderModal();
   }
 
@@ -5512,7 +5539,7 @@
             { file:svg('Original 2','#1d3557'), relativePath:'debug/original-2.svg', name:'original-2.svg', viewKind:'source' },
             { file:svg('Crop','#264653'), relativePath:'debug/crop.svg', name:'crop.svg', viewKind:'crop' }
           ],
-          overlayImages:[{ file:svg('Crack Heatmap','#7f1d1d'), fullPath:'debug/heatmap.svg', relativePath:'debug/heatmap.svg', name:'Crack Heatmap', toolName:'Crack' }]
+          overlayImages:[{ file:svg('Crack Heatmap','#7f1d1d'), fullPath:'debug/crack-heatmap.svg', relativePath:'debug/crack-heatmap.svg', name:'Crack Heatmap', toolName:'Crack' },{ file:svg('Welding Heatmap','#78350f'), fullPath:'debug/welding-heatmap.svg', relativePath:'debug/welding-heatmap.svg', name:'Welding Heatmap', toolName:'Welding' }]
         };
         state.modalIndex = 0; state.modalImageView = 'source'; state.modalOverlayPath = ''; resetModalView(); renderModal();
       },

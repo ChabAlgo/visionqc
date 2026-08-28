@@ -15,7 +15,7 @@ namespace VisionQC.AgentInstaller
     internal static class Program
     {
         private const string AgentExe = "VisionQC.LocalAgent.exe";
-        private const string ProductVersion = "1.3.1";
+        private const string ProductVersion = "1.3.2";
         private static readonly PayloadFile[] Payload =
         {
             new PayloadFile("VisionQC.AgentInstaller.Payload.Launcher.VisionQC.LocalAgent.exe", AgentExe),
@@ -53,7 +53,7 @@ namespace VisionQC.AgentInstaller
                 string agentPath = Path.Combine(installDir, AgentExe);
                 RunAndWait(agentPath, "--register", 10000);
                 CreateOfflineShortcut(installDir, agentPath);
-                Process.Start(new ProcessStartInfo { FileName = agentPath, Arguments = "--offline", WorkingDirectory = installDir, UseShellExecute = true });
+                Process.Start(new ProcessStartInfo { FileName = agentPath, Arguments = silent ? "" : "--offline", WorkingDirectory = installDir, UseShellExecute = true });
 
                 if (!silent)
                 {

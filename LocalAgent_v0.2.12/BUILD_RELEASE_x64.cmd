@@ -2,7 +2,7 @@
 setlocal EnableExtensions
 cd /d "%~dp0"
 echo ============================================================
-echo  VisionQC Local Agent v1.3.1 - Multi VPDL Worker Build
+echo  VisionQC Local Agent v1.3.2 - Multi VPDL Worker Build
 echo ============================================================
 powershell -NoProfile -ExecutionPolicy Bypass -File "%~dp0BUILD_VPDL_WORKERS.ps1"
 if errorlevel 1 (
@@ -30,7 +30,7 @@ if errorlevel 1 (
   exit /b 1
 )
 set "INSTALLER=%~dp0OfflineInstaller\bin\x64\Release\VisionQC_Agent_Installer.exe"
-set "DOWNLOAD=%~dp0..\downloads\VisionQC_Agent_Installer_v1.3.1.exe"
+set "DOWNLOAD=%~dp0..\downloads\VisionQC_Agent_Installer_v1.3.2.exe"
 if not exist "%~dp0..\downloads" mkdir "%~dp0..\downloads"
 copy /y "%INSTALLER%" "%DOWNLOAD%" >nul
 echo.

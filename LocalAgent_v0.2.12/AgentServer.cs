@@ -253,7 +253,10 @@ namespace VisionQC.LocalAgent
             }
             catch (SysException ex)
             {
-                AppendAgentLog("ERROR", "HTTP 요청 처리 실패: " + ex.Message);
+                // Browser timeout/refresh can close the loopback socket before the response is written.
+                // Expected client disconnects are not Agent failures and should not become repeated alarms.
+                if (!IsExpectedClientDisconnect(ex))
+                    AppendAgentLog("ERROR", "HTTP 요청 처리 실패: " + ex.Message);
                 try
                 {
                     if (stream != null && stream.CanWrite)
@@ -2208,6 +2211,17 @@ namespace VisionQC.LocalAgent
                    "Access-Control-Allow-Methods: GET, POST, OPTIONS\r\n" +
                    "Access-Control-Allow-Headers: Content-Type\r\n" +
                    "Access-Control-Allow-Private-Network: true\r\n";
+        }
+
+        private static bool IsExpectedClientDisconnect(SysException ex)
+        {
+            if (ex is SocketException) return true;
+            if (ex is IOException && ex.InnerException is SocketException) return true;
+            var message = (ex.Message ?? string.Empty).ToLowerInvariant();
+            return message.Contains("forcibly closed")
+                || message.Contains("connection was aborted")
+                || message.Contains("연결은 사용자의 호스트 시스템")
+                || message.Contains("전송 연결");
         }
 
         private static bool IsAllowedOrigin(string origin)

@@ -11,10 +11,10 @@ const picker = read('NativeShellPicker.cs');
 const pickerService = read('Services/PickerService.cs');
 const program = read('Program.cs');
 
-test('Agent v1.3.1 version is consistent', () => {
-  assert.match(program, /AgentVersion = "1\.3\.1"/);
-  assert.match(read('Properties/AssemblyInfo.cs'), /AssemblyVersion\("1\.3\.1\.0"\)/);
-  assert.match(read('BUILD_RELEASE_x64.cmd'), /v1\.3\.1/);
+test('Agent v1.3.2 version is consistent', () => {
+  assert.match(program, /AgentVersion = "1\.3\.2"/);
+  assert.match(read('Properties/AssemblyInfo.cs'), /AssemblyVersion\("1\.3\.2\.0"\)/);
+  assert.match(read('BUILD_RELEASE_x64.cmd'), /v1\.3\.2/);
 });
 
 test('HTTP server delegates picker lifecycle to the isolated picker service', () => {
@@ -191,4 +191,8 @@ test('AI Suggest reuses the loaded Runtime and never writes a single inspection 
   assert.doesNotMatch(server, /PersistSingleInspection/);
   assert.doesNotMatch(server, /InspectSingleGreenImageAuto/);
   assert.match(read('AgentDtos.cs'), /bool heatmapImageSave/);
+});
+
+ test('silent installer starts Agent without taking browser focus', () => {
+  assert.match(read('OfflineInstaller/Program.cs'), /Arguments = silent \? "" : "--offline"/);
 });
