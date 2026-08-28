@@ -1,7 +1,7 @@
 (() => {
   'use strict';
 
-  const VERSION = '4.7.10';
+  const VERSION = '4.7.11';
   const DEFAULT_POSITION_DEFS = [
     { key:'CA_TOP', name:'CA(TOP)' },
     { key:'AN_TOP', name:'AN(TOP)' },
@@ -25,8 +25,8 @@
   const NG_POSITION_PREFIX = 'ng-position:';
   const IMG_RE = /\.(png|jpe?g|bmp|gif|webp|tif?f)$/i;
   const LOCAL_AGENT_URL = 'http://127.0.0.1:17891';
-  const EXPECTED_AGENT_VERSION = '1.3.0';
-  const AGENT_INSTALLER_URL = './downloads/VisionQC_Agent_Installer_v1.3.0.exe';
+  const EXPECTED_AGENT_VERSION = '1.3.1';
+  const AGENT_INSTALLER_URL = './downloads/VisionQC_Agent_Installer_v1.3.1.exe';
   const OFFLINE_PACKAGE_URL = './downloads/VisionQC_Offline_v4.7.9.zip';
   // SQLite에는 사용자가 명시적으로 남기려는 두 종류의 결과만 표시한다.
   // 이전 버전의 단발 검사(single-inspection) 이력은 보존하되 화면 집계에서는 제외한다.
@@ -408,10 +408,17 @@
         }
       });
       window.addEventListener('keydown', (event) => {
-        if (state.page === 'classification') return;
         const target = event.target;
         const isTyping = target && (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA' || target.tagName === 'SELECT' || target.isContentEditable);
         if (isTyping || event.ctrlKey || event.metaKey || event.altKey) return;
+        const modalOpen = $('#vq43-modal')?.classList.contains('open');
+        if (modalOpen && ['ArrowLeft','ArrowUp','ArrowRight','ArrowDown'].includes(event.key)) {
+          event.preventDefault();
+          event.stopImmediatePropagation();
+          changeModalImage(event.key === 'ArrowLeft' || event.key === 'ArrowUp' ? -1 : 1);
+          return;
+        }
+        if (state.page === 'classification') return;
         const classificationKeys = ['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight', 'Enter', ' ', 'Backspace'];
         if (classificationKeys.includes(event.key) || event.key.length === 1) {
           event.preventDefault(); event.stopImmediatePropagation();
@@ -615,70 +622,6 @@
     });
   }
 
-  let classificationViewportSnapshot = null;
-
-  function classificationImageViewport() {
-    const images = $$('#root > div > main img').filter((image) => {
-      const rect = image.getBoundingClientRect();
-      return rect.width > 240 && rect.height > 160;
-    }).sort((a, b) => {
-      const ar = a.getBoundingClientRect(), br = b.getBoundingClientRect();
-      return (br.width * br.height) - (ar.width * ar.height);
-    });
-    const image = images[0];
-    const viewport = image?.parentElement?.parentElement;
-    if (!image || !viewport) return null;
-    return { image, viewport };
-  }
-
-  function captureClassificationViewport() {
-    if (state.page !== 'classification') return;
-    const current = classificationImageViewport();
-    if (!current) return;
-    const { image, viewport } = current;
-    const width = Math.max(1, image.offsetWidth || image.getBoundingClientRect().width);
-    const height = Math.max(1, image.offsetHeight || image.getBoundingClientRect().height);
-    classificationViewportSnapshot = {
-      xRatio:(viewport.scrollLeft + viewport.clientWidth / 2) / width,
-      yRatio:(viewport.scrollTop + viewport.clientHeight / 2) / height,
-      capturedAt:Date.now()
-    };
-  }
-
-  function restoreClassificationViewport() {
-    if (!classificationViewportSnapshot || state.page !== 'classification') return;
-    const current = classificationImageViewport();
-    if (!current) return;
-    const restore = () => {
-      const { image, viewport } = classificationImageViewport() || {};
-      if (!image || !viewport) return;
-      const width = Math.max(1, image.offsetWidth || image.getBoundingClientRect().width);
-      const height = Math.max(1, image.offsetHeight || image.getBoundingClientRect().height);
-      viewport.scrollLeft = classificationViewportSnapshot.xRatio * width - viewport.clientWidth / 2;
-      viewport.scrollTop = classificationViewportSnapshot.yRatio * height - viewport.clientHeight / 2;
-    };
-    requestAnimationFrame(() => requestAnimationFrame(restore));
-    setTimeout(restore, 90);
-  }
-
-  function installClassificationViewportGuard() {
-    if (window.__VISIONQC_CLASSIFICATION_VIEWPORT_GUARD__) return;
-    window.__VISIONQC_CLASSIFICATION_VIEWPORT_GUARD__ = true;
-    document.addEventListener('keydown', (event) => {
-      if (state.page !== 'classification') return;
-      if (['ArrowLeft','ArrowRight','ArrowUp','ArrowDown','Enter',' '].includes(event.key)) captureClassificationViewport();
-    }, true);
-    document.addEventListener('pointerdown', (event) => {
-      if (state.page !== 'classification') return;
-      const button = event.target.closest?.('#root > div > main .group.relative button');
-      if (button) captureClassificationViewport();
-    }, true);
-    document.addEventListener('load', (event) => {
-      if (state.page !== 'classification' || event.target?.tagName !== 'IMG') return;
-      restoreClassificationViewport();
-    }, true);
-  }
-
   function attachHorizontalWheel(element) {
     if (!element || element.dataset.vqWheel === '1') return;
     element.dataset.vqWheel = '1';
@@ -783,11 +726,28 @@
     return !!state.analysisDropdownOpenKind || !!$('.vq43-dropdown.open');
   }
 
+  function renderAnalysisPreserveDropdown() {
+    const current = $('.vq43-dropdown.open');
+    const kind = state.analysisDropdownOpenKind || current?.dataset.vqDropdown || '';
+    const menuScrollTop = current?.querySelector('.vq43-dropdown-menu')?.scrollTop || 0;
+    renderAnalysis();
+    bindPageControls();
+    if (!kind) return;
+    const restored = $(`.vq43-dropdown[data-vq-dropdown="${kind}"]`);
+    if (!restored) { state.analysisDropdownOpenKind = ''; return; }
+    restored.classList.add('open');
+    restored.querySelector('.vq43-dropdown-button')?.setAttribute('aria-expanded', 'true');
+    state.analysisDropdownOpenKind = kind;
+    requestAnimationFrame(() => {
+      const menu = restored.querySelector('.vq43-dropdown-menu');
+      if (menu) menu.scrollTop = menuScrollTop;
+    });
+  }
+
   function flushPendingAnalysisRender() {
     if (state.page !== 'analysis' || !state.analysisLiveRenderPending || isAnalysisDropdownOpen()) return;
     state.analysisLiveRenderPending = false;
-    renderAnalysis();
-    bindPageControls();
+    renderAnalysisPreserveDropdown();
   }
 
   function closeAnalysisDropdowns(except = null) {
@@ -3901,7 +3861,7 @@
       toolName:String(tool.toolName || ''), threshold:Number(tool.threshold), judgement:String(tool.judgement || '')
     }));
     return {
-      mode:state.simulationMode || 'integrated', outputRoot:form.outputRoot, namingProfile:state.namingProfile,
+      mode:state.simulationMode || 'integrated', webVersion:VERSION, outputRoot:form.outputRoot, namingProfile:state.namingProfile,
       green, blue:cloneSimulation(form.blue), integrated:cloneSimulation(form.integrated),
       positions:simulationActivePositions(state.simulationMode || 'integrated', form).map(key => {
         const p = form.positions[key];
@@ -4046,9 +4006,7 @@
       renderDashboard();
       bindPageControls();
     } else if (state.page === 'analysis') {
-      // 열린 분석 드롭다운은 전체 재렌더링 시 사라진다. 수신 데이터는 보류했다가 닫힌 뒤 한 번 반영한다.
-      if (isAnalysisDropdownOpen()) state.analysisLiveRenderPending = true;
-      else { renderAnalysis(); bindPageControls(); }
+      renderAnalysisPreserveDropdown();
     }
     updateSimulationStatusDom();
   }
@@ -4814,7 +4772,7 @@
       : `설치 감지 ${agent.installedVpdl || '-'} · Runtime File Load 전에는 실제 Simulation Runtime으로 표시하지 않습니다.`;
     const workers = (Array.isArray(agent.availableVpdl) ? agent.availableVpdl : []).filter(item => item?.workerInstalled);
     const workerSelector = connected && workers.length
-      ? `<div class="vq43-vpdl-worker-switch"><label>VPDL Worker<select id="vq43-vpdl-worker-select">${workers.map(item => `<option value="${escapeHtml(item.apiVersion)}" ${String(item.apiVersion)===String(agent.activeVpdlApiVersion)?'selected':''}>${escapeHtml(item.displayName || item.productVersion || item.apiVersion)}</option>`).join('')}</select></label><button class="vq43-btn" data-vq-action="simulation-vpdl-select" ${workers.length < 2 ? 'disabled' : ''}>적용</button><small>버전 전환 시 Worker만 재시작됩니다.</small></div>`
+      ? `<div class="vq43-vpdl-worker-switch"><div class="vq43-vpdl-worker-copy"><strong>VPDL Worker</strong><small>설치된 VPDL 버전에 맞는 격리 Worker를 사용해 DLL 충돌을 방지합니다.</small></div><div class="vq43-vpdl-worker-controls"><select id="vq43-vpdl-worker-select" aria-label="VPDL Worker 버전">${workers.map(item => `<option value="${escapeHtml(item.apiVersion)}" ${String(item.apiVersion)===String(agent.activeVpdlApiVersion)?'selected':''}>${escapeHtml(item.displayName || item.productVersion || item.apiVersion)}</option>`).join('')}</select><button class="vq43-btn" data-vq-action="simulation-vpdl-select" ${workers.length < 2 ? 'disabled' : ''}>적용</button></div><small class="vq43-vpdl-worker-note">버전 전환 시 전체 Agent가 아니라 Worker만 재시작됩니다.</small></div>`
       : '';
     return `<section class="vq43-sim-agent-card ${statusClass}"><div class="vq43-sim-agent-title"><div><span class="vq43-sim-dot"></span><strong>Local Engine</strong></div><b>${statusText}</b></div><div class="vq43-sim-agent-grid"><div><span>Agent</span><strong>${escapeHtml(agent.version||'-')}</strong></div><div title="${escapeHtml(runtimeTitle)}"><span>VPDL Runtime</span><strong>${escapeHtml(agent.vpdl||'-')}</strong></div><div><span>License</span><strong>${escapeHtml(agent.license||'-')}</strong></div><div><span>GPU</span><strong>${escapeHtml(agent.gpu||'-')}</strong></div></div>${workerSelector}<p>${escapeHtml(agent.message||'Local Agent 상태를 2초마다 자동 확인합니다.')}</p></section>`;
   }
@@ -5662,7 +5620,7 @@
     applyTheme();
     createExtensionDom();
     installInteractionGuards();
-    installClassificationViewportGuard();
+
     installLegacyAiSuggestRuntimeBridge();
     patchReactHeader();
     const observer = new MutationObserver(() => patchReactHeader());

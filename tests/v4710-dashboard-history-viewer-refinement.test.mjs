@@ -20,8 +20,8 @@ test('main dashboard is compact and daily NG rate is a direct percentage line ch
 test('analysis dropdown and classification viewport survive live navigation updates', () => {
   assert.match(js, /analysisDropdownOpenKind/);
   assert.match(js, /isAnalysisDropdownOpen\(\)/);
-  assert.match(js, /captureClassificationViewport/);
-  assert.match(js, /restoreClassificationViewport/);
+  assert.match(js, /renderAnalysisPreserveDropdown\(\)/);
+  assert.doesNotMatch(js, /classificationViewportSnapshot|installClassificationViewportGuard/);
   assert.match(js, /vq43-hidden-duplicate-organize/);
   assert.match(css, /\.vq43-hidden-duplicate-organize\{display:none!important\}/);
 });
@@ -55,7 +55,8 @@ test('history supports 10000 exact Cell IDs and DB-backed Position Tool Workspac
   assert.match(dto, /AgentHistoryFilterOptions filterOptions/);
   assert.match(store, /temp_history_cell_ids/);
   assert.match(store, /workspace_type, workspace_name, workspace_key/);
-  assert.match(store, /newer\.workspace_key/);
+  assert.match(store, /ROW_NUMBER\(\) OVER/);
+  assert.match(store, /PARTITION BY UPPER\(IFNULL\(f\.cell_id,''\)\), UPPER\(IFNULL\(f\.position_key,''\)\), UPPER\(IFNULL\(f\.workspace_key,''\)\)/);
   assert.match(server, /BuildHistoryWorkspaceMap\(request\)/);
   assert.match(css, /calendar-picker-indicator\{filter:invert\(1\)/);
 });

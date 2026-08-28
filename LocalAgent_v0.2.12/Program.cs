@@ -11,7 +11,7 @@ namespace VisionQC.LocalAgent
 {
     internal static class Program
     {
-        internal const string AgentVersion = "1.3.0";
+        internal const string AgentVersion = "1.3.1";
         internal static VpdlRuntimeCatalog.Installation ActiveVpdlInstallation { get; private set; }
         private static int _requestedExitCode;
 

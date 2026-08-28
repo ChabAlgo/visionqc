@@ -1331,6 +1331,7 @@ namespace VisionQC.LocalAgent
                         Mode = request.mode ?? "green",
                         SourceName = "VPDL Simulation",
                         AgentVersion = Program.AgentVersion,
+                        WebVersion = request.webVersion ?? "",
                         OutputRoot = request.outputRoot ?? "",
                         ConfigJson = _json.Serialize(request),
                         NamingProfile = request.namingProfile,

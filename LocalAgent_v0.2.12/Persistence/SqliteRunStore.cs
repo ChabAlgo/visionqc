@@ -349,16 +349,16 @@ LIMIT @limit OFFSET @offset;";
         {
             return @"WITH filtered_images AS (
     SELECT i.* FROM images i WHERE " + where + @"
+), ranked_images AS (
+    SELECT f.*,
+      CASE WHEN TRIM(IFNULL(f.cell_id,''))='' OR TRIM(IFNULL(f.position_key,''))='' THEN 1
+           ELSE ROW_NUMBER() OVER (
+             PARTITION BY UPPER(IFNULL(f.cell_id,'')), UPPER(IFNULL(f.position_key,'')), UPPER(IFNULL(f.workspace_key,''))
+             ORDER BY IFNULL(f.inspected_at_utc,'') DESC, f.image_id DESC
+           ) END AS vq_history_rank
+    FROM filtered_images f
 ), deduped_images AS (
-    SELECT f.* FROM filtered_images f
-    WHERE TRIM(IFNULL(f.cell_id,''))='' OR TRIM(IFNULL(f.position_key,''))='' OR NOT EXISTS (
-        SELECT 1 FROM filtered_images newer
-        WHERE UPPER(IFNULL(newer.cell_id,''))=UPPER(IFNULL(f.cell_id,''))
-          AND UPPER(IFNULL(newer.position_key,''))=UPPER(IFNULL(f.position_key,''))
-          AND UPPER(IFNULL(newer.workspace_key,''))=UPPER(IFNULL(f.workspace_key,''))
-          AND (IFNULL(newer.inspected_at_utc,'') > IFNULL(f.inspected_at_utc,'')
-               OR (IFNULL(newer.inspected_at_utc,'')=IFNULL(f.inspected_at_utc,'') AND newer.image_id > f.image_id))
-    )
+    SELECT * FROM ranked_images WHERE vq_history_rank=1
 )";
         }
 
@@ -532,7 +532,10 @@ CREATE INDEX IF NOT EXISTS idx_tool_results_run_tool ON tool_results(run_id, too
                     {
                         command.CommandText = @"CREATE INDEX IF NOT EXISTS idx_images_processed_path ON images(processed_path);
 CREATE INDEX IF NOT EXISTS idx_images_workspace ON images(workspace_type, workspace_key, position_key);
-UPDATE schema_info SET schema_version = CASE WHEN schema_version < 3 THEN 3 ELSE schema_version END;";
+CREATE INDEX IF NOT EXISTS idx_images_history_dedupe ON images(cell_id, position_key, workspace_key, inspected_at_utc, image_id);
+UPDATE images SET workspace_type=LOWER(IFNULL((SELECT r.mode FROM runs r WHERE r.run_id=images.run_id),''))
+WHERE TRIM(IFNULL(workspace_type,''))='' AND EXISTS (SELECT 1 FROM runs r WHERE r.run_id=images.run_id AND TRIM(IFNULL(r.mode,''))<>'');
+UPDATE schema_info SET schema_version = CASE WHEN schema_version < 4 THEN 4 ELSE schema_version END;";
                         command.ExecuteNonQuery();
                     }
                 }

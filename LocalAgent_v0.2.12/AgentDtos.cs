@@ -7,6 +7,7 @@ namespace VisionQC.LocalAgent
     public class AgentStartRequest
     {
         public string mode { get; set; }
+        public string webVersion { get; set; }
         public string outputRoot { get; set; }
         public AgentGreenOptions green { get; set; }
         public AgentBlueOptions blue { get; set; }

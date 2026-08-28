@@ -248,3 +248,6 @@ body:not(.vq43-theme-light) #vq43-shell input[type="date"]{color-scheme:dark}
 body:not(.vq43-theme-light) #vq43-shell input[type="date"]::-webkit-calendar-picker-indicator{filter:invert(1) brightness(1.9);opacity:1;cursor:pointer}
 body.vq43-theme-light #vq43-shell input[type="date"]{color-scheme:light}
 body.vq43-theme-light #vq43-shell input[type="date"]::-webkit-calendar-picker-indicator{filter:none;opacity:.9;cursor:pointer}
+
+/* v4.7.11 calendar contrast */
+body:not(.vq43-theme-light) #vq43-shell input[type="date"]::-webkit-calendar-picker-indicator{filter:brightness(0) invert(1)!important;opacity:1!important;cursor:pointer}
