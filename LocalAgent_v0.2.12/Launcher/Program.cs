@@ -12,7 +12,7 @@ namespace VisionQC.LocalAgent.Launcher
 {
     internal static class Program
     {
-        private const string LauncherVersion = "1.3.6";
+        private const string LauncherVersion = "1.3.7";
 
         [STAThread]
         private static void Main(string[] args)
@@ -50,26 +50,22 @@ namespace VisionQC.LocalAgent.Launcher
             while (true)
             {
                 var installation = ResolveInstallation(selected);
-                if (installation == null)
-                {
-                    MessageBox.Show("정상 설치된 Cognex VPDL Runtime을 찾지 못했습니다.\r\n\r\n" +
-                        "VPDL 설치 폴더의 ViDi.NET.Local.dll 및 bin\\vidi_*.dll 쌍을 확인하세요.\r\n" +
-                        "기본 탐색 루트: " + VpdlRuntimeCatalog.DefaultRoot,
-                        "VisionQC Local Agent", MessageBoxButtons.OK, MessageBoxIcon.Warning);
-                    return;
-                }
-
                 bool universalWorker;
-                string worker = VpdlWorkerLocator.Resolve(AppDomain.CurrentDomain.BaseDirectory, installation.ApiVersion, out universalWorker);
+                bool vpdlAvailable = installation != null;
+                string worker = vpdlAvailable
+                    ? VpdlWorkerLocator.Resolve(AppDomain.CurrentDomain.BaseDirectory, installation.ApiVersion, out universalWorker)
+                    : VpdlWorkerLocator.ResolveWithoutVpdl(AppDomain.CurrentDomain.BaseDirectory, out universalWorker);
                 if (string.IsNullOrWhiteSpace(worker))
                 {
-                    MessageBox.Show("VPDL " + installation.ProductVersion + " (API " + installation.ApiVersion + ")용 Worker가 설치되어 있지 않습니다.\r\n\r\n" +
-                        "정확 버전 Worker 또는 Universal Worker가 포함된 VisionQC 설치 프로그램을 사용하세요.",
+                    string message = vpdlAvailable
+                        ? "VPDL " + installation.ProductVersion + " (API " + installation.ApiVersion + ")용 Worker가 설치되어 있지 않습니다.\r\n\r\n정확 버전 Worker 또는 Universal Worker가 포함된 VisionQC 설치 프로그램을 사용하세요."
+                        : "VPDL 미설치 모드로 실행할 Core Worker가 없습니다.\r\n\r\n최신 VisionQC 설치 프로그램을 다시 설치하세요.";
+                    MessageBox.Show(message,
                         "VisionQC Local Agent", MessageBoxButtons.OK, MessageBoxIcon.Warning);
                     return;
                 }
 
-                VpdlWorkerSelection.Write(installation.ApiVersion);
+                if (vpdlAvailable) VpdlWorkerSelection.Write(installation.ApiVersion);
                 var startInfo = new ProcessStartInfo
                 {
                     FileName = worker,
@@ -79,10 +75,11 @@ namespace VisionQC.LocalAgent.Launcher
                     WindowStyle = ProcessWindowStyle.Hidden
                 };
                 startInfo.EnvironmentVariables["VISIONQC_AGENT_HOME"] = AppDomain.CurrentDomain.BaseDirectory;
-                startInfo.EnvironmentVariables["VISIONQC_VPDL_API_VERSION"] = installation.ApiVersion;
-                startInfo.EnvironmentVariables["VISIONQC_VPDL_PRODUCT_VERSION"] = installation.ProductVersion;
-                startInfo.EnvironmentVariables["COGNEX_VPDL_DLL_DIR"] = installation.StudioDirectory;
-                startInfo.EnvironmentVariables["VISIONQC_VPDL_WORKER_MODE"] = universalWorker ? "universal" : "exact";
+                startInfo.EnvironmentVariables["VISIONQC_VPDL_AVAILABLE"] = vpdlAvailable ? "true" : "false";
+                startInfo.EnvironmentVariables["VISIONQC_VPDL_API_VERSION"] = vpdlAvailable ? installation.ApiVersion : "";
+                startInfo.EnvironmentVariables["VISIONQC_VPDL_PRODUCT_VERSION"] = vpdlAvailable ? installation.ProductVersion : "";
+                startInfo.EnvironmentVariables["COGNEX_VPDL_DLL_DIR"] = vpdlAvailable ? installation.StudioDirectory : "";
+                startInfo.EnvironmentVariables["VISIONQC_VPDL_WORKER_MODE"] = vpdlAvailable ? (universalWorker ? "universal" : "exact") : "none";
                 var process = Process.Start(startInfo);
                 process.WaitForExit();
 
@@ -94,9 +91,9 @@ namespace VisionQC.LocalAgent.Launcher
                 }
                 if (process.ExitCode == VpdlWorkerSelection.StartupFailureExitCode)
                 {
-                    MessageBox.Show("VPDL Worker 시작에 실패했습니다.\r\n\r\n" +
-                        "선택된 VPDL: " + installation.DisplayName + "\r\n" +
-                        "Worker 방식: " + (universalWorker ? "Universal" : "Exact") + "\r\n" +
+                    MessageBox.Show("VisionQC Worker 시작에 실패했습니다.\r\n\r\n" +
+                        "선택된 VPDL: " + (vpdlAvailable ? installation.DisplayName : "미설치 모드") + "\r\n" +
+                        "Worker 방식: " + (vpdlAvailable ? (universalWorker ? "Universal" : "Exact") : "No VPDL") + "\r\n" +
                         "로그: " + Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "logs", "agent-startup.log"),
                         "VisionQC Local Agent", MessageBoxButtons.OK, MessageBoxIcon.Error);
                     return;
@@ -106,8 +103,8 @@ namespace VisionQC.LocalAgent.Launcher
                 crashRestarts++;
                 if (crashRestarts >= 3)
                 {
-                    MessageBox.Show("VPDL Worker가 반복 종료되었습니다.\r\n\r\n" +
-                        "선택된 VPDL: " + installation.DisplayName + "\r\n" +
+                    MessageBox.Show("VisionQC Worker가 반복 종료되었습니다.\r\n\r\n" +
+                        "선택된 VPDL: " + (vpdlAvailable ? installation.DisplayName : "미설치 모드") + "\r\n" +
                         "VisionQC LocalAgent 로그와 Windows 응용 프로그램 오류를 확인하세요.",
                         "VisionQC Local Agent", MessageBoxButtons.OK, MessageBoxIcon.Error);
                     return;

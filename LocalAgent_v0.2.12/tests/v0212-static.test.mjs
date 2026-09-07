@@ -11,11 +11,15 @@ const picker = read('NativeShellPicker.cs');
 const pickerService = read('Services/PickerService.cs');
 const program = read('Program.cs');
 const workerLocator = read('Services/VpdlWorkerLocator.cs');
+const coreServer = read('CoreWorker/CoreAgentServer.cs');
+const coreProject = read('CoreWorker/VisionQC.CoreWorker.csproj');
+const workerBuild = read('BUILD_VPDL_WORKERS.ps1');
 
-test('Agent v1.3.6 version is consistent', () => {
-  assert.match(program, /AgentVersion = "1\.3\.6"/);
-  assert.match(read('Properties/AssemblyInfo.cs'), /AssemblyVersion\("1\.3\.6\.0"\)/);
-  assert.match(read('BUILD_RELEASE_x64.cmd'), /v1\.3\.6/);
+test('Agent v1.3.7 version is consistent', () => {
+  assert.match(program, /AgentVersion = "1\.3\.7"/);
+  assert.match(read('CoreWorker/Program.cs'), /AgentVersion = "1\.3\.7"/);
+  assert.match(read('Properties/AssemblyInfo.cs'), /AssemblyVersion\("1\.3\.7\.0"\)/);
+  assert.match(read('BUILD_RELEASE_x64.cmd'), /v1\.3\.7/);
 });
 
 test('HTTP server delegates picker lifecycle to the isolated picker service', () => {
@@ -118,6 +122,22 @@ test('VPDL Workers are process-isolated and selected through a Launcher', () => 
   assert.match(read('BUILD_VPDL_WORKERS.ps1'), /Get-HealthyVpdlInstallations/);
   assert.match(read('BUILD_VPDL_WORKERS.ps1'), /universalOutput/);
   assert.match(read('BUILD_VPDL_WORKERS.ps1'), /Universal\/VisionQC\.VpdlWorker\.exe/);
+});
+
+test('VPDL-free systems start the Core Worker and retain non-runtime APIs', () => {
+  const launcher = read('Launcher/Program.cs');
+  assert.match(launcher, /ResolveWithoutVpdl/);
+  assert.match(workerLocator, /CoreDirectoryName = "Core"/);
+  assert.match(workerLocator, /VisionQC\.CoreWorker\.exe/);
+  assert.doesNotMatch(coreProject, /ViDi\.NET/);
+  assert.match(coreServer, /vpdlAvailable = false/);
+  assert.match(coreServer, /case "\/api\/history\/search"/);
+  assert.match(coreServer, /case "\/api\/image\/preview"/);
+  assert.match(coreServer, /case "\/api\/pick\/start"/);
+  assert.match(coreServer, /case "\/api\/runtime\/check"/);
+  assert.match(coreServer, /result = VpdlUnavailable\(\)/);
+  assert.match(workerBuild, /Core\/VisionQC\.CoreWorker\.exe/);
+  assert.match(workerBuild, /core-or-exact-or-universal/);
 });
 
 test('Universal Worker selects the target PC VPDL API instead of the build API', () => {

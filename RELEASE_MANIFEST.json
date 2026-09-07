@@ -1,19 +1,19 @@
 {
-  "releaseTag": "visionqc-v4.7.16-agent-v1.3.6",
-  "webVersion": "4.7.16",
-  "agentVersion": "1.3.6",
-  "minimumAgentVersion": "1.3.6",
+  "releaseTag": "visionqc-v4.7.17-agent-v1.3.7",
+  "webVersion": "4.7.17",
+  "agentVersion": "1.3.7",
+  "minimumAgentVersion": "1.3.7",
   "compatibility": {
-    "web": "4.7.16",
-    "agent": "1.3.6"
+    "web": "4.7.17",
+    "agent": "1.3.7"
   },
   "artifacts": {
-    "agentInstaller": "downloads/VisionQC_Agent_Installer_v1.3.6.exe",
-    "offlinePackage": "downloads/VisionQC_Offline_v4.7.16.zip",
+    "agentInstaller": "downloads/VisionQC_Agent_Installer_v1.3.7.exe",
+    "offlinePackage": "downloads/VisionQC_Offline_v4.7.17.zip",
     "sha256": {
-      "agentInstaller": "28D44D55F58084D7CF23FC701EB70767CE1BB399CBB0162C5A5FE704EB1C0D62",
-      "offlinePackage": "808C85BC8E27ED3D53691F320A8E29FC338C589387C9DF5E1567D3504D6FFC68"
+      "agentInstaller": "F84F76177CFDFA2E8AB68F055844742E2A104F042E85027E7D74CC4E468443A3",
+      "offlinePackage": "E061F3C9C7F7F8EE2FD3F57F05928FE2544E2728C850EF9BD06886FDB017C589"
     }
   },
-  "notes": "빌드 PC에 설치된 VPDL 버전에 대상 PC가 종속되지 않도록 정확 API Worker와 Universal Worker의 2단계 실행 구조, 재귀 Runtime 탐색, 패키지 필수 항목 검증을 반영한 릴리스입니다."
+  "notes": "VPDL이 없어도 Core Worker로 Local Agent와 오프라인 UI가 시작됩니다. VPDL이 있으면 정확 API Worker, Universal Worker 순으로 선택하며 Runtime Load, AI 검사, Simulation은 VPDL 사용 가능 상태에서만 활성화됩니다."
 }

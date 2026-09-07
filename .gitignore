@@ -18,3 +18,5 @@ Desktop.ini
 /LocalAgent_v*/OfflineInstaller/obj/
 /LocalAgent_v*/Launcher/bin/
 /LocalAgent_v*/Launcher/obj/
+/LocalAgent_v*/**/bin/
+/LocalAgent_v*/**/obj/

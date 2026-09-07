@@ -438,6 +438,7 @@ namespace VisionQC.LocalAgent
             return new
             {
                 ok = true,
+                vpdlAvailable = true,
                 instanceId = _instanceId,
                 agentVersion = Program.AgentVersion,
                 engineVersion = "DL_Simulation v1.13 + VisionQC Workspace Inspect",

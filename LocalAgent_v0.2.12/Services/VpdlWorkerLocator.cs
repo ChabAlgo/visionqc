@@ -7,6 +7,8 @@ namespace VisionQC.LocalAgent.Services
     {
         internal const string WorkerFileName = "VisionQC.VpdlWorker.exe";
         internal const string UniversalDirectoryName = "Universal";
+        internal const string CoreWorkerFileName = "VisionQC.CoreWorker.exe";
+        internal const string CoreDirectoryName = "Core";
 
         internal static string ExactWorkerPath(string agentHome, string apiVersion)
         {
@@ -16,6 +18,13 @@ namespace VisionQC.LocalAgent.Services
         internal static string UniversalWorkerPath(string agentHome)
         {
             return Path.Combine(agentHome ?? "", "Workers", UniversalDirectoryName, WorkerFileName);
+        }
+
+        internal static string ResolveWithoutVpdl(string agentHome, out bool universal)
+        {
+            string core = Path.Combine(agentHome ?? "", "Workers", CoreDirectoryName, CoreWorkerFileName);
+            universal = false;
+            return File.Exists(core) ? core : "";
         }
 
         internal static string Resolve(string agentHome, string apiVersion, out bool universal)
