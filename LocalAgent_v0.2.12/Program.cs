@@ -11,7 +11,7 @@ namespace VisionQC.LocalAgent
 {
     internal static class Program
     {
-        internal const string AgentVersion = "1.3.5";
+        internal const string AgentVersion = "1.3.6";
         internal static VpdlRuntimeCatalog.Installation ActiveVpdlInstallation { get; private set; }
         private static int _requestedExitCode;
 
@@ -62,11 +62,33 @@ namespace VisionQC.LocalAgent
                 }
             }
 
-            using (var server = new AgentServer())
+            try
             {
-                server.RunUntilExit(openOfflinePage);
+                using (var server = new AgentServer())
+                {
+                    server.RunUntilExit(openOfflinePage);
+                }
+            }
+            catch (Exception ex)
+            {
+                WriteStartupFailure(ex);
+                _requestedExitCode = VpdlWorkerSelection.StartupFailureExitCode;
             }
             if (_requestedExitCode != 0) Environment.ExitCode = _requestedExitCode;
+        }
+
+        private static void WriteStartupFailure(Exception ex)
+        {
+            try
+            {
+                string logDirectory = Path.Combine(AgentHomeDirectory, "logs");
+                Directory.CreateDirectory(logDirectory);
+                string active = ActiveVpdlInstallation == null ? "미확인" : ActiveVpdlInstallation.DisplayName;
+                string mode = Environment.GetEnvironmentVariable("VISIONQC_VPDL_WORKER_MODE") ?? "exact";
+                string text = DateTime.Now.ToString("yyyy-MM-dd HH:mm:ss") + " | VPDL " + active + " | Worker " + mode + Environment.NewLine + ex + Environment.NewLine + Environment.NewLine;
+                File.AppendAllText(Path.Combine(logDirectory, "agent-startup.log"), text);
+            }
+            catch { }
         }
 
         internal static void RequestWorkerRestart()
@@ -117,12 +139,13 @@ namespace VisionQC.LocalAgent
             try
             {
                 string explicitStudio = Environment.GetEnvironmentVariable("COGNEX_VPDL_DLL_DIR");
+                string requestedApiVersion = (Environment.GetEnvironmentVariable("VISIONQC_VPDL_API_VERSION") ?? "").Trim();
                 Version referencedVersion = Assembly.GetExecutingAssembly()
                     .GetReferencedAssemblies()
                     .Where(item => string.Equals(item.Name, "ViDi.NET.Local", StringComparison.OrdinalIgnoreCase))
                     .Select(item => item.Version)
                     .FirstOrDefault();
-                string apiVersion = VpdlRuntimeCatalog.ToApiVersion(referencedVersion);
+                string apiVersion = requestedApiVersion.Length > 0 ? requestedApiVersion : VpdlRuntimeCatalog.ToApiVersion(referencedVersion);
                 ActiveVpdlInstallation = VpdlRuntimeCatalog.Discover(explicitStudio)
                     .FirstOrDefault(item => string.Equals(item.ApiVersion, apiVersion, StringComparison.OrdinalIgnoreCase));
                 if (ActiveVpdlInstallation == null) return;

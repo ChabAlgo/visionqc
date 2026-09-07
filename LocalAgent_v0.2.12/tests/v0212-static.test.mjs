@@ -10,11 +10,12 @@ const server = read('AgentServer.cs');
 const picker = read('NativeShellPicker.cs');
 const pickerService = read('Services/PickerService.cs');
 const program = read('Program.cs');
+const workerLocator = read('Services/VpdlWorkerLocator.cs');
 
-test('Agent v1.3.5 version is consistent', () => {
-  assert.match(program, /AgentVersion = "1\.3\.5"/);
-  assert.match(read('Properties/AssemblyInfo.cs'), /AssemblyVersion\("1\.3\.5\.0"\)/);
-  assert.match(read('BUILD_RELEASE_x64.cmd'), /v1\.3\.5/);
+test('Agent v1.3.6 version is consistent', () => {
+  assert.match(program, /AgentVersion = "1\.3\.6"/);
+  assert.match(read('Properties/AssemblyInfo.cs'), /AssemblyVersion\("1\.3\.6\.0"\)/);
+  assert.match(read('BUILD_RELEASE_x64.cmd'), /v1\.3\.6/);
 });
 
 test('HTTP server delegates picker lifecycle to the isolated picker service', () => {
@@ -102,10 +103,31 @@ test('VPDL Workers are process-isolated and selected through a Launcher', () => 
   assert.match(server, /case "\/api\/vpdl\/versions"/);
   assert.match(server, /case "\/api\/vpdl\/select"/);
   assert.match(server, /Program\.RequestWorkerRestart\(\)/);
-  assert.match(launcher, /Workers", installation\.ApiVersion, "VisionQC\.VpdlWorker\.exe/);
+  assert.match(launcher, /VpdlWorkerLocator\.Resolve/);
+  assert.match(launcher, /VISIONQC_VPDL_API_VERSION/);
+  assert.match(launcher, /COGNEX_VPDL_DLL_DIR/);
+  assert.match(workerLocator, /UniversalDirectoryName = "Universal"/);
+  assert.match(workerLocator, /ExactWorkerPath/);
+  assert.match(workerLocator, /UniversalWorkerPath/);
   assert.match(launcher, /process\.WaitForExit\(\)/);
   assert.match(selection, /RestartExitCode = 74/);
+  assert.match(selection, /StartupFailureExitCode = 75/);
+  assert.match(program, /WriteStartupFailure/);
+  assert.match(program, /agent-startup\.log/);
+  assert.match(launcher, /Worker 방식/);
   assert.match(read('BUILD_VPDL_WORKERS.ps1'), /Get-HealthyVpdlInstallations/);
+  assert.match(read('BUILD_VPDL_WORKERS.ps1'), /universalOutput/);
+  assert.match(read('BUILD_VPDL_WORKERS.ps1'), /Universal\/VisionQC\.VpdlWorker\.exe/);
+});
+
+test('Universal Worker selects the target PC VPDL API instead of the build API', () => {
+  const catalog = read('Services/VpdlRuntimeCatalog.cs');
+  assert.match(program, /VISIONQC_VPDL_API_VERSION/);
+  assert.match(program, /requestedApiVersion\.Length > 0 \? requestedApiVersion/);
+  assert.match(catalog, /EnumerateManagedAssemblyDirectories/);
+  assert.match(catalog, /FindVersionRoot/);
+  assert.match(catalog, /current\.Item2 >= 4/);
+  assert.doesNotMatch(catalog, /Path\.Combine\(path, "Cognex Deep Learning Studio"\)/);
 });
 test('Agent keeps loopback CORS, JSON errors, and multi-root simulation support', () => {
   assert.match(server, /WriteJson\(stream, 500/);

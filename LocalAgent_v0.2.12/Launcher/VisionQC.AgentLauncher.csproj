@@ -28,8 +28,10 @@
   </ItemGroup>
   <ItemGroup>
     <Compile Include="Program.cs" />
+    <Compile Include="Properties\AssemblyInfo.cs" />
     <Compile Include="..\Services\VpdlRuntimeCatalog.cs"><Link>VpdlRuntimeCatalog.cs</Link></Compile>
     <Compile Include="..\Services\VpdlWorkerSelection.cs"><Link>VpdlWorkerSelection.cs</Link></Compile>
+    <Compile Include="..\Services\VpdlWorkerLocator.cs"><Link>VpdlWorkerLocator.cs</Link></Compile>
   </ItemGroup>
   <Import Project="$(MSBuildToolsPath)\Microsoft.CSharp.targets" />
 </Project>

@@ -11,12 +11,14 @@ const html = read('index.html');
 const server = read('LocalAgent_v0.2.12/AgentServer.cs');
 const installer = read('LocalAgent_v0.2.12/OfflineInstaller/Program.cs');
 const installerProject = read('LocalAgent_v0.2.12/OfflineInstaller/VisionQC.AgentInstaller.csproj');
+const workerBuild = read('LocalAgent_v0.2.12/BUILD_VPDL_WORKERS.ps1');
+const workerLocator = read('LocalAgent_v0.2.12/Services/VpdlWorkerLocator.cs');
 
 test('download controls point to the versioned single-exe and offline package', () => {
   assert.match(web, /simulation-agent-download/);
   assert.match(web, /simulation-offline-download/);
-  assert.match(web, /VisionQC_Agent_Installer_v1\.3\.5\.exe/);
-  assert.match(web, /VisionQC_Offline_v4\.7\.15\.zip/);
+  assert.match(web, /VisionQC_Agent_Installer_v1\.3\.6\.exe/);
+  assert.match(web, /VisionQC_Offline_v4\.7\.16\.zip/);
   assert.match(web, /function downloadAgentInstaller/);
   assert.match(web, /function downloadOfflinePackage/);
 });
@@ -54,4 +56,13 @@ test('single installer embeds the launcher, all Worker APIs, local UI, and offli
   assert.match(installerProject, /Payload\.Web\.assets\.index-v4\.4\.33\.js/);
   assert.match(installerProject, /Payload\.Web\.visionqc-v470\.css/);
   assert.match(installerProject, /Payload\.Web\.assets\.fonts\.inter-latin-400-normal\.woff2/);
+});
+
+test('offline package always contains a target-version independent Universal Worker', () => {
+  assert.match(workerBuild, /strategy = 'exact-or-universal'/);
+  assert.match(workerBuild, /Workers\/Universal\/VisionQC\.VpdlWorker\.exe/);
+  assert.match(workerBuild, /Worker bundle에 Universal\/VisionQC\.VpdlWorker\.exe가 없습니다/);
+  assert.match(workerLocator, /UniversalDirectoryName = "Universal"/);
+  assert.match(installerProject, /Payload\.WorkerBundle\.vpdl-workers\.zip/);
+  assert.match(installer, /VpdlRuntimeCatalog\.Discover\(\)\.Count > 0/);
 });

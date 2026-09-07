@@ -65,6 +65,7 @@
     <Compile Include="Services\ImagePreviewService.cs" />
     <Compile Include="Services\VpdlRuntimeCatalog.cs" />
     <Compile Include="Services\VpdlWorkerSelection.cs" />
+    <Compile Include="Services\VpdlWorkerLocator.cs" />
     <Compile Include="Services\HistoryService.cs" />
     <Compile Include="Services\CsvHistoryFileImporter.cs" />
     <Compile Include="Persistence\SqliteRunStore.cs" />

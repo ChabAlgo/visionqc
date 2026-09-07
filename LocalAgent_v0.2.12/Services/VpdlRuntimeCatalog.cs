@@ -37,22 +37,47 @@ namespace VisionQC.LocalAgent.Services
 
             string root = Environment.GetEnvironmentVariable("COGNEX_VPDL_ROOT");
             if (string.IsNullOrWhiteSpace(root)) root = DefaultRoot;
-            try
-            {
-                if (Directory.Exists(root))
-                    candidates.AddRange(Directory.GetDirectories(root).Select(path => Path.Combine(path, "Cognex Deep Learning Studio")));
-            }
-            catch { }
+            candidates.AddRange(EnumerateManagedAssemblyDirectories(root));
 
             return candidates
                 .Where(path => !string.IsNullOrWhiteSpace(path))
                 .Select(ReadHealthyInstallation)
                 .Where(item => item != null)
-                .GroupBy(item => item.StudioDirectory, StringComparer.OrdinalIgnoreCase)
-                .Select(group => group.First())
+                .GroupBy(item => item.RootDirectory + "|" + item.ApiVersion, StringComparer.OrdinalIgnoreCase)
+                .Select(group => group.OrderByDescending(item =>
+                    string.Equals(new DirectoryInfo(item.StudioDirectory).Name, "Cognex Deep Learning Studio", StringComparison.OrdinalIgnoreCase)).First())
                 .OrderByDescending(item => ParseVersion(item.ProductVersion))
                 .ThenByDescending(item => ParseVersion(item.ApiVersion))
                 .ToList();
+        }
+
+        private static IEnumerable<string> EnumerateManagedAssemblyDirectories(string root)
+        {
+            if (string.IsNullOrWhiteSpace(root) || !Directory.Exists(root)) yield break;
+            var pending = new Queue<Tuple<string, int>>();
+            var visited = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+            pending.Enqueue(Tuple.Create(Path.GetFullPath(root), 0));
+
+            while (pending.Count > 0)
+            {
+                Tuple<string, int> current = pending.Dequeue();
+                if (!visited.Add(current.Item1)) continue;
+                if (File.Exists(Path.Combine(current.Item1, "ViDi.NET.Local.dll"))) yield return current.Item1;
+                if (current.Item2 >= 4) continue;
+
+                string[] children;
+                try { children = Directory.GetDirectories(current.Item1); }
+                catch { continue; }
+                foreach (string child in children)
+                {
+                    try
+                    {
+                        if ((new DirectoryInfo(child).Attributes & FileAttributes.ReparsePoint) == 0)
+                            pending.Enqueue(Tuple.Create(child, current.Item2 + 1));
+                    }
+                    catch { }
+                }
+            }
         }
 
         internal static Installation ResolveForManagedAssembly(Assembly managedAssembly, string explicitStudioDirectory = null)
@@ -88,12 +113,11 @@ namespace VisionQC.LocalAgent.Services
                 string apiVersion = ToApiVersion(managedVersion);
                 if (string.IsNullOrWhiteSpace(apiVersion)) return null;
 
-                string root = Directory.GetParent(studio).FullName;
-                string nativeDirectory = Path.Combine(root, "bin");
                 string nativeName = "vidi_" + apiVersion.Replace(".", "") + ".dll";
+                string root = FindVersionRoot(studio, nativeName);
+                if (string.IsNullOrWhiteSpace(root)) return null;
+                string nativeDirectory = Path.Combine(root, "bin");
                 string native = Path.Combine(nativeDirectory, nativeName);
-                // VPDL 버전 폴더만 남고 native 런타임이 제거된 경우는 선택 대상에서 제외한다.
-                if (!File.Exists(native)) return null;
 
                 return new Installation
                 {
@@ -110,6 +134,17 @@ namespace VisionQC.LocalAgent.Services
             {
                 return null;
             }
+        }
+
+        private static string FindVersionRoot(string managedDirectory, string nativeName)
+        {
+            DirectoryInfo cursor = new DirectoryInfo(managedDirectory);
+            for (int depth = 0; cursor != null && depth < 6; depth++, cursor = cursor.Parent)
+            {
+                string native = Path.Combine(cursor.FullName, "bin", nativeName);
+                if (File.Exists(native)) return cursor.FullName;
+            }
+            return "";
         }
 
         private static Version ParseVersion(string value)

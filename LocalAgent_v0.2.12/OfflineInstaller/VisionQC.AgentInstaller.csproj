@@ -32,6 +32,7 @@
   <ItemGroup>
     <Compile Include="Program.cs" />
     <Compile Include="Properties\AssemblyInfo.cs" />
+    <Compile Include="..\Services\VpdlRuntimeCatalog.cs"><Link>VpdlRuntimeCatalog.cs</Link></Compile>
   </ItemGroup>
   <ItemGroup>
     <EmbeddedResource Include="..\Launcher\bin\x64\Release\VisionQC.LocalAgent.exe"><LogicalName>VisionQC.AgentInstaller.Payload.Launcher.VisionQC.LocalAgent.exe</LogicalName></EmbeddedResource>

@@ -443,7 +443,8 @@ namespace VisionQC.LocalAgent
                 engineVersion = "DL_Simulation v1.13 + VisionQC Workspace Inspect",
                 installedVpdlVersion = _vpdlVersion,
                 activeVpdlApiVersion = Program.ActiveVpdlInstallation == null ? "-" : Program.ActiveVpdlInstallation.ApiVersion,
-                availableVpdlVersions = VpdlRuntimeCatalog.Discover().Select(item => new { productVersion = item.ProductVersion, apiVersion = item.ApiVersion, displayName = item.DisplayName, workerInstalled = File.Exists(Path.Combine(Program.AgentHomeDirectory, "Workers", item.ApiVersion, "VisionQC.VpdlWorker.exe")) }).ToArray(),
+                vpdlWorkerMode = Environment.GetEnvironmentVariable("VISIONQC_VPDL_WORKER_MODE") ?? "exact",
+                availableVpdlVersions = VpdlRuntimeCatalog.Discover().Select(item => new { productVersion = item.ProductVersion, apiVersion = item.ApiVersion, displayName = item.DisplayName, workerInstalled = VpdlWorkerLocator.IsAvailable(Program.AgentHomeDirectory, item.ApiVersion) }).ToArray(),
                 vpdlVersion = (_preloadedRuntimeControl != null || _vpdlReservedForSimulation) ? _vpdlVersion : "-",
                 license = _licenseStatus,
                 runtimeMessage = _runtimeMessage,
@@ -468,13 +469,14 @@ namespace VisionQC.LocalAgent
                 ok = true,
                 activeApiVersion = active == null ? "-" : active.ApiVersion,
                 activeProductVersion = active == null ? "-" : active.ProductVersion,
+                workerMode = Environment.GetEnvironmentVariable("VISIONQC_VPDL_WORKER_MODE") ?? "exact",
                 selectedApiVersion = VpdlWorkerSelection.Read(),
                 available = VpdlRuntimeCatalog.Discover().Select(item => new
                 {
                     productVersion = item.ProductVersion,
                     apiVersion = item.ApiVersion,
                     displayName = item.DisplayName,
-                    workerInstalled = File.Exists(Path.Combine(Program.AgentHomeDirectory, "Workers", item.ApiVersion, "VisionQC.VpdlWorker.exe"))
+                    workerInstalled = VpdlWorkerLocator.IsAvailable(Program.AgentHomeDirectory, item.ApiVersion)
                 }).ToArray()
             };
         }
@@ -488,8 +490,7 @@ namespace VisionQC.LocalAgent
             if (_vpdlReservedForSimulation || _preloadedRuntimeControl != null)
                 return new { ok = false, error = "Simulation 또는 Runtime File Load가 실행 중입니다. 완료 또는 중지 후 VPDL 버전을 전환하세요." };
 
-            string worker = Path.Combine(Program.AgentHomeDirectory, "Workers", target.ApiVersion, "VisionQC.VpdlWorker.exe");
-            if (!File.Exists(worker))
+            if (!VpdlWorkerLocator.IsAvailable(Program.AgentHomeDirectory, target.ApiVersion))
                 return new { ok = false, error = "VPDL " + target.ProductVersion + " (API " + target.ApiVersion + ")용 Worker가 설치되어 있지 않습니다." };
 
             var active = Program.ActiveVpdlInstallation;

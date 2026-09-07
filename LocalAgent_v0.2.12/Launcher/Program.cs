@@ -12,7 +12,7 @@ namespace VisionQC.LocalAgent.Launcher
 {
     internal static class Program
     {
-        private const string LauncherVersion = "1.3.5";
+        private const string LauncherVersion = "1.3.6";
 
         [STAThread]
         private static void Main(string[] args)
@@ -52,17 +52,19 @@ namespace VisionQC.LocalAgent.Launcher
                 var installation = ResolveInstallation(selected);
                 if (installation == null)
                 {
-                    MessageBox.Show("정상 설치된 VPDL Runtime과 일치하는 VisionQC Worker를 찾지 못했습니다.\r\n\r\n" +
-                        "VPDL 설치의 ViDi.NET.Local.dll 및 bin\\vidi_*.dll 쌍과 Workers 폴더를 확인하세요.",
+                    MessageBox.Show("정상 설치된 Cognex VPDL Runtime을 찾지 못했습니다.\r\n\r\n" +
+                        "VPDL 설치 폴더의 ViDi.NET.Local.dll 및 bin\\vidi_*.dll 쌍을 확인하세요.\r\n" +
+                        "기본 탐색 루트: " + VpdlRuntimeCatalog.DefaultRoot,
                         "VisionQC Local Agent", MessageBoxButtons.OK, MessageBoxIcon.Warning);
                     return;
                 }
 
-                string worker = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "Workers", installation.ApiVersion, "VisionQC.VpdlWorker.exe");
-                if (!File.Exists(worker))
+                bool universalWorker;
+                string worker = VpdlWorkerLocator.Resolve(AppDomain.CurrentDomain.BaseDirectory, installation.ApiVersion, out universalWorker);
+                if (string.IsNullOrWhiteSpace(worker))
                 {
                     MessageBox.Show("VPDL " + installation.ProductVersion + " (API " + installation.ApiVersion + ")용 Worker가 설치되어 있지 않습니다.\r\n\r\n" +
-                        "현재 설치 프로그램이 지원하는 VPDL Worker를 다시 설치하세요.",
+                        "정확 버전 Worker 또는 Universal Worker가 포함된 VisionQC 설치 프로그램을 사용하세요.",
                         "VisionQC Local Agent", MessageBoxButtons.OK, MessageBoxIcon.Warning);
                     return;
                 }
@@ -77,6 +79,10 @@ namespace VisionQC.LocalAgent.Launcher
                     WindowStyle = ProcessWindowStyle.Hidden
                 };
                 startInfo.EnvironmentVariables["VISIONQC_AGENT_HOME"] = AppDomain.CurrentDomain.BaseDirectory;
+                startInfo.EnvironmentVariables["VISIONQC_VPDL_API_VERSION"] = installation.ApiVersion;
+                startInfo.EnvironmentVariables["VISIONQC_VPDL_PRODUCT_VERSION"] = installation.ProductVersion;
+                startInfo.EnvironmentVariables["COGNEX_VPDL_DLL_DIR"] = installation.StudioDirectory;
+                startInfo.EnvironmentVariables["VISIONQC_VPDL_WORKER_MODE"] = universalWorker ? "universal" : "exact";
                 var process = Process.Start(startInfo);
                 process.WaitForExit();
 
@@ -85,6 +91,15 @@ namespace VisionQC.LocalAgent.Launcher
                     selected = VpdlWorkerSelection.Read();
                     crashRestarts = 0;
                     continue;
+                }
+                if (process.ExitCode == VpdlWorkerSelection.StartupFailureExitCode)
+                {
+                    MessageBox.Show("VPDL Worker 시작에 실패했습니다.\r\n\r\n" +
+                        "선택된 VPDL: " + installation.DisplayName + "\r\n" +
+                        "Worker 방식: " + (universalWorker ? "Universal" : "Exact") + "\r\n" +
+                        "로그: " + Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "logs", "agent-startup.log"),
+                        "VisionQC Local Agent", MessageBoxButtons.OK, MessageBoxIcon.Error);
+                    return;
                 }
                 if (process.ExitCode == 0) return;
 
@@ -111,7 +126,7 @@ namespace VisionQC.LocalAgent.Launcher
                     string.Equals(item.ProductVersion, requested, StringComparison.OrdinalIgnoreCase));
                 if (exact != null) return exact;
             }
-            return all.FirstOrDefault(item => File.Exists(Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "Workers", item.ApiVersion, "VisionQC.VpdlWorker.exe")));
+            return all.FirstOrDefault(item => VpdlWorkerLocator.IsAvailable(AppDomain.CurrentDomain.BaseDirectory, item.ApiVersion));
         }
 
         private static string ValueAfter(string[] args, string option)

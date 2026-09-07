@@ -10,6 +10,7 @@ namespace VisionQC.LocalAgent.Services
     internal static class VpdlWorkerSelection
     {
         internal const int RestartExitCode = 74;
+        internal const int StartupFailureExitCode = 75;
 
         internal static string SelectionPath
         {

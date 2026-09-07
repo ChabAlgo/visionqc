@@ -9,13 +9,14 @@ using System.Reflection;
 using System.Text;
 using System.Threading;
 using System.Windows.Forms;
+using VisionQC.LocalAgent.Services;
 
 namespace VisionQC.AgentInstaller
 {
     internal static class Program
     {
         private const string AgentExe = "VisionQC.LocalAgent.exe";
-        private const string ProductVersion = "1.3.5";
+        private const string ProductVersion = "1.3.6";
         private static readonly PayloadFile[] Payload =
         {
             new PayloadFile("VisionQC.AgentInstaller.Payload.Launcher.VisionQC.LocalAgent.exe", AgentExe),
@@ -201,23 +202,7 @@ namespace VisionQC.AgentInstaller
 
         private static bool HasVpdlRuntime()
         {
-            string root = Environment.GetEnvironmentVariable("COGNEX_VPDL_ROOT");
-            if (string.IsNullOrWhiteSpace(root)) root = @"C:\Program Files\Cognex\VisionPro Deep Learning";
-            if (!Directory.Exists(root)) return false;
-            foreach (string versionRoot in Directory.GetDirectories(root))
-            {
-                string studio = Path.Combine(versionRoot, "Cognex Deep Learning Studio");
-                string managed = Path.Combine(studio, "ViDi.NET.Local.dll");
-                if (!File.Exists(managed)) continue;
-                try
-                {
-                    Version api = AssemblyName.GetAssemblyName(managed).Version;
-                    string native = Path.Combine(versionRoot, "bin", "vidi_" + api.Major + api.Minor + ".dll");
-                    if (File.Exists(native)) return true;
-                }
-                catch { }
-            }
-            return false;
+            return VpdlRuntimeCatalog.Discover().Count > 0;
         }
 
         private sealed class PayloadFile
