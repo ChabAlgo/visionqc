@@ -10,6 +10,8 @@ namespace VisionQC.LocalAgent.Domain
         public string name { get; set; }
         public int version { get; set; } = 1;
         public string delimiter { get; set; } = "_";
+        // null preserves saved legacy date/time rules; new clients send one dateTime rule.
+        public NamingFieldRule dateTime { get; set; }
         public NamingFieldRule cellId { get; set; } = new NamingFieldRule { mode = "auto", candidateLength = 18, extractLength = 16, requireLetter = true };
         public NamingFieldRule date { get; set; } = new NamingFieldRule { mode = "auto", format = "YYYYMMDD" };
         public NamingFieldRule time { get; set; } = new NamingFieldRule { mode = "auto", format = "HHMMSS" };

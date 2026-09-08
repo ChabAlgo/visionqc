@@ -7,13 +7,13 @@ import test from 'node:test';
 const root = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const js = readFileSync(resolve(root, 'visionqc-extension.js'), 'utf8');
 
-test('파일명 규칙 설정은 Cell ID, 날짜, 시간의 위치/자동 모드를 모두 제공한다', () => {
+test('파일명 규칙 설정은 Cell ID와 통합 날짜시간 및 이전 규칙을 제공한다', () => {
   assert.match(js, /const NAMING_PROFILE_KEY = 'visionqc-v450-naming-profile'/);
   assert.match(js, /function namingProfileCardHtml\(\)/);
   assert.match(js, /후보 전체 길이/);
   assert.match(js, /앞에서 추출할 길이/);
-  assert.match(js, /유효한 YYYYMMDD 토큰/);
-  assert.match(js, /유효한 HHMMSS 토큰/);
+  assert.match(js, /YYYYMMDDHHMMSS 한 토큰/);
+  assert.match(js, /기존 YYYYMMDD_HHMMSS/);
   assert.match(js, /\/api\/naming\/preview/);
 });
 

@@ -1,19 +1,19 @@
 {
-  "releaseTag": "visionqc-v4.7.19-agent-v1.3.9",
-  "webVersion": "4.7.19",
-  "agentVersion": "1.3.9",
-  "minimumAgentVersion": "1.3.9",
+  "releaseTag": "visionqc-v4.7.20-agent-v1.3.10",
+  "webVersion": "4.7.20",
+  "agentVersion": "1.3.10",
+  "minimumAgentVersion": "1.3.10",
   "compatibility": {
-    "web": "4.7.19",
-    "agent": "1.3.9"
+    "web": "4.7.20",
+    "agent": "1.3.10"
   },
   "artifacts": {
-    "agentInstaller": "downloads/VisionQC_Agent_Installer_v1.3.9.exe",
-    "offlinePackage": "downloads/VisionQC_Offline_v4.7.19.zip",
+    "agentInstaller": "downloads/VisionQC_Agent_Installer_v1.3.10.exe",
+    "offlinePackage": "downloads/VisionQC_Offline_v4.7.20.zip",
     "sha256": {
-      "agentInstaller": "F51914527B43562C4F91082E920D9B6A444A314A44E3E80A356EA0B84E695BE3",
-      "offlinePackage": "4DBA831634D1CA2D6291AC38785455C5AA1A2BABE2C62D989FEC416C13B56C72"
+      "agentInstaller": "8C12EB544CB1C8B1B28F5F2EF5A6253995322CD16598FA82DA96C325A107400A",
+      "offlinePackage": "5CA58F5E438C692A079F297CF167D011CAB00ACD1911BC8211A8B15D7C886702"
     }
   },
-  "notes": "Green 전용 TensorRT 해제/새 Runtime 진단 옵션과 서버 내부 추론 진단. 기본 OFF, 원본 모델 불변, 변경된 Runtime 재사용 금지. VPDL 4.0/4.2 실제 검사 및 Core 실행 검증. H100 6cc4a157 현장 해결은 미확정."
+  "notes": "자동 상태 점검의 GPU 초기화/폐기 제거. 날짜·시간 통합 파일명 규칙과 기존 설정 호환. C# 16, 코드 112, 브라우저 26 및 VPDL 4.0/4.2 Green·Core DB 저장 검증. H100 6cc4a157 현장 해결은 미확정."
 }

@@ -39,8 +39,8 @@ namespace VisionQC.LocalAgent
         private CancellationTokenSource _simulationCts;
         private Task _simulationTask;
         private readonly string _instanceId = Guid.NewGuid().ToString("N");
-        private string _licenseStatus = "확인 중";
-        private string _runtimeMessage = "Agent 시작 후 Runtime/License 자동 확인 중";
+        private string _licenseStatus = "검사 엔진 로드 대기";
+        private string _runtimeMessage = "Agent 준비 완료 · GPU/License는 Runtime File Load에서 초기화합니다.";
         private readonly string _vpdlVersion;
         private readonly string _gpuName;
         private DateTime _lastProgressBroadcast = DateTime.MinValue;
@@ -98,8 +98,8 @@ namespace VisionQC.LocalAgent
             }
 
             Task.Run(() => AcceptLoop(_serverCts.Token));
-            // Agent는 사용자가 종료할 때까지 유지하고, 시작 직후 License를 확인한다.
-            Task.Run(() => RuntimeCheck("{\"useGpu\":true,\"gpuDevices\":\"0\"}"));
+            // Do not create/dispose a GPU Control before the user's actual runtime.
+            AgentDiagnostics.Write("GPU_LIFECYCLE", "Startup probe skipped; GPU initialization is reserved for Runtime File Load");
             if (openOfflinePage) Task.Run(OpenOfflinePage);
 
             while (!_serverCts.IsCancellationRequested) Thread.Sleep(250);
@@ -530,9 +530,6 @@ namespace VisionQC.LocalAgent
         }
         private object RuntimeCheck(string body)
         {
-            var req = DeserializeDictionary(body);
-            bool useGpu = GetBool(req, "useGpu", true);
-            var gpuList = ParseGpuList(GetString(req, "gpuDevices", "0"), useGpu);
             lock (_vpdlSync)
             {
                 if (_vpdlReservedForSimulation)
@@ -547,24 +544,11 @@ namespace VisionQC.LocalAgent
                     _runtimeMessage = "Runtime File Load 완료 · Simulation 시작 대기";
                     return new { ok = true, preloaded = true, license = _licenseStatus, gpu = _gpuName, installedVpdlVersion = _vpdlVersion, vpdlVersion = _vpdlVersion, token = _preloadedRuntimeToken };
                 }
-                try
-                {
-                    var mode = useGpu ? VpdlGpuMode.SingleDevicePerTool : VpdlGpuMode.NoSupport;
-                    EnsureInspectionControl(useGpu, mode, gpuList, false);
-                    AgentDiagnostics.WriteLoadedLibraries();
-                    _licenseStatus = "Runtime OK";
-                    _runtimeMessage = "License 확인 완료 · Simulation Runtime 미로드";
-                    DisposeInspectionControlLocked();
-                    return new { ok = true, license = _licenseStatus, gpu = _gpuName, installedVpdlVersion = _vpdlVersion, vpdlVersion = "-" };
-                }
-                catch (SysException ex)
-                {
-                    DisposeInspectionControlLocked();
-                    _licenseStatus = "Runtime Error";
-                    _runtimeMessage = ex.Message;
-                    AgentDiagnostics.Write("RUNTIME_ERROR", ex.ToString());
-                    return new { ok = false, license = _licenseStatus, error = ex.Message, gpu = _gpuName, installedVpdlVersion = _vpdlVersion, vpdlVersion = "-" };
-                }
+                // Availability is not a license/inference test. The real preload validates those.
+                // Repeated browser polling must never initialize or tear down CUDA contexts.
+                return new { ok = true, deferred = true, licenseVerified = false,
+                    message = "Agent 연결 정상 · GPU/License 확인은 Runtime File Load에서 진행합니다.",
+                    license = _licenseStatus, gpu = _gpuName, installedVpdlVersion = _vpdlVersion, vpdlVersion = "-" };
             }
         }
 
@@ -610,6 +594,7 @@ namespace VisionQC.LocalAgent
                     var gpuMode = useGpu ? VpdlGpuMode.SingleDevicePerTool : VpdlGpuMode.NoSupport;
                     var gpuList = ParseGpuList(gpuDevices, useGpu);
                     AgentDiagnostics.Operation("Runtime preload | Mode=" + mode + " | GPU=" + useGpu + " | Devices=" + gpuDevices);
+                    AgentDiagnostics.Write("GPU_LIFECYCLE", "Actual runtime initialization | Mode=" + mode + " | Devices=" + gpuDevices);
                     control = new LocalRuntime.Control(gpuMode, gpuList);
                     AgentDiagnostics.WriteLoadedLibraries();
 

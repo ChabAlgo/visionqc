@@ -15,11 +15,11 @@ const coreServer = read('CoreWorker/CoreAgentServer.cs');
 const coreProject = read('CoreWorker/VisionQC.CoreWorker.csproj');
 const workerBuild = read('BUILD_VPDL_WORKERS.ps1');
 
-test('Agent v1.3.9 version is consistent', () => {
-  assert.match(program, /AgentVersion = "1\.3\.9"/);
-  assert.match(read('CoreWorker/Program.cs'), /AgentVersion = "1\.3\.9"/);
-  assert.match(read('Properties/AssemblyInfo.cs'), /AssemblyVersion\("1\.3\.9\.0"\)/);
-  assert.match(read('BUILD_RELEASE_x64.cmd'), /v1\.3\.9/);
+test('Agent v1.3.10 version is consistent', () => {
+  assert.match(program, /AgentVersion = "1\.3\.10"/);
+  assert.match(read('CoreWorker/Program.cs'), /AgentVersion = "1\.3\.10"/);
+  assert.match(read('Properties/AssemblyInfo.cs'), /AssemblyVersion\("1\.3\.10\.0"\)/);
+  assert.match(read('BUILD_RELEASE_x64.cmd'), /v1\.3\.10/);
 });
 
 test('HTTP server delegates picker lifecycle to the isolated picker service', () => {
@@ -72,7 +72,7 @@ test('installed VPDL and active Simulation Runtime are separate states', () => {
   const runtimeCheck = server.slice(server.indexOf('private object RuntimeCheck'), server.indexOf('private RuntimePreloadResponse PreloadRuntime'));
   assert.match(status, /installedVpdlVersion = _vpdlVersion/);
   assert.match(status, /_preloadedRuntimeControl != null \|\| _vpdlReservedForSimulation/);
-  assert.match(runtimeCheck, /DisposeInspectionControlLocked\(\)/);
+  assert.doesNotMatch(runtimeCheck, /DisposeInspectionControlLocked\(|EnsureInspectionControl\(/);
   assert.match(runtimeCheck, /vpdlVersion = "-"/);
   assert.match(server, /new RuntimePreloadResponse \{ ok = true, mode = mode, installedVpdlVersion = _vpdlVersion, vpdlVersion = _vpdlVersion \}/);
 });

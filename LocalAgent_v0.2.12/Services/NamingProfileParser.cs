@@ -58,17 +58,28 @@ namespace VisionQC.LocalAgent.Services
                 result.cellId = result.cellIdRaw.Substring(0, Math.Min(take, result.cellIdRaw.Length)).Trim().ToUpperInvariant();
             }
 
-            bool dateAmbiguous;
-            DateTime date;
-            if (TryExtractDate(profile.date, tokens, out date, out dateAmbiguous)) result.captureDate = date.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture);
-            else if (dateAmbiguous) result.warnings.Add("날짜 후보가 여러 개입니다.");
-            else result.warnings.Add("날짜를 추출하지 못했습니다.");
-
-            bool timeAmbiguous;
-            TimeSpan time;
-            if (TryExtractTime(profile.time, tokens, out time, out timeAmbiguous)) result.captureTime = time.ToString(@"hh\:mm\:ss", CultureInfo.InvariantCulture);
-            else if (timeAmbiguous) result.warnings.Add("시간 후보가 여러 개입니다.");
-            else result.warnings.Add("시간을 추출하지 못했습니다.");
+            bool dateAmbiguous = false, timeAmbiguous = false;
+            bool legacy = profile.dateTime != null
+                ? string.Equals(profile.dateTime.mode, "legacy", StringComparison.OrdinalIgnoreCase)
+                : IsTokenMode(profile.date) || IsTokenMode(profile.time);
+            DateTime timestamp;
+            if (!legacy && TryExtractTimestamp(profile, tokens, out timestamp, out dateAmbiguous))
+            {
+                result.captureDate = timestamp.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture);
+                result.captureTime = timestamp.ToString("HH:mm:ss", CultureInfo.InvariantCulture);
+            }
+            else if (dateAmbiguous) result.warnings.Add("날짜·시간 후보가 여러 개입니다. 토큰 번호를 지정하세요.");
+            else if (!legacy && IsTokenMode(profile.dateTime)) result.warnings.Add("지정한 날짜·시간 토큰이 유효하지 않습니다.");
+            else
+            {
+                // Keep legacy partial dates and explicitly configured non-adjacent tokens intact.
+                DateTime date;
+                if (TryExtractDate(legacy ? profile.date : new NamingFieldRule(), tokens, out date, out dateAmbiguous)) result.captureDate = date.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture);
+                else result.warnings.Add(dateAmbiguous ? "날짜 후보가 여러 개입니다." : "날짜를 추출하지 못했습니다.");
+                TimeSpan time;
+                if (TryExtractTime(legacy ? profile.time : new NamingFieldRule(), tokens, out time, out timeAmbiguous)) result.captureTime = time.ToString(@"hh\:mm\:ss", CultureInfo.InvariantCulture);
+                else result.warnings.Add(timeAmbiguous ? "시간 후보가 여러 개입니다." : "시간을 추출하지 못했습니다.");
+            }
 
             if (!string.IsNullOrEmpty(result.captureDate) && !string.IsNullOrEmpty(result.captureTime))
                 result.captureTimestamp = result.captureDate + "T" + result.captureTime;
@@ -88,6 +99,8 @@ namespace VisionQC.LocalAgent.Services
         {
             if (profile.cellId == null || profile.date == null || profile.time == null) return "Cell ID, 날짜, 시간 규칙을 모두 지정하세요.";
             if (profile.delimiter == null || profile.delimiter.Length == 0) return "구분자는 비워 둘 수 없습니다.";
+            if (profile.dateTime != null && profile.dateTime.mode != "auto" && profile.dateTime.mode != "token" && profile.dateTime.mode != "legacy") return "날짜·시간 추출 방식을 확인하세요.";
+            if (IsTokenMode(profile.dateTime) && profile.dateTime.tokenIndex < 1) return "날짜·시간 토큰 번호는 1 이상이어야 합니다.";
             if (IsTokenMode(profile.cellId) && profile.cellId.tokenIndex < 1) return "Cell ID 토큰 번호는 1 이상이어야 합니다.";
             if (IsTokenMode(profile.date) && profile.date.tokenIndex < 1) return "날짜 토큰 번호는 1 이상이어야 합니다.";
             if (IsTokenMode(profile.time) && profile.time.tokenIndex < 1) return "시간 토큰 번호는 1 이상이어야 합니다.";
@@ -116,6 +129,33 @@ namespace VisionQC.LocalAgent.Services
             if (candidates.Count == 1) return candidates[0];
             if (candidates.Count > 1) ambiguous = true;
             return null;
+        }
+
+        private static bool TryExtractTimestamp(NamingProfile profile, List<string> tokens, out DateTime timestamp, out bool ambiguous)
+        {
+            timestamp = default(DateTime);
+            ambiguous = false;
+            var valid = new List<DateTime>();
+            var rule = profile.dateTime;
+            bool explicitToken = IsTokenMode(rule);
+            IEnumerable<string> candidates = explicitToken ? (IEnumerable<string>)new[] { TokenAt(tokens, rule.tokenIndex) } : tokens;
+            foreach (var candidate in candidates)
+            {
+                DateTime parsed;
+                if (candidate != null && candidate.Length == 14 && candidate.All(char.IsDigit)
+                    && DateTime.TryParseExact(candidate, "yyyyMMddHHmmss", CultureInfo.InvariantCulture, DateTimeStyles.None, out parsed)) valid.Add(parsed);
+            }
+            DateTime date;
+            TimeSpan time;
+            bool dateMany, timeMany;
+            var dateRule = explicitToken ? new NamingFieldRule { mode = "token", tokenIndex = rule.tokenIndex } : new NamingFieldRule();
+            var timeRule = explicitToken ? new NamingFieldRule { mode = "token", tokenIndex = rule.tokenIndex + 1 } : new NamingFieldRule();
+            bool hasDate = TryExtractDate(dateRule, tokens, out date, out dateMany);
+            bool hasTime = TryExtractTime(timeRule, tokens, out time, out timeMany);
+            if (hasDate && hasTime) valid.Add(date.Date.Add(time));
+            ambiguous = valid.Count > 1 || (dateMany && (hasTime || timeMany)) || (timeMany && hasDate);
+            if (!ambiguous && valid.Count == 1) { timestamp = valid[0]; return true; }
+            return false;
         }
 
         private static bool TryExtractDate(NamingFieldRule rule, List<string> tokens, out DateTime date, out bool ambiguous)
@@ -166,7 +206,7 @@ namespace VisionQC.LocalAgent.Services
 
         private static bool IsTokenMode(NamingFieldRule rule)
         {
-            return string.Equals(rule.mode, "token", StringComparison.OrdinalIgnoreCase);
+            return rule != null && string.Equals(rule.mode, "token", StringComparison.OrdinalIgnoreCase);
         }
 
         private static string TokenAt(List<string> tokens, int oneBasedIndex)

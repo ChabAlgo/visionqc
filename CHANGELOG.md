@@ -1,5 +1,11 @@
 # VisionQC v4.7.9
 
+## v4.7.20 / Agent 1.3.10
+- 자동 상태 점검에서 GPU 초기화/종료 제거. 실제 모델 로드와 기존 검사·미리보기 기능 유지.
+- 날짜·시간 파일명 규칙 통합(YYYYMMDDHHMMSS), 이전 분리형/지정 위치 호환, SQLite 촬영 시각 반영.
+- C# 16 / 코드 112 / 브라우저 26 통과, VPDL 4.0·4.2 실제 Green 및 Core 검증. H100 현장 해결은 별도 확인 필요.
+
+
 - 화이트 모드에서 Runtime File Load의 로딩·대기·완료 상태가 어두운 바탕으로 남던 CSS 우선순위를 밝은 하늘색 표면과 어두운 텍스트로 고정했다.
 - 화이트 모드의 Integrated / Green / Blue 탭은 선택 상태를 하늘색 배경·청록 테두리·하단 강조선으로 구분한다.
 - Integrated Simulation은 결과 Crop 이미지를 기본적으로 Output의 `_VisionQC_Integrated_Images`에 보존하여 CSV FullPath Viewer와 분석 Heatmap 재생성을 계속 사용할 수 있다.

@@ -1,11 +1,12 @@
-# VisionQC v4.7.0
+# VisionQC v4.7.20 / Local Agent v1.3.10
 
 ## 현재 릴리스 안내
 
-- 설치 파일: `downloads/VisionQC_Agent_Installer_v1.2.0.exe`
-- 오프라인 패키지: `downloads/VisionQC_Offline_v4.7.0.zip`
+- 설치 파일: [VisionQC Agent 1.3.10](downloads/VisionQC_Agent_Installer_v1.3.10.exe)
+- 오프라인 패키지: [VisionQC Offline 4.7.20](downloads/VisionQC_Offline_v4.7.20.zip)
 - SQLite 이력, 대용량 CSV 직접 적재, 파일명 Position 기반 AI Green 검사, 원본/Heatmap Viewer를 제공합니다.
-- 새 대화/유지보수 시작 시 `USER_REQUESTS_V4.7.0_KR.md`, `ARCHITECTURE_V4.7.0_KR.md`, `RELEASE_NOTES_v4.7.0_KR.md`를 먼저 확인합니다.
+- 최신 변경·검증·보안 서버 확인: [v4.7.20 릴리스 노트](RELEASE_NOTES_v4.7.20_KR.md). 기존 설계는 `ARCHITECTURE_V4.7.0_KR.md` 참고.
+- 소스 폴더 `LocalAgent_v0.2.12`는 유지된 경로명입니다. 실제 배포 Agent 버전은 1.3.10이며 `RELEASE_MANIFEST.json`과 EXE 파일 버전으로 확인합니다.
 
 # 이전 변경 이력
 

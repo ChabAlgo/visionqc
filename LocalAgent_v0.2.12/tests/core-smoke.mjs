@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict';
 import { spawn } from 'node:child_process';
+import { DatabaseSync } from 'node:sqlite';
 import { cpSync, mkdirSync, mkdtempSync, readFileSync } from 'node:fs';
 import { join, resolve, dirname } from 'node:path';
 import { tmpdir } from 'node:os';
@@ -30,6 +31,17 @@ try {
   assert.equal(status?.vpdlAvailable, false);
   assert.equal(status.agentVersion, JSON.parse(readFileSync(join(repo,'RELEASE_MANIFEST.json'),'utf8')).agentVersion);
   const page = await (await fetch(base+'/')).text(); assert.match(page, /VisionQC/);
+  const profile={delimiter:'_',cellId:{mode:'auto',candidateLength:18,extractLength:16,requireLetter:true},dateTime:{mode:'auto'}};
+  const name='TAB_J1037G87P611903999_20260807074705_CRACK AN(TOP)_BLUTOL.jpg';
+  const post=async(path,body)=>(await fetch(base+path,{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify(body)})).json();
+  const preview=await post('/api/naming/preview',{profile,fileNames:[name]});
+  assert.equal(preview.records[0].captureTimestamp,'2026-08-07T07:47:05');
+  const imported=await post('/api/history/import',{importId:'timestamp-smoke',begin:true,complete:true,sourceName:'timestamp-test',namingProfile:profile,records:[{fullPath:join(stage,name),position:'AN(TOP)',totalResult:'NG',tools:[]}]});
+  assert.equal(imported.ok,true);
+  const db=new DatabaseSync(join(stage,'history.sqlite'),{readOnly:true});
+  const saved=db.prepare('SELECT cell_id,capture_timestamp FROM images LIMIT 1').get(); db.close();
+  assert.equal(saved.capture_timestamp,'2026-08-07T07:47:05'); assert.equal(saved.cell_id,name.split('_')[1].slice(0,16));
+  console.log(JSON.stringify({namingPreview:true,historyTimestampSaved:saved.capture_timestamp}));
   const response = await fetch(base+'/api/simulation/start', {method:'POST',headers:{'content-type':'application/json'},body:'{}'});
   assert.equal((await response.json()).ok, false);
   console.log(JSON.stringify({passed:true,stage,agentVersion:status.agentVersion,offlinePage:true,simulationRejectedWithoutVpdl:true}));

@@ -1,7 +1,7 @@
 (() => {
   'use strict';
 
-  const VERSION = '4.7.19';
+  const VERSION = '4.7.20';
   const DEFAULT_POSITION_DEFS = [
     { key:'CA_TOP', name:'CA(TOP)' },
     { key:'AN_TOP', name:'AN(TOP)' },
@@ -25,9 +25,9 @@
   const NG_POSITION_PREFIX = 'ng-position:';
   const IMG_RE = /\.(png|jpe?g|bmp|gif|webp|tif?f)$/i;
   const LOCAL_AGENT_URL = 'http://127.0.0.1:17891';
-  const EXPECTED_AGENT_VERSION = '1.3.9';
-  const AGENT_INSTALLER_URL = './downloads/VisionQC_Agent_Installer_v1.3.9.exe';
-  const OFFLINE_PACKAGE_URL = './downloads/VisionQC_Offline_v4.7.19.zip';
+  const EXPECTED_AGENT_VERSION = '1.3.10';
+  const AGENT_INSTALLER_URL = './downloads/VisionQC_Agent_Installer_v1.3.10.exe';
+  const OFFLINE_PACKAGE_URL = './downloads/VisionQC_Offline_v4.7.20.zip';
   // SQLite에는 사용자가 명시적으로 남기려는 두 종류의 결과만 표시한다.
   // 이전 버전의 단발 검사(single-inspection) 이력은 보존하되 화면 집계에서는 제외한다.
   const PERSISTED_HISTORY_SOURCE_TYPES = ['simulation', 'csv-import', 'csv-file-stream'];
@@ -74,6 +74,7 @@
   const defaultNamingProfile = () => ({
     id:'default', name:'기본 파일명 규칙', version:1, delimiter:'_',
     cellId:{ mode:'auto', tokenIndex:3, candidateLength:18, extractLength:16, requireLetter:true },
+    dateTime:{ mode:'auto', tokenIndex:3, format:'YYYYMMDDHHMMSS' },
     date:{ mode:'auto', tokenIndex:1, format:'YYYYMMDD' },
     time:{ mode:'auto', tokenIndex:2, format:'HHMMSS' }
   });
@@ -88,6 +89,8 @@
     const cell = source.cellId && typeof source.cellId === 'object' ? source.cellId : {};
     const date = source.date && typeof source.date === 'object' ? source.date : {};
     const time = source.time && typeof source.time === 'object' ? source.time : {};
+    const dateTime = source.dateTime && typeof source.dateTime === 'object' ? source.dateTime : {};
+    const dateTimeMode = dateTime.mode === 'legacy' || (!source.dateTime && (date.mode === 'token' || time.mode === 'token')) ? 'legacy' : asRuleMode(dateTime.mode);
     const candidateLength = safePositiveInt(cell.candidateLength, defaults.cellId.candidateLength, 256);
     const extractLength = Math.min(safePositiveInt(cell.extractLength, defaults.cellId.extractLength, 256), candidateLength);
     return {
@@ -96,6 +99,7 @@
       version:safePositiveInt(source.version, defaults.version, 9999),
       delimiter:String(source.delimiter || defaults.delimiter).slice(0, 8) || defaults.delimiter,
       cellId:{ mode:asRuleMode(cell.mode), tokenIndex:safePositiveInt(cell.tokenIndex, defaults.cellId.tokenIndex), candidateLength, extractLength, requireLetter:cell.requireLetter !== false },
+      dateTime:{ mode:dateTimeMode, tokenIndex:safePositiveInt(dateTime.tokenIndex, defaults.dateTime.tokenIndex), format:'YYYYMMDDHHMMSS' },
       date:{ mode:asRuleMode(date.mode), tokenIndex:safePositiveInt(date.tokenIndex, defaults.date.tokenIndex), format:'YYYYMMDD' },
       time:{ mode:asRuleMode(time.mode), tokenIndex:safePositiveInt(time.tokenIndex, defaults.time.tokenIndex), format:'HHMMSS' }
     };
@@ -3497,7 +3501,7 @@
         if (state.simulationAgent.runtimePreloaded)
           state.simulationAgent.vpdl = data.vpdlVersion || state.simulationAgent.installedVpdl;
         state.simulationAgent.gpu = data.gpu || state.simulationAgent.gpu;
-        state.simulationAgent.message = data.ok ? (reason === 'simulation-start' ? 'Simulation 시작 전 License 재확인 완료' : 'Agent 실행 감지 · Runtime/License 자동 확인 완료') : (data.error || 'Runtime 확인 실패');
+        state.simulationAgent.message = data.ok ? (data.message || (data.preloaded ? 'Runtime 로드 완료 · 검사 시작 가능' : data.busy ? '검사 엔진 사용 중' : 'Agent 연결 확인 완료')) : (data.error || 'Runtime 확인 실패');
         updateSimulationAgentDom();
         return data;
       } catch (error) {
@@ -4955,21 +4959,22 @@
 
   function namingRuleField(label, key, rule, options = {}) {
     const isCell = key === 'cellId';
-    const modeOptions = `<option value="auto" ${rule.mode === 'auto' ? 'selected' : ''}>조건 자동 찾기</option><option value="token" ${rule.mode === 'token' ? 'selected' : ''}>_ 기준 위치 지정</option>`;
-    return `<fieldset class="vq43-naming-rule"><legend>${escapeHtml(label)}</legend><label><span>추출 방식</span><select data-naming-field="${key}" data-naming-key="mode">${modeOptions}</select></label><label><span>_ 기준 토큰 번호</span><input type="number" min="1" max="999" value="${escapeHtml(rule.tokenIndex)}" data-naming-field="${key}" data-naming-key="tokenIndex"></label>${isCell ? `<label><span>후보 전체 길이</span><input type="number" min="1" max="256" value="${escapeHtml(rule.candidateLength)}" data-naming-field="cellId" data-naming-key="candidateLength"></label><label><span>앞에서 추출할 길이</span><input type="number" min="1" max="256" value="${escapeHtml(rule.extractLength)}" data-naming-field="cellId" data-naming-key="extractLength"></label><label class="vq43-naming-check"><input type="checkbox" ${rule.requireLetter ? 'checked' : ''} data-naming-field="cellId" data-naming-key="requireLetter"><span>영문 포함 필수</span></label>` : `<div class="vq43-naming-hint">${options.hint || ''}</div>`}</fieldset>`;
+    const isDateTime = key === 'dateTime';
+    const modeOptions = `<option value="auto" ${rule.mode === 'auto' ? 'selected' : ''}>조건 자동 찾기</option><option value="token" ${rule.mode === 'token' ? 'selected' : ''}>구분자 기준 위치 지정</option>${isDateTime ? `<option value="legacy" ${rule.mode === 'legacy' ? 'selected' : ''}>이전 날짜/시간 규칙 유지</option>` : ''}`;
+    return `<fieldset class="vq43-naming-rule"><legend>${escapeHtml(label)}</legend><label><span>추출 방식</span><select data-naming-field="${key}" data-naming-key="mode">${modeOptions}</select></label><label><span>구분자 기준 토큰 번호${isDateTime ? ' (분리형은 날짜 위치)' : ''}</span><input type="number" min="1" max="999" value="${escapeHtml(rule.tokenIndex)}" data-naming-field="${key}" data-naming-key="tokenIndex"></label>${isCell ? `<label><span>후보 전체 길이</span><input type="number" min="1" max="256" value="${escapeHtml(rule.candidateLength)}" data-naming-field="cellId" data-naming-key="candidateLength"></label><label><span>앞에서 추출할 길이</span><input type="number" min="1" max="256" value="${escapeHtml(rule.extractLength)}" data-naming-field="cellId" data-naming-key="extractLength"></label><label class="vq43-naming-check"><input type="checkbox" ${rule.requireLetter ? 'checked' : ''} data-naming-field="cellId" data-naming-key="requireLetter"><span>영문 포함 필수</span></label>` : `<div class="vq43-naming-hint">${options.hint || ''}</div>`}</fieldset>`;
   }
 
   function namingPreviewHtml() {
     if (state.namingPreviewError) return `<div class="vq43-warning"><strong>규칙 미리보기 실패</strong><div>${escapeHtml(state.namingPreviewError)}</div></div>`;
     const preview = state.namingPreview;
     if (!preview) return '<p class="vq43-naming-empty">아래 입력란에 파일명을 줄마다 붙여 넣고 ‘미리보기’를 누르면 최대 200개를 검증합니다.</p>';
-    const rows = (preview.records || []).slice(0, 20).map((row) => `<tr><td title="${escapeHtml(row.fileName)}">${escapeHtml(row.fileName)}</td><td>${escapeHtml(row.cellId || '-')}</td><td>${escapeHtml(row.captureDate || '-')}</td><td>${escapeHtml(row.captureTime || '-')}</td><td><b class="vq43-naming-status ${escapeHtml(row.status)}">${escapeHtml(row.status)}</b>${(row.warnings || []).length ? `<small>${escapeHtml(row.warnings.join(' / '))}</small>` : ''}</td></tr>`).join('');
-    return `<div class="vq43-naming-summary"><span>성공 <b>${numberText(preview.successCount)}</b></span><span>부분 <b>${numberText(preview.partialCount)}</b></span><span>모호 <b>${numberText(preview.ambiguousCount)}</b></span><span>실패 <b>${numberText(preview.failedCount)}</b></span></div><div class="vq43-naming-table-wrap"><table class="vq43-naming-table"><thead><tr><th>파일명</th><th>Cell ID</th><th>날짜</th><th>시간</th><th>판정</th></tr></thead><tbody>${rows || '<tr><td colspan="5">검증할 파일명이 없습니다.</td></tr>'}</tbody></table></div>`;
+    const rows = (preview.records || []).slice(0, 20).map((row) => `<tr><td title="${escapeHtml(row.fileName)}">${escapeHtml(row.fileName)}</td><td>${escapeHtml(row.cellId || '-')}</td><td>${escapeHtml((row.captureTimestamp || [row.captureDate, row.captureTime].filter(Boolean).join(' ')).replace('T', ' ') || '-')}</td><td><b class="vq43-naming-status ${escapeHtml(row.status)}">${escapeHtml(row.status)}</b>${(row.warnings || []).length ? `<small>${escapeHtml(row.warnings.join(' / '))}</small>` : ''}</td></tr>`).join('');
+    return `<div class="vq43-naming-summary"><span>성공 <b>${numberText(preview.successCount)}</b></span><span>부분 <b>${numberText(preview.partialCount)}</b></span><span>모호 <b>${numberText(preview.ambiguousCount)}</b></span><span>실패 <b>${numberText(preview.failedCount)}</b></span></div><div class="vq43-naming-table-wrap"><table class="vq43-naming-table"><thead><tr><th>파일명</th><th>Cell ID</th><th>날짜·시간</th><th>판정</th></tr></thead><tbody>${rows || '<tr><td colspan="4">검증할 파일명이 없습니다.</td></tr>'}</tbody></table></div>`;
   }
 
   function namingProfileCardHtml() {
     const profile = state.namingProfile;
-    return `<section class="vq43-settings-card vq43-naming-card"><div class="vq43-settings-title"><span class="vq43-settings-icon cyan">${railIconSvg('settings')}</span><div><h3>0. 파일명 규칙</h3><p>공정별 이미지 이름에서 Cell ID, 촬영 날짜, 촬영 시간을 추출합니다. 토큰 번호는 사람이 읽는 1부터 시작합니다.</p></div></div><div class="vq43-naming-profile-head"><label><span>규칙 이름</span><input id="vq43-naming-name" value="${escapeHtml(profile.name)}" maxlength="80"></label><label><span>구분자</span><input id="vq43-naming-delimiter" value="${escapeHtml(profile.delimiter)}" maxlength="8"></label><label><span>규칙 버전</span><input id="vq43-naming-version" type="number" min="1" max="9999" value="${escapeHtml(profile.version)}"></label></div><div class="vq43-naming-rule-grid">${namingRuleField('Cell ID', 'cellId', profile.cellId)}${namingRuleField('날짜', 'date', profile.date, { hint:'자동 모드는 유효한 YYYYMMDD 토큰을 정확히 하나 찾습니다.' })}${namingRuleField('시간', 'time', profile.time, { hint:'자동 모드는 유효한 HHMMSS 토큰을 정확히 하나 찾습니다.' })}</div><div class="vq43-naming-example">예: <code>20250219_104425_J4037F2JP611069701_TN4086_OK_CAM2_Blue</code> → 날짜 2025-02-19 · 시간 10:44:25 · Cell ID J4037F2JP6110697</div><label class="vq43-naming-samples"><span>검증할 파일명 (줄마다 하나)</span><textarea id="vq43-naming-samples" rows="4" placeholder="20250219_104425_J4037F2JP611069701_TN4086_OK_CAM2_Blue"></textarea></label><div class="vq43-naming-actions"><button class="vq43-btn" data-vq-action="naming-profile-save">규칙 저장</button><button class="vq43-btn vq43-btn-blue" data-vq-action="naming-profile-preview">Agent로 미리보기</button></div>${namingPreviewHtml()}</section>`;
+    return `<section class="vq43-settings-card vq43-naming-card"><div class="vq43-settings-title"><span class="vq43-settings-icon cyan">${railIconSvg('settings')}</span><div><h3>0. 파일명 규칙</h3><p>공정별 이미지 이름에서 Cell ID와 촬영 날짜·시간을 추출합니다. 14자리 통합형과 기존 날짜_시간 분리형을 지원합니다. 토큰 번호는 사람이 읽는 1부터 시작합니다.</p></div></div><div class="vq43-naming-profile-head"><label><span>규칙 이름</span><input id="vq43-naming-name" value="${escapeHtml(profile.name)}" maxlength="80"></label><label><span>구분자</span><input id="vq43-naming-delimiter" value="${escapeHtml(profile.delimiter)}" maxlength="8"></label><label><span>규칙 버전</span><input id="vq43-naming-version" type="number" min="1" max="9999" value="${escapeHtml(profile.version)}"></label></div><div class="vq43-naming-rule-grid">${namingRuleField('Cell ID', 'cellId', profile.cellId)}${namingRuleField('날짜·시간', 'dateTime', profile.dateTime, { hint:'YYYYMMDDHHMMSS 한 토큰 또는 기존 YYYYMMDD_HHMMSS를 읽습니다. 예: 20260807074705 → 2026-08-07 07:47:05' })}</div><details class="vq43-naming-legacy"><summary>이전 분리형 위치 규칙 (기존 설정 유지용)</summary><p>날짜·시간 추출 방식을 ‘이전 날짜/시간 규칙 유지’로 선택할 때 적용합니다.</p><div class="vq43-naming-rule-grid">${namingRuleField('날짜 (이전 규칙)', 'date', profile.date)}${namingRuleField('시간 (이전 규칙)', 'time', profile.time)}</div></details><div class="vq43-naming-example">예: <code>TAB_J1037G87P611903999_20260807074705_CRACK AN(TOP)_BLUTOL.jpg</code> → 날짜·시간 2026-08-07 07:47:05 · Cell ID는 설정한 추출 길이를 따릅니다.</div><label class="vq43-naming-samples"><span>검증할 파일명 (줄마다 하나)</span><textarea id="vq43-naming-samples" rows="4" placeholder="TAB_J1037G87P611903999_20260807074705_CRACK AN(TOP)_BLUTOL.jpg"></textarea></label><div class="vq43-naming-actions"><button class="vq43-btn" data-vq-action="naming-profile-save">규칙 저장</button><button class="vq43-btn vq43-btn-blue" data-vq-action="naming-profile-preview">Agent로 미리보기</button></div>${namingPreviewHtml()}</section>`;
   }
 
   function readNamingProfileFromSettings() {
@@ -4978,7 +4983,7 @@
     const field = (name) => {
       const prior = current[name];
       return {
-        mode:asRuleMode($(`[data-naming-field="${name}"][data-naming-key="mode"]`)?.value),
+        mode:name === 'dateTime' && $(`[data-naming-field="${name}"][data-naming-key="mode"]`)?.value === 'legacy' ? 'legacy' : asRuleMode($(`[data-naming-field="${name}"][data-naming-key="mode"]`)?.value),
         tokenIndex:read(`[data-naming-field="${name}"][data-naming-key="tokenIndex"]`, prior.tokenIndex),
         candidateLength:name === 'cellId' ? read('[data-naming-field="cellId"][data-naming-key="candidateLength"]', prior.candidateLength) : undefined,
         extractLength:name === 'cellId' ? read('[data-naming-field="cellId"][data-naming-key="extractLength"]', prior.extractLength) : undefined,
@@ -4986,7 +4991,7 @@
         format:prior.format
       };
     };
-    return sanitizeNamingProfile({ id:current.id, name:read('#vq43-naming-name', current.name), delimiter:read('#vq43-naming-delimiter', current.delimiter), version:read('#vq43-naming-version', current.version), cellId:field('cellId'), date:field('date'), time:field('time') });
+    return sanitizeNamingProfile({ id:current.id, name:read('#vq43-naming-name', current.name), delimiter:read('#vq43-naming-delimiter', current.delimiter), version:read('#vq43-naming-version', current.version), cellId:field('cellId'), dateTime:field('dateTime'), date:field('date'), time:field('time') });
   }
 
   function saveNamingProfileFromSettings({ silent = false } = {}) {
