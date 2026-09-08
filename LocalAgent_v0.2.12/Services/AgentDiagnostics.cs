@@ -69,7 +69,8 @@ namespace VisionQC.LocalAgent.Services
                     Write("DLL", assembly.FullName + " | " + assembly.Location);
                 using (var process = Process.GetCurrentProcess())
                     foreach (ProcessModule module in process.Modules)
-                        if (module.ModuleName.StartsWith("vidi_", StringComparison.OrdinalIgnoreCase))
+                        if (new[] { "vidi_", "cudart", "cublas", "cudnn", "nvinfer", "nvrtc", "mkl", "libiomp" }
+                            .Any(prefix => module.ModuleName.StartsWith(prefix, StringComparison.OrdinalIgnoreCase)))
                             Write("NATIVE", module.ModuleName + " | " + module.FileVersionInfo.FileVersion + " | " + module.FileName);
             }
             catch (Exception ex) { Write("DIAGNOSTIC", ex.Message); }
@@ -85,7 +86,7 @@ namespace VisionQC.LocalAgent.Services
                 using (var process = new Process { StartInfo = new ProcessStartInfo
                 {
                     FileName = executable,
-                    Arguments = "--query-gpu=name,driver_version,memory.total --format=csv,noheader",
+                    Arguments = "--query-gpu=name,driver_version,memory.total,index,memory.used,memory.free,driver_model.current --format=csv",
                     UseShellExecute = false, CreateNoWindow = true,
                     WindowStyle = ProcessWindowStyle.Hidden,
                     RedirectStandardOutput = true, RedirectStandardError = true

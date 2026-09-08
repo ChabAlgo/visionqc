@@ -25,6 +25,7 @@ namespace VpdlGreenHeatmapOverlay
             public Runtime.IStream Stream { get; set; }
             public Dictionary<string, Runtime.ITool> ToolMap { get; set; }
             public List<ToolRoiConfig> Tools { get; set; }
+            public Dictionary<string, string> ToolDiagnostics { get; set; }
         }
 
         private sealed class ImageJob
@@ -233,6 +234,12 @@ namespace VpdlGreenHeatmapOverlay
                     Runtime.ITool tool;
                     if (TryGetTool(stream, cfg.ToolName, out tool))
                     {
+                        AgentDiagnostics.Write("GREEN_TOOL", "Position=" + slot.DisplayName + " | Tool=" + cfg.ToolName + " | " + GreenRuntimePolicy.Describe(tool.ParametersBase));
+                        if (config.DisableTensorRt)
+                        {
+                            string policy = GreenRuntimePolicy.DisableTensorRt(tool.ParametersBase);
+                            Report(progress, "[COMPAT] " + slot.DisplayName + " / " + cfg.ToolName + " | " + policy + " (메모리에만 적용)");
+                        }
                         toolMap[cfg.ToolName] = tool;
                         activeTools.Add(cfg);
                     }
@@ -250,7 +257,8 @@ namespace VpdlGreenHeatmapOverlay
                 if (activeTools.Count == 0)
                     throw new System.InvalidOperationException(slot.DisplayName + "에서 실행 가능한 Tool이 없습니다. Option의 Tool 위치 체크와 Workspace 내 ToolName을 확인하세요.");
 
-                contexts[slot.Key] = new WorkspaceContext { Slot = slot, Workspace = workspace, Stream = stream, ToolMap = toolMap, Tools = activeTools };
+                contexts[slot.Key] = new WorkspaceContext { Slot = slot, Workspace = workspace, Stream = stream, ToolMap = toolMap, Tools = activeTools,
+                    ToolDiagnostics = toolMap.ToDictionary(kv => kv.Key, kv => GreenRuntimePolicy.Describe(kv.Value.ParametersBase), StringComparer.OrdinalIgnoreCase) };
                 Report(progress, string.Format("{0} 워크스페이스 로드 완료 - 실행 Tool {1}/{2}개", slot.DisplayName, activeTools.Count, applicableTools.Count));
             }
             return contexts;
@@ -576,6 +584,7 @@ namespace VpdlGreenHeatmapOverlay
             using (ISample sample = context.Stream.CreateSample())
             {
                 sample.AddImage(vidiImage);
+                string imageSize = vidiImage.Width + "x" + vidiImage.Height;
                 SD.Bitmap sourceBitmap = null;
                 try
                 {
@@ -584,7 +593,24 @@ namespace VpdlGreenHeatmapOverlay
                         token.ThrowIfCancellationRequested();
                         Runtime.ITool tool = context.ToolMap[cfg.ToolName];
                         AgentDiagnostics.Operation("Green process | Position=" + context.Slot.DisplayName + " | Tool=" + cfg.ToolName + " | Image=" + job.ImagePath);
-                        sample.Process(tool);
+                        string inferenceContext = "Position=" + context.Slot.DisplayName + " | Tool=" + cfg.ToolName
+                            + " | Image=" + imageSize
+                            + " | GPU=" + config.UseGpu + " | Devices=" + string.Join(",", config.GpuDevices)
+                            + " | " + context.ToolDiagnostics[cfg.ToolName];
+                        // Persist before native entry: fatal native errors may bypass catch/finally.
+                        AgentDiagnostics.SaveText("last-green-inference.txt", DateTime.Now.ToString("O") + " | " + inferenceContext);
+                        try { sample.Process(tool); }
+                        catch (System.Exception ex)
+                        {
+                            string failure = inferenceContext + Environment.NewLine + ex;
+                            AgentDiagnostics.SaveText("last-green-failure.txt", DateTime.Now.ToString("O") + " | " + failure);
+                            AgentDiagnostics.Write("GREEN_INFERENCE_ERROR", failure);
+                            AgentDiagnostics.WriteLoadedLibraries();
+                            AgentDiagnostics.WriteNvidiaEnvironment();
+                            throw new System.InvalidOperationException("Green 추론 실패 (" + context.Slot.DisplayName + " / " + cfg.ToolName
+                                + ", " + imageSize + "): " + ex.Message
+                                + " | 서버 logs/last-green-failure.txt 확인", ex);
+                        }
                         string decision = "ERR";
                         double score = double.NaN;
                         SD.Bitmap heatmapBmp = null;

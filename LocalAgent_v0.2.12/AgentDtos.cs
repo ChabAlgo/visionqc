@@ -198,6 +198,8 @@ namespace VisionQC.LocalAgent
 
     public sealed class AgentGreenOptions
     {
+        public bool disableTensorRt { get; set; }
+        public bool freshRuntime { get; set; }
         public string cellIdCsvPath { get; set; }
         public bool keywordMode { get; set; }
         public string keywordInputRoot { get; set; }

@@ -1260,7 +1260,26 @@ namespace VisionQC.LocalAgent
                 }
                 else
                 {
-                    var summary = GreenOverlayProcessor.Run(BuildGreenConfig(req, req.outputRoot, null, false), simulationControl, true, progress, token);
+                    var greenOptions = GetGreenOptions(req);
+                    var greenConfig = BuildGreenConfig(req, req.outputRoot, null, false);
+                    greenConfig.DisableTensorRt = greenOptions.disableTensorRt;
+                    // Never reuse a runtime whose in-memory inference settings were changed.
+                    runtimeReusable = !greenOptions.disableTensorRt && !greenOptions.freshRuntime;
+                    AgentDiagnostics.Write("GREEN_EXECUTION", "FreshRuntime=" + greenOptions.freshRuntime
+                        + " | DisableTensorRT=" + greenOptions.disableTensorRt + " | GPU=" + greenOptions.useGpu
+                        + " | Devices=" + greenOptions.gpuDevices + " | Thread=" + Thread.CurrentThread.ManagedThreadId);
+                    if (greenOptions.freshRuntime)
+                    {
+                        AppendAgentLog("INFO", "[COMPAT] 검사 스레드에서 Runtime을 새로 엽니다. 기존 Workspace 파일은 변경하지 않습니다.");
+                        RuntimeWorkspaceRegistry.Remove(simulationControl);
+                        var oldControl = simulationControl;
+                        simulationControl = null;
+                        oldControl.Dispose();
+                        token.ThrowIfCancellationRequested();
+                        simulationControl = new LocalRuntime.Control(greenConfig.UseGpu ? VpdlGpuMode.SingleDevicePerTool : VpdlGpuMode.NoSupport,
+                            greenConfig.UseGpu ? greenConfig.GpuDevices : new List<int>());
+                    }
+                    var summary = GreenOverlayProcessor.Run(greenConfig, simulationControl, !greenOptions.freshRuntime, progress, token);
                     lock (_sync)
                     {
                         _state.processed = summary.TotalImages;
@@ -1323,10 +1342,12 @@ namespace VisionQC.LocalAgent
                             if (simulationControl != null)
                             {
                                 RuntimeWorkspaceRegistry.Remove(simulationControl);
+                                AgentDiagnostics.Write("RUNTIME_DISPOSE", "Simulation runtime disposal started; inference failure, if any, is preserved separately");
                                 simulationControl.Dispose();
                             }
                         }
                         catch { }
+                        _runtimeMessage = "Runtime File Load를 다시 실행하세요. 진단/호환 검사 또는 오류 후에는 Runtime을 재사용하지 않습니다.";
                     }
                     _vpdlReservedForSimulation = false;
                 }

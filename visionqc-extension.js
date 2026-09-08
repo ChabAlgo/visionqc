@@ -1,7 +1,7 @@
 (() => {
   'use strict';
 
-  const VERSION = '4.7.18';
+  const VERSION = '4.7.19';
   const DEFAULT_POSITION_DEFS = [
     { key:'CA_TOP', name:'CA(TOP)' },
     { key:'AN_TOP', name:'AN(TOP)' },
@@ -25,9 +25,9 @@
   const NG_POSITION_PREFIX = 'ng-position:';
   const IMG_RE = /\.(png|jpe?g|bmp|gif|webp|tif?f)$/i;
   const LOCAL_AGENT_URL = 'http://127.0.0.1:17891';
-  const EXPECTED_AGENT_VERSION = '1.3.8';
-  const AGENT_INSTALLER_URL = './downloads/VisionQC_Agent_Installer_v1.3.8.exe';
-  const OFFLINE_PACKAGE_URL = './downloads/VisionQC_Offline_v4.7.18.zip';
+  const EXPECTED_AGENT_VERSION = '1.3.9';
+  const AGENT_INSTALLER_URL = './downloads/VisionQC_Agent_Installer_v1.3.9.exe';
+  const OFFLINE_PACKAGE_URL = './downloads/VisionQC_Offline_v4.7.19.zip';
   // SQLite에는 사용자가 명시적으로 남기려는 두 종류의 결과만 표시한다.
   // 이전 버전의 단발 검사(single-inspection) 이력은 보존하되 화면 집계에서는 제외한다.
   const PERSISTED_HISTORY_SOURCE_TYPES = ['simulation', 'csv-import', 'csv-file-stream'];
@@ -1015,6 +1015,8 @@
     keywordInputRoot:'Keyword 모드가 공통으로 검색할 이미지 루트 폴더입니다.',
     useGpu:'켜면 지정한 NVIDIA GPU로 VPDL Tool을 실행합니다.',
     gpuDevices:'사용할 GPU 장치 번호입니다. 여러 장치는 쉼표로 구분합니다.',
+    disableTensorRt:'Green 단독 검사에서 TensorRT를 끕니다. GPU별 최적화 문제를 구분하는 호환 옵션이며 속도·Score가 달라질 수 있습니다. 원본 Workspace는 저장하지 않으며 검사 후 다시 로드해야 합니다.',
+    freshRuntime:'Green 단독 검사 시작 때 Runtime을 새로 열어 사전 로드 재사용 영향을 구분합니다. GPU 선택은 유지하며 검사 후 다시 로드해야 합니다.',
     jpegQuality:'저장 JPEG 품질입니다. 1~100 범위입니다.',
     printEvery:'이 수만큼 처리할 때마다 상세 결과와 진행률을 Web으로 전송합니다.',
     keepSubfolders:'입력 폴더의 하위 디렉터리 구조를 출력에도 유지합니다.',
@@ -2806,7 +2808,7 @@
       green:{
         cellIdCsvPath:'', keywordMode:false, keywordInputRoot:'', keywordInputRoots:[], keepSubfolders:false,
         useGpu:true, gpuDevices:'0', jpegQuality:80, heatmapAlpha:55, heatmapAlphaCut:25,
-        heatmapImageSave:true, forceJet:true, printEvery:100,
+        heatmapImageSave:true, forceJet:true, printEvery:100, disableTensorRt:false, freshRuntime:false,
         tools:simulationDefaultTools(), judgements:simulationDefaultJudgements()
       },
       blue:{
@@ -4131,6 +4133,9 @@
       if (notReady.length) throw new Error(`Runtime File Load를 먼저 완료하세요: ${notReady.map((target) => `${target.displayName} ${target.kind.toUpperCase()}`).join(', ')}`);
       const request = buildSimulationRequest();
       if (!request.positions.length) throw new Error('현재 시뮬레이션 모드에서 사용할 Position을 1개 이상 체크하세요.');
+      if (request.mode === 'green' && (request.green.disableTensorRt || request.green.freshRuntime) && state.simulationAgent.version !== EXPECTED_AGENT_VERSION) {
+        throw new Error(`Green 호환 옵션은 Agent ${EXPECTED_AGENT_VERSION}에서 확인되었습니다. 먼저 해당 Agent로 업데이트하세요.`);
+      }
       const runtimeReady = !!state.simulationRuntimeToken &&
         isCompatiblePreloadedRuntime(request) &&
         state.simulationRuntimeAgentInstance === String(state.simulationAgent.instanceId || '') &&
@@ -4358,7 +4363,9 @@
       if (state.page === 'simulation') renderSimulationPreserveScroll();
       const elapsed = Number(data.elapsedMs || 0) / 1000;
       appendSimulationLog({level:'INFO', message:`Runtime File Load 완료 · ${items.length}개 Workspace가 실제 Simulation Runtime으로 준비됨 · ${elapsed.toFixed(1)}초`});
-      showToast('Runtime 사전 로드가 완료되었습니다. Simulation Start는 Workspace를 다시 열지 않습니다.');
+      showToast(request.mode === 'green' && request.green.freshRuntime
+        ? 'Runtime 확인 완료. 새 Runtime 진단 옵션에 따라 검사 시작 시 다시 로드합니다.'
+        : 'Runtime 사전 로드가 완료되었습니다. Simulation Start는 Workspace를 다시 열지 않습니다.');
     } catch (error) {
       clearSimulationRuntimeReadiness();
       state.simulationAgent.runtimePreloaded = false;
@@ -4716,11 +4723,12 @@
   function greenRuntimeOptions(integrated=false) {
     return `<section class="vq43-sim-option-section"><h3>Green Runtime / HeatMap</h3><div class="vq43-sim-option-grid">
       ${simulationCheck('green','useGpu','GPU 사용')}${simulationText('green','gpuDevices','GPU Devices','0')}
+      ${!integrated?`${simulationCheck('green','disableTensorRt','TensorRT 해제 (호환 검사)')}${simulationCheck('green','freshRuntime','새 Runtime으로 검사 (진단)')}`:''}
       ${simulationNumber('green','jpegQuality','JPEG Quality',1,100)}${simulationNumber('green','printEvery','Progress Update',1,1000000)}
       ${simulationCheck('green','keepSubfolders','하위 폴더 구조 유지')}${!integrated?simulationCheck('green','heatmapImageSave','NG 원본 위 Heatmap Overlay 저장'):''}
       ${!integrated?`${simulationCheck('green','forceJet','Gray HeatMap → Jet 변환')}${simulationNumber('green','heatmapAlpha','HeatMap Alpha %',0,100)}`:''}
       ${!integrated?simulationNumber('green','heatmapAlphaCut','Alpha Cut',0,255):''}
-    </div><p class="vq43-sim-option-note">Progress Update 수만큼 상세 결과를 Agent가 메모리에 모아서 Web 분석 모델로 한 번에 전송합니다.</p></section>`;
+    </div>${!integrated?'<p class="vq43-sim-option-note">호환·진단 옵션은 기본 OFF입니다. 내부 오류가 발생할 때 하나씩 비교하세요. 원본 Workspace는 바꾸지 않으며 사용 후 Runtime File Load가 필요합니다.</p>':''}<p class="vq43-sim-option-note">Progress Update 수만큼 상세 결과를 Agent가 메모리에 모아서 Web 분석 모델로 한 번에 전송합니다.</p></section>`;
   }
 
   function detectedGreenToolNames() {

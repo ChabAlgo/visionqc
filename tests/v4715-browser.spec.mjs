@@ -1,5 +1,29 @@
 import { expect, test } from '@playwright/test';
 
+test('Green compatibility options are off by default, persist and stay out of Integrated', async ({ page }) => {
+  await open(page);
+  await page.evaluate(() => window.__VISIONQC_DEBUG__.seedRuntimeToolColors());
+  await expect(page.locator('[data-sim-field="disableTensorRt"]')).toHaveCount(0);
+  await page.locator('[data-vq-action="simulation-mode"][data-vq-mode="green"]').click();
+  const tensor = page.locator('input[data-sim-field="disableTensorRt"]');
+  const fresh = page.locator('input[data-sim-field="freshRuntime"]');
+  await expect(tensor).not.toBeChecked();
+  await expect(fresh).not.toBeChecked();
+  await tensor.check();
+  await fresh.check();
+  await page.locator('[data-vq-action="simulation-mode"][data-vq-mode="integrated"]').click();
+  await expect(tensor).toHaveCount(0);
+  await page.locator('[data-vq-action="simulation-mode"][data-vq-mode="green"]').click();
+  await expect(tensor).toBeChecked();
+  await expect(fresh).toBeChecked();
+  const bounds = await tensor.locator('..').evaluate(el => {
+    const r=el.getBoundingClientRect(); const p=el.closest('.vq43-sim-option-section').getBoundingClientRect();
+    return {left:r.left-p.left,right:p.right-r.right};
+  });
+  expect(bounds.left).toBeGreaterThanOrEqual(0);
+  expect(bounds.right).toBeGreaterThanOrEqual(0);
+});
+
 async function open(page) {
   await page.goto('/index.html?vqDebug=1&browserRegression=1', { waitUntil:'domcontentloaded' });
   await page.waitForFunction(() => Boolean(window.__VISIONQC_DEBUG__), null, { timeout:15000 });
