@@ -55,6 +55,7 @@
   </ItemGroup>
   <ItemGroup>
     <Compile Include="Program.cs" />
+    <Compile Include="Services\AgentDiagnostics.cs" />
     <Compile Include="AgentServer.cs" />
     <Compile Include="AgentDtos.cs" />
     <Compile Include="NativeShellPicker.cs" />

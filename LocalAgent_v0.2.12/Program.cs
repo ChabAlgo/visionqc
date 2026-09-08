@@ -11,7 +11,7 @@ namespace VisionQC.LocalAgent
 {
     internal static class Program
     {
-        internal const string AgentVersion = "1.3.7";
+        internal const string AgentVersion = "1.3.8";
         internal static VpdlRuntimeCatalog.Installation ActiveVpdlInstallation { get; private set; }
         private static int _requestedExitCode;
 
@@ -32,8 +32,10 @@ namespace VisionQC.LocalAgent
         {
             Application.EnableVisualStyles();
             Application.SetCompatibleTextRenderingDefault(false);
+            AgentDiagnostics.Initialize(AgentHomeDirectory, "worker", AgentVersion);
             AppDomain.CurrentDomain.AssemblyResolve += ResolveAssemblyFromLocalOrVpdInstall;
             ConfigureVpdlNativeSearchPath();
+            AgentDiagnostics.Write("RUNTIME", "Requested API=" + Environment.GetEnvironmentVariable("VISIONQC_VPDL_API_VERSION") + " | Mode=" + Environment.GetEnvironmentVariable("VISIONQC_VPDL_WORKER_MODE") + " | Studio=" + (ActiveVpdlInstallation == null ? "none" : ActiveVpdlInstallation.StudioDirectory));
 
             if (ActiveVpdlInstallation == null)
             {
@@ -154,7 +156,9 @@ namespace VisionQC.LocalAgent
                 string service = Path.Combine(ActiveVpdlInstallation.RootDirectory, "Service");
                 string currentPath = Environment.GetEnvironmentVariable("PATH") ?? "";
                 string prefix = string.Join(";", new[] { nativeBin, ActiveVpdlInstallation.StudioDirectory, service }.Where(Directory.Exists));
-                if (!string.IsNullOrWhiteSpace(prefix) && currentPath.IndexOf(nativeBin, StringComparison.OrdinalIgnoreCase) < 0)
+                // Always put the selected installation first, even if it was already
+                // present after another Cognex version in the machine PATH.
+                if (!string.IsNullOrWhiteSpace(prefix))
                     Environment.SetEnvironmentVariable("PATH", prefix + ";" + currentPath, EnvironmentVariableTarget.Process);
                 if (Directory.Exists(nativeBin)) SetDllDirectory(nativeBin);
             }

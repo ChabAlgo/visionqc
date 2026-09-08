@@ -571,6 +571,7 @@ namespace VpdlGreenHeatmapOverlay
                 Position = context.Slot.DisplayName
             };
 
+            AgentDiagnostics.Operation("Green image load | Position=" + context.Slot.DisplayName + " | Image=" + job.ImagePath);
             using (var vidiImage = new LocalImages.LibraryImage(job.ImagePath))
             using (ISample sample = context.Stream.CreateSample())
             {
@@ -582,6 +583,7 @@ namespace VpdlGreenHeatmapOverlay
                     {
                         token.ThrowIfCancellationRequested();
                         Runtime.ITool tool = context.ToolMap[cfg.ToolName];
+                        AgentDiagnostics.Operation("Green process | Position=" + context.Slot.DisplayName + " | Tool=" + cfg.ToolName + " | Image=" + job.ImagePath);
                         sample.Process(tool);
                         string decision = "ERR";
                         double score = double.NaN;
@@ -605,10 +607,15 @@ namespace VpdlGreenHeatmapOverlay
                             {
                                 try
                                 {
+                                    AgentDiagnostics.Operation("Green heatmap | Position=" + context.Slot.DisplayName + " | Tool=" + cfg.ToolName + " | Image=" + job.ImagePath);
                                     IImage hm = view.HeatMap;
                                     if (hm != null) heatmapBmp = CloneBitmapFromUnknown(GetPropertyValue(hm, "Bitmap"));
                                 }
-                                catch { heatmapBmp = null; }
+                                catch (System.Exception ex)
+                                {
+                                    AgentDiagnostics.Write("HEATMAP_ERROR", "Tool=" + cfg.ToolName + " | Image=" + job.ImagePath + Environment.NewLine + ex);
+                                    heatmapBmp = null;
+                                }
                             }
                         }
                         else decision = "ERR_NO_MARKING";

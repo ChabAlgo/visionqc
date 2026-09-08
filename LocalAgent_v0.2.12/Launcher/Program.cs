@@ -12,7 +12,7 @@ namespace VisionQC.LocalAgent.Launcher
 {
     internal static class Program
     {
-        private const string LauncherVersion = "1.3.7";
+        private const string LauncherVersion = "1.3.8";
 
         [STAThread]
         private static void Main(string[] args)
@@ -46,6 +46,9 @@ namespace VisionQC.LocalAgent.Launcher
 
         private static void RunWorker(string selected, bool offline)
         {
+            AgentDiagnostics.Initialize(AppDomain.CurrentDomain.BaseDirectory, "launcher", LauncherVersion);
+            string nativeLogDirectory = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "logs", "cognex");
+            Directory.CreateDirectory(nativeLogDirectory);
             int crashRestarts = 0;
             while (true)
             {
@@ -70,7 +73,10 @@ namespace VisionQC.LocalAgent.Launcher
                 {
                     FileName = worker,
                     Arguments = offline ? "--worker --offline" : "--worker",
+                    WorkingDirectory = nativeLogDirectory,
                     UseShellExecute = false,
+                    RedirectStandardOutput = true,
+                    RedirectStandardError = true,
                     CreateNoWindow = true,
                     WindowStyle = ProcessWindowStyle.Hidden
                 };
@@ -80,16 +86,29 @@ namespace VisionQC.LocalAgent.Launcher
                 startInfo.EnvironmentVariables["VISIONQC_VPDL_PRODUCT_VERSION"] = vpdlAvailable ? installation.ProductVersion : "";
                 startInfo.EnvironmentVariables["COGNEX_VPDL_DLL_DIR"] = vpdlAvailable ? installation.StudioDirectory : "";
                 startInfo.EnvironmentVariables["VISIONQC_VPDL_WORKER_MODE"] = vpdlAvailable ? (universalWorker ? "universal" : "exact") : "none";
-                var process = Process.Start(startInfo);
-                process.WaitForExit();
+                AgentDiagnostics.Write("WORKER", worker + " | Selected=" + (vpdlAvailable ? installation.DisplayName : "none") + " | Mode=" + startInfo.EnvironmentVariables["VISIONQC_VPDL_WORKER_MODE"]);
+                int exitCode;
+                using (var process = new Process { StartInfo = startInfo })
+                {
+                    process.OutputDataReceived += (sender, item) => { if (item.Data != null) AgentDiagnostics.Write("SDK", item.Data); };
+                    process.ErrorDataReceived += (sender, item) => { if (item.Data != null) AgentDiagnostics.Write("SDK_ERROR", item.Data); };
+                    process.Start();
+                    // Opening the offline browser is a launch action, not a recovery action.
+                    offline = false;
+                    process.BeginOutputReadLine();
+                    process.BeginErrorReadLine();
+                    process.WaitForExit();
+                    exitCode = process.ExitCode;
+                }
+                AgentDiagnostics.Write("EXIT", "Worker exit=" + exitCode + " (0x" + unchecked((uint)exitCode).ToString("X8") + ")");
 
-                if (process.ExitCode == VpdlWorkerSelection.RestartExitCode)
+                if (exitCode == VpdlWorkerSelection.RestartExitCode)
                 {
                     selected = VpdlWorkerSelection.Read();
                     crashRestarts = 0;
                     continue;
                 }
-                if (process.ExitCode == VpdlWorkerSelection.StartupFailureExitCode)
+                if (exitCode == VpdlWorkerSelection.StartupFailureExitCode)
                 {
                     MessageBox.Show("VisionQC Worker 시작에 실패했습니다.\r\n\r\n" +
                         "선택된 VPDL: " + (vpdlAvailable ? installation.DisplayName : "미설치 모드") + "\r\n" +
@@ -98,7 +117,7 @@ namespace VisionQC.LocalAgent.Launcher
                         "VisionQC Local Agent", MessageBoxButtons.OK, MessageBoxIcon.Error);
                     return;
                 }
-                if (process.ExitCode == 0) return;
+                if (exitCode == 0) return;
 
                 crashRestarts++;
                 if (crashRestarts >= 3)

@@ -9,7 +9,7 @@ namespace VisionQC.LocalAgent
 {
     internal static class Program
     {
-        internal const string AgentVersion = "1.3.7";
+        internal const string AgentVersion = "1.3.8";
         private static int _requestedExitCode;
 
         internal static string AgentHomeDirectory
@@ -26,6 +26,7 @@ namespace VisionQC.LocalAgent
         {
             Application.EnableVisualStyles();
             Application.SetCompatibleTextRenderingDefault(false);
+            AgentDiagnostics.Initialize(AgentHomeDirectory, "core", AgentVersion);
             bool openOfflinePage = args != null && Array.Exists(args, value => string.Equals(value, "--offline", StringComparison.OrdinalIgnoreCase));
             try
             {

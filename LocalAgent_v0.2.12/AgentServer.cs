@@ -75,6 +75,8 @@ namespace VisionQC.LocalAgent
         {
             _vpdlVersion = DetectVpdlVersion();
             _gpuName = DetectGpuName();
+            AgentDiagnostics.Write("GPU", _gpuName);
+            Task.Run(() => AgentDiagnostics.WriteNvidiaEnvironment());
             _picker = new PickerService(AppendAgentLog);
             _imagePreview = new ImagePreviewService();
             _historyStore = new SqliteRunStore(ResolveHistoryDatabasePath());
@@ -549,6 +551,7 @@ namespace VisionQC.LocalAgent
                 {
                     var mode = useGpu ? VpdlGpuMode.SingleDevicePerTool : VpdlGpuMode.NoSupport;
                     EnsureInspectionControl(useGpu, mode, gpuList, false);
+                    AgentDiagnostics.WriteLoadedLibraries();
                     _licenseStatus = "Runtime OK";
                     _runtimeMessage = "License 확인 완료 · Simulation Runtime 미로드";
                     DisposeInspectionControlLocked();
@@ -559,6 +562,7 @@ namespace VisionQC.LocalAgent
                     DisposeInspectionControlLocked();
                     _licenseStatus = "Runtime Error";
                     _runtimeMessage = ex.Message;
+                    AgentDiagnostics.Write("RUNTIME_ERROR", ex.ToString());
                     return new { ok = false, license = _licenseStatus, error = ex.Message, gpu = _gpuName, installedVpdlVersion = _vpdlVersion, vpdlVersion = "-" };
                 }
             }
@@ -605,7 +609,9 @@ namespace VisionQC.LocalAgent
                     }
                     var gpuMode = useGpu ? VpdlGpuMode.SingleDevicePerTool : VpdlGpuMode.NoSupport;
                     var gpuList = ParseGpuList(gpuDevices, useGpu);
+                    AgentDiagnostics.Operation("Runtime preload | Mode=" + mode + " | GPU=" + useGpu + " | Devices=" + gpuDevices);
                     control = new LocalRuntime.Control(gpuMode, gpuList);
+                    AgentDiagnostics.WriteLoadedLibraries();
 
                     var response = new RuntimePreloadResponse { ok = true, mode = mode, installedVpdlVersion = _vpdlVersion, vpdlVersion = _vpdlVersion };
                     var positions = EnabledPositions(req).ToList();
@@ -661,6 +667,7 @@ namespace VisionQC.LocalAgent
                     _licenseStatus = "Runtime Error";
                     _runtimeMessage = ex.Message;
                     AppendAgentLog("ERROR", "Runtime File Load 실패: " + ex.Message);
+                    AgentDiagnostics.Write("PRELOAD_ERROR", ex.ToString());
                     return new RuntimePreloadResponse { ok = false, mode = mode, error = ex.Message, elapsedMs = sw.ElapsedMilliseconds };
                 }
             }
@@ -1119,6 +1126,7 @@ namespace VisionQC.LocalAgent
 
         private object StartSimulation(string body)
         {
+            AgentDiagnostics.SaveText("last-simulation-request.json", body);
             lock (_sync)
             {
                 if (_simulationTask != null && !_simulationTask.IsCompleted)
@@ -1201,6 +1209,7 @@ namespace VisionQC.LocalAgent
                     _state.message = "Simulation 시작 실패: " + ex.Message;
                 }
                 AppendAgentLog("ERROR", _state.message);
+                AgentDiagnostics.Write("SIMULATION_ERROR", ex.ToString());
                 return new { ok = false, error = _state.message };
             }
         }
@@ -1293,6 +1302,7 @@ namespace VisionQC.LocalAgent
                 CompleteSimulationHistory("failed", _state.message);
                 AppendAgentLog("ERROR", _state.message);
                 Broadcast("error", Snapshot(), true);
+                AgentDiagnostics.Write("SIMULATION_ERROR", ex.ToString());
             }
             finally
             {
@@ -1872,6 +1882,7 @@ namespace VisionQC.LocalAgent
                 message = message,
                 state = Snapshot()
             }, true);
+            if (normalizedLevel != "PROGRESS") AgentDiagnostics.Write(normalizedLevel, message);
         }
 
         private async Task WriteSse(SseClient client, string eventName, object data)
@@ -1924,12 +1935,13 @@ namespace VisionQC.LocalAgent
             try
             {
                 var names = new List<string>();
-                using (var searcher = new ManagementObjectSearcher("SELECT Name FROM Win32_VideoController"))
+                using (var searcher = new ManagementObjectSearcher("SELECT Name, DriverVersion FROM Win32_VideoController"))
                 using (var results = searcher.Get())
                 {
                     foreach (ManagementObject item in results)
                     {
                         string name = Convert.ToString(item["Name"]);
+                        AgentDiagnostics.Write("GPU_DRIVER", name + " | Windows driver=" + Convert.ToString(item["DriverVersion"]));
                         if (!string.IsNullOrWhiteSpace(name) && name.IndexOf("NVIDIA", StringComparison.OrdinalIgnoreCase) >= 0) names.Add(name);
                     }
                 }

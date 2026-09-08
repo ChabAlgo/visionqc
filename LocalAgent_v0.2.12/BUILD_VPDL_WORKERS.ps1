@@ -40,6 +40,8 @@ $installations = @(Get-HealthyVpdlInstallations |
     Sort-Object @{ Expression = { [version]$_.ProductVersion }; Descending = $true })
 $releaseRoot = Join-Path $agentRoot 'Launcher\bin\x64\Release'
 $workerRoot = Join-Path $releaseRoot 'Workers'
+if ([IO.Path]::GetFullPath($workerRoot) -ne ([IO.Path]::GetFullPath($releaseRoot).TrimEnd('\') + '\Workers')) { throw 'Worker build target escaped release directory' }
+if ((Test-Path -LiteralPath $workerRoot) -and ((Get-Item -LiteralPath $workerRoot).Attributes -band [IO.FileAttributes]::ReparsePoint)) { throw 'Worker build target must not be a directory link' }
 if (Test-Path -LiteralPath $workerRoot) { Remove-Item -LiteralPath $workerRoot -Recurse -Force }
 New-Item -ItemType Directory -Path $workerRoot -Force | Out-Null
 

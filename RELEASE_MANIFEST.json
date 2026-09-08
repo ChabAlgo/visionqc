@@ -1,19 +1,19 @@
 {
-  "releaseTag": "visionqc-v4.7.17-agent-v1.3.7",
-  "webVersion": "4.7.17",
-  "agentVersion": "1.3.7",
-  "minimumAgentVersion": "1.3.7",
+  "releaseTag": "visionqc-v4.7.18-agent-v1.3.8",
+  "webVersion": "4.7.18",
+  "agentVersion": "1.3.8",
+  "minimumAgentVersion": "1.3.8",
   "compatibility": {
-    "web": "4.7.17",
-    "agent": "1.3.7"
+    "web": "4.7.18",
+    "agent": "1.3.8"
   },
   "artifacts": {
-    "agentInstaller": "downloads/VisionQC_Agent_Installer_v1.3.7.exe",
-    "offlinePackage": "downloads/VisionQC_Offline_v4.7.17.zip",
+    "agentInstaller": "downloads/VisionQC_Agent_Installer_v1.3.8.exe",
+    "offlinePackage": "downloads/VisionQC_Offline_v4.7.18.zip",
     "sha256": {
-      "agentInstaller": "F84F76177CFDFA2E8AB68F055844742E2A104F042E85027E7D74CC4E468443A3",
-      "offlinePackage": "E061F3C9C7F7F8EE2FD3F57F05928FE2544E2728C850EF9BD06886FDB017C589"
+      "agentInstaller": "A522FBD5196384A921A9B46BE9F27C65B3FE7AA02274D4EFCF0F11308FFBEAAF",
+      "offlinePackage": "D32C172DFA1E863B7293DBD7710E5CD00D863BF4DDBABC849382713D65E6F153"
     }
   },
-  "notes": "VPDL이 없어도 Core Worker로 Local Agent와 오프라인 UI가 시작됩니다. VPDL이 있으면 정확 API Worker, Universal Worker 순으로 선택하며 Runtime Load, AI 검사, Simulation은 VPDL 사용 가능 상태에서만 활성화됩니다."
+  "notes": "VPDL 4.0/4.2 정확 버전 Worker를 포함합니다. Worker 복구 시 새 창 반복 열기를 방지하고 로컬 GPU/드라이버/SDK/검사 단계 진단을 저장합니다. H100의 6cc4a157은 재현 및 원인 확인이 필요합니다."
 }

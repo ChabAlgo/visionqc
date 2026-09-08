@@ -39,6 +39,7 @@
   </ItemGroup>
   <ItemGroup>
     <Compile Include="Program.cs" />
+    <Compile Include="..\Services\AgentDiagnostics.cs"><Link>AgentDiagnostics.cs</Link></Compile>
     <Compile Include="CoreAgentServer.cs" />
     <Compile Include="CoreModels.cs" />
     <Compile Include="Properties\AssemblyInfo.cs" />

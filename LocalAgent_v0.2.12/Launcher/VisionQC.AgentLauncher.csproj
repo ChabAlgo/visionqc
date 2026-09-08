@@ -28,6 +28,7 @@
   </ItemGroup>
   <ItemGroup>
     <Compile Include="Program.cs" />
+    <Compile Include="..\Services\AgentDiagnostics.cs"><Link>AgentDiagnostics.cs</Link></Compile>
     <Compile Include="Properties\AssemblyInfo.cs" />
     <Compile Include="..\Services\VpdlRuntimeCatalog.cs"><Link>VpdlRuntimeCatalog.cs</Link></Compile>
     <Compile Include="..\Services\VpdlWorkerSelection.cs"><Link>VpdlWorkerSelection.cs</Link></Compile>

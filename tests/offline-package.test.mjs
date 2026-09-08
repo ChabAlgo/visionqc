@@ -14,11 +14,34 @@ const installerProject = read('LocalAgent_v0.2.12/OfflineInstaller/VisionQC.Agen
 const workerBuild = read('LocalAgent_v0.2.12/BUILD_VPDL_WORKERS.ps1');
 const workerLocator = read('LocalAgent_v0.2.12/Services/VpdlWorkerLocator.cs');
 
+test('worker recovery opens offline UI only once and preserves crash diagnostics', () => {
+  const launcher = read('LocalAgent_v0.2.12/Launcher/Program.cs');
+  const diagnostics = read('LocalAgent_v0.2.12/Services/AgentDiagnostics.cs');
+  assert.match(launcher, /process\.Start\(\);[\s\S]*?offline = false;[\s\S]*?process\.WaitForExit\(\)/);
+  assert.match(launcher, /RedirectStandardError = true/);
+  assert.match(launcher, /RedirectStandardOutput = true/);
+  assert.match(launcher, /AgentDiagnostics\.Write\("EXIT"/);
+  assert.match(diagnostics, /last-operation\.txt/);
+  assert.match(diagnostics, /MaxLogBytes/);
+  assert.match(diagnostics, /UnhandledException/);
+  assert.match(diagnostics, /--query-gpu=name,driver_version,memory.total/);
+  assert.match(server, /last-simulation-request\.json/);
+  const green = read('LocalAgent_v0.2.12/Engine/GreenOverlayProcessor.cs');
+  assert.match(green, /AgentDiagnostics\.Operation\("Green process[\s\S]*?sample\.Process\(tool\)/);
+  assert.match(green, /AgentDiagnostics\.Operation\("Green heatmap[\s\S]*?view\.HeatMap/);
+});
+
+test('selected VPDL native path is prepended even if already present later in PATH', () => {
+  const program = read('LocalAgent_v0.2.12/Program.cs');
+  assert.match(program, /prefix \+ ";" \+ currentPath, EnvironmentVariableTarget\.Process/);
+  assert.doesNotMatch(program, /currentPath\.IndexOf\(nativeBin/);
+});
+
 test('download controls point to the versioned single-exe and offline package', () => {
   assert.match(web, /simulation-agent-download/);
   assert.match(web, /simulation-offline-download/);
-  assert.match(web, /VisionQC_Agent_Installer_v1\.3\.7\.exe/);
-  assert.match(web, /VisionQC_Offline_v4\.7\.17\.zip/);
+  assert.match(web, /VisionQC_Agent_Installer_v1\.3\.8\.exe/);
+  assert.match(web, /VisionQC_Offline_v4\.7\.18\.zip/);
   assert.match(web, /function downloadAgentInstaller/);
   assert.match(web, /function downloadOfflinePackage/);
 });

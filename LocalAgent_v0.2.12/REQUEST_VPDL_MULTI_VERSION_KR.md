@@ -9,7 +9,7 @@ VPDL 4.2만을 기준으로 고정하지 말고, PC마다 다른 VPDL 버전이 
 - 설치 폴더명만 보고 VPDL을 선택하지 않는다.
 - 관리 API DLL과 네이티브 엔진 DLL의 API 쌍이 일치할 때만 정상 설치본으로 인정한다.
 - API별 Worker를 독립 프로세스로 빌드·배포한다.
-- 배포 PC에 없던 VPDL 버전은 Universal Worker가 대상 PC의 설치 DLL을 직접 선택해 실행한다.
+- 정확 버전 Worker가 없으면 Universal Worker가 대상 PC의 설치 DLL을 선택한다. Universal은 상위 SDK 빌드의 호환 API를 사용하는 경로이며 모든 미래 SDK/API/GPU의 정상 처리를 보증하는 것은 아니다.
 - 설치 프로그램에는 정확 버전 Worker와 Universal Worker를 하나의 묶음으로 포함한다.
 - 지원되지 않은 새 API는 잘못된 DLL 로드 대신 명확한 안내를 표시하며, 해당 API Worker를 추가 빌드해 배포한다.
 
@@ -20,3 +20,11 @@ VPDL 4.2만을 기준으로 고정하지 말고, PC마다 다른 VPDL 버전이 
 ## 2026-09-07 VPDL 미설치 실행 보완
 
 v1.3.6까지는 Launcher와 VPDL Worker가 Runtime 탐지를 서버 시작의 선행 조건으로 사용해 VPDL이 없는 PC에서는 오프라인 화면조차 열리지 않았다. v1.3.7부터 VPDL을 전혀 참조하지 않는 Core Worker를 패키지에 항상 포함한다. VPDL이 없으면 Core Worker가 포트 17891의 웹 서버와 비-VPDL API를 실행하고, Runtime Load와 Simulation API만 명시적으로 거절한다.
+
+## 2026-09-08 실제 4.0 실행 검증 및 오류 진단
+
+- RTX 4050 PC에서 VPDL 4.0/API 8.0을 설치하고 Universal과 정확 버전 Worker 모두 Green 검사 및 히트맵 저장을 확인했다.
+- v1.3.8에는 4.0/API 8.0과 4.2/API 8.2 정확 버전 Worker를 함께 포함한다.
+- 버전별 DLL 검색 경로 우선순위를 보강하고 Worker 복구 때 새 브라우저 창을 반복 열지 않도록 수정했다.
+- GPU/드라이버/SDK 버전과 마지막 검사 단계는 로컬 logs 폴더에 저장한다.
+- H100 + VPDL 4.0의 6cc4a157은 재현·해결 미확정이다. 동일 PC의 SDK 단독 처리와 진단 로그를 대조해야 한다.
