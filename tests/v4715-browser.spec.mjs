@@ -24,6 +24,37 @@ test('Green compatibility options are off by default, persist and stay out of In
   expect(bounds.right).toBeGreaterThanOrEqual(0);
 });
 
+
+test('Green diagnostic and memory options persist and do not leak into Integrated', async ({ page }) => {
+  await open(page);
+  await page.evaluate(() => window.__VISIONQC_DEBUG__.seedRuntimeToolColors());
+  await page.locator('[data-vq-action="simulation-mode"][data-vq-mode="green"]').click();
+  const detailed = page.locator('input[data-sim-field="detailedDiagnostics"]');
+  const memory = page.locator('input[data-sim-field="disableOptimizedGpuMemory"]');
+  await expect(detailed).toBeChecked();
+  await expect(memory).not.toBeChecked();
+  await memory.check();
+  await detailed.uncheck();
+  await page.locator('[data-vq-action="simulation-mode"][data-vq-mode="integrated"]').click();
+  await expect(memory).toHaveCount(0);
+  await expect(detailed).toHaveCount(0);
+  await page.locator('[data-vq-action="simulation-mode"][data-vq-mode="green"]').click();
+  await expect(memory).toBeChecked();
+  await expect(detailed).not.toBeChecked();
+  await page.reload({ waitUntil:'domcontentloaded' });
+  await page.waitForFunction(() => Boolean(window.__VISIONQC_DEBUG__));
+  await page.getByRole('button', { name:'시뮬레이션', exact:true }).click();
+  await page.locator('[data-vq-action="simulation-mode"][data-vq-mode="green"]').click();
+  await expect(memory).toBeChecked();
+  await expect(detailed).not.toBeChecked();
+  const bounds = await memory.locator('..').evaluate(el => {
+    const r = el.getBoundingClientRect(), parent = el.closest('.vq43-sim-option-section').getBoundingClientRect();
+    return { left:r.left-parent.left, right:parent.right-r.right };
+  });
+  expect(bounds.left).toBeGreaterThanOrEqual(0);
+  expect(bounds.right).toBeGreaterThanOrEqual(0);
+});
+
 async function open(page) {
   await page.goto('/index.html?vqDebug=1&browserRegression=1', { waitUntil:'domcontentloaded' });
   await page.waitForFunction(() => Boolean(window.__VISIONQC_DEBUG__), null, { timeout:15000 });

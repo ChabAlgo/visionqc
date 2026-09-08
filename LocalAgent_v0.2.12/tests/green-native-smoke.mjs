@@ -1,6 +1,6 @@
 import { DatabaseSync } from 'node:sqlite';
 import { spawn } from 'node:child_process';
-import { mkdirSync, mkdtempSync, readFileSync, writeFileSync, copyFileSync, readdirSync, existsSync, cpSync } from 'node:fs';
+import { mkdirSync, mkdtempSync, readFileSync, writeFileSync, copyFileSync, readdirSync, existsSync, cpSync, statSync } from 'node:fs';
 import { join, basename, resolve } from 'node:path';
 import { tmpdir } from 'node:os';
 import { setTimeout as sleep } from 'node:timers/promises';
@@ -35,6 +35,13 @@ else {
 }
 config.green.disableTensorRt=profile==='notrt'||profile==='both';
 config.green.freshRuntime=profile==='fresh'||profile==='both';
+config.green.detailedDiagnostics=profile!=='quiet';
+config.green.disableOptimizedGpuMemory=profile==='memory';
+if(profile==='bad'){
+  const input=join(reportRoot,'invalid-input');mkdirSync(input);
+  writeFileSync(join(input,'20260807_074705_J1037G87P611903999.jpg'),'Intentionally invalid image for failure-stage regression');
+  for(const p of config.positions){p.greenImageRoot=input;p.greenImageRoots=[input];}
+}
 const webVersion=JSON.parse(readFileSync(new URL('../../package.json',import.meta.url),'utf8')).version;
 config.webVersion=webVersion;
 config.outputRoot=join(reportRoot,'output');mkdirSync(config.outputRoot);
@@ -48,6 +55,7 @@ try {
 } catch(e){if(!/fetch failed|ECONNREFUSED/.test(String(e)) && !String(e).includes('exited'))throw e;}
 const studio=join('C:\\Program Files\\Cognex\\VisionPro Deep Learning',product,'Cognex Deep Learning Studio');
 const api=product==='4.0'?'8.0':product==='4.1'?'8.1':'8.2';
+const childStartedAt=Date.now();
 const child=spawn(resolve(worker),['--worker'],{cwd:reportRoot,windowsHide:true,stdio:['ignore','pipe','pipe'],env:{...process.env,VISIONQC_AGENT_HOME:reportRoot,VISIONQC_HISTORY_DB_PATH:join(reportRoot,'history.sqlite'),COGNEX_VPDL_ROOT:join('C:\\Program Files\\Cognex\\VisionPro Deep Learning',product),COGNEX_VPDL_DLL_DIR:studio,VISIONQC_VPDL_API_VERSION:api,VISIONQC_VPDL_PRODUCT_VERSION:product,VISIONQC_VPDL_WORKER_MODE:label}});
 child.stdout.on('data',d=>log('STDOUT',{text:String(d)}));child.stderr.on('data',d=>log('STDERR',{text:String(d)}));child.on('exit',(code,signal)=>log('WORKER_EXIT',{code,signal}));
 let keepAlive=setInterval(()=>log('WAIT',{pid:child.pid}),15000);let result={reportRoot,fixture,product,label};
@@ -87,11 +95,23 @@ try {
   let final; for(let i=0;i<150;i++){if(child.exitCode!==null)throw new Error('Worker crashed during simulation: '+child.exitCode);await sleep(1000);try{status=await request('/api/status',undefined,5000);}catch(e){if(child.exitCode!==null)throw e;continue;}if(!status.running){final=status.state;break;}}
   if(!final)throw new Error('Simulation deadline exceeded');
   result={...result,final};log('RESULT',{state:final});
-  if(final.error)throw new Error(final.error);
+  if(profile==='bad'){
+    const failure=readFileSync(join(reportRoot,'logs','last-sdk-failure.txt'),'utf8');
+    if(!final.error || !failure.includes('Stage=Image.Load') || !failure.includes('HResult=0x')) throw new Error('Expected image-load failure was not diagnosed');
+    result.expectedFailureVerified=true;
+  } else if(final.error)throw new Error(final.error);
   await sleep(1000); const after=await request('/api/status');
   result.runtimePreloadedAfter=after.runtimePreloaded;
-  if(profile!=='normal'&&after.runtimePreloaded) throw new Error('Compatibility runtime was incorrectly cached');
-  if(!(final.processed>0))throw new Error('No images processed');
+  if(['fresh','notrt','both','bad'].includes(profile)&&after.runtimePreloaded) throw new Error('Compatibility runtime was incorrectly cached');
+  if(profile!=='bad' && !(final.processed>0))throw new Error('No images processed');
+  const workerLogs=readdirSync(join(reportRoot,'logs')).filter(n=>n.startsWith('agent-worker-')&&n.endsWith('.log')).map(n=>readFileSync(join(reportRoot,'logs',n),'utf8')).join('\n');
+  if(profile!=='quiet' && !workerLogs.includes('SDK_BEGIN')) throw new Error('Detailed stage log missing');
+  if(profile==='memory' && !workerLogs.includes('Explicit OptimizedGPUMemory(0) call succeeded')) throw new Error('Memory policy missing');
+  result.diagnosticStagesVerified=workerLogs.includes('SDK_BEGIN');
+  const sdkLogs=join(process.env.APPDATA,'Cognex Corporation','Cognex VisionPro Deep Learning '+product,'logs');
+  result.nativeSdkLogDirectory=sdkLogs;
+  result.nativeSdkLogs=existsSync(sdkLogs)?readdirSync(sdkLogs).filter(n=>n.startsWith(basename(worker,'.exe').toLowerCase()+'_')&&n.endsWith('.debug.log')&&statSync(join(sdkLogs,n)).mtimeMs>=childStartedAt&&statSync(join(sdkLogs,n)).size>0):[];
+  if(profile!=='quiet' && !result.nativeSdkLogs.length) throw new Error('SDK native debug log missing or empty');
   const db=new DatabaseSync(join(reportRoot,'history.sqlite'),{readOnly:true});
   const rows=db.prepare('SELECT full_path,position_key,total_result FROM images ORDER BY sequence_no').all();
   const tools=db.prepare('SELECT tool_name,result,score,overlay_path FROM tool_results ORDER BY tool_result_id').all();db.close();

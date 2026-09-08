@@ -7,7 +7,7 @@ import { fileURLToPath } from 'node:url';
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const read = (name) => fs.readFileSync(path.join(root, name), 'utf8');
 
-test('v4.7.20 viewer fits images and navigates heatmaps', () => {
+test('v4.7.21 viewer fits images and navigates heatmaps', () => {
   const js = read('visionqc-extension.js');
   const css = read('visionqc-extension.css');
   assert.match(js, /const VERSION = '4\.7\.15'/);

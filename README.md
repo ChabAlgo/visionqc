@@ -1,12 +1,14 @@
-# VisionQC v4.7.20 / Local Agent v1.3.10
+# VisionQC v4.7.21 / Local Agent v1.3.11
 
 ## 현재 릴리스 안내
 
-- 설치 파일: [VisionQC Agent 1.3.10](downloads/VisionQC_Agent_Installer_v1.3.10.exe)
-- 오프라인 패키지: [VisionQC Offline 4.7.20](downloads/VisionQC_Offline_v4.7.20.zip)
+- 설치 파일: [VisionQC Agent 1.3.11](downloads/VisionQC_Agent_Installer_v1.3.11.exe)
+- 오프라인 패키지: [VisionQC Offline 4.7.21](downloads/VisionQC_Offline_v4.7.21.zip)
 - SQLite 이력, 대용량 CSV 직접 적재, 파일명 Position 기반 AI Green 검사, 원본/Heatmap Viewer를 제공합니다.
-- 최신 변경·검증·보안 서버 확인: [v4.7.20 릴리스 노트](RELEASE_NOTES_v4.7.20_KR.md). 기존 설계는 `ARCHITECTURE_V4.7.0_KR.md` 참고.
-- 소스 폴더 `LocalAgent_v0.2.12`는 유지된 경로명입니다. 실제 배포 Agent 버전은 1.3.10이며 `RELEASE_MANIFEST.json`과 EXE 파일 버전으로 확인합니다.
+- 최신 변경·검증·보안 서버 확인: [v4.7.21 릴리스 노트](RELEASE_NOTES_v4.7.21_KR.md). 기존 설계는 `ARCHITECTURE_V4.7.0_KR.md` 참고.
+- 소스 폴더 `LocalAgent_v0.2.12`는 유지된 경로명입니다. 실제 배포 Agent 버전은 1.3.11이며 `RELEASE_MANIFEST.json`과 EXE 파일 버전으로 확인합니다.
+
+- 이번 배포: Green 메모리 선할당 해제 선택 옵션과 SDK 상세 로그. H100 현장 오류 해결은 아직 확정되지 않았습니다.
 
 # 이전 변경 이력
 

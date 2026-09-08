@@ -48,6 +48,8 @@ namespace VpdlGreenHeatmapOverlay
     internal class AppConfig
     {
         public bool DisableTensorRt { get; set; }
+        public bool DetailedDiagnostics { get; set; }
+        public bool DisableOptimizedGpuMemory { get; set; }
         public List<WorkspaceSlotConfig> WorkspaceSlots { get; set; } = new List<WorkspaceSlotConfig>();
         public string OutputRoot { get; set; }
         public string CellIdCsvPath { get; set; }

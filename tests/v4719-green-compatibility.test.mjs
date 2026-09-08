@@ -16,13 +16,13 @@ test('Green compatibility settings default off and reach the server separately',
 test('only standalone Green simulation changes policy and never caches the changed runtime',()=>{
   const run=server.slice(server.indexOf('private void RunSimulation'),server.indexOf('private void StartSimulationHistory'));
   assert.match(run,/runtimeReusable = !greenOptions.disableTensorRt && !greenOptions.freshRuntime/);
-  assert.match(run,/oldControl.Dispose\(\);[\s\S]*?simulationControl = new LocalRuntime.Control/);
+  assert.match(run,/oldControl.Dispose\(\);[\s\S]*?simulationControl = GreenRuntimeFactory.Create/);
   assert.match(run,/GreenOverlayProcessor.Run\(greenConfig, simulationControl, !greenOptions.freshRuntime/);
   assert.equal((server.match(/greenConfig.DisableTensorRt =/g)||[]).length,1);
   assert.match(run,/catch \(SysException ex\)[\s\S]*?CompleteSimulationHistory\("failed"/);
 });
 test('inference diagnostic survives native cleanup and does not export data',()=>{
-  assert.match(green,/last-green-inference.txt[\s\S]*?try \{ sample.Process\(tool\); \}/);
+  assert.match(green,/last-green-inference.txt[\s\S]*?AgentDiagnostics.Measure\("Sample.Process"[\s\S]*?sample.Process\(tool\)/);
   assert.match(green,/last-green-failure.txt[\s\S]*?WriteLoadedLibraries\(\)[\s\S]*?throw new System.InvalidOperationException/);
   const policy=read('LocalAgent_v0.2.12/Services/GreenRuntimePolicy.cs');
   assert.match(policy,/ProcessWithTrt/);

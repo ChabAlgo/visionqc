@@ -1,4 +1,10 @@
-# VisionQC v4.7.9
+# VisionQC 변경 이력
+
+## v4.7.21 / Agent 1.3.11
+
+- Green 메모리 선할당 해제(기본 꺼짐)와 상세 SDK 단계 진단(기본 켜짐) 추가.
+- 원래 예외/HResult, Runtime/스레드, GPU 모드·메모리, DLL 및 실제 Cognex 로그 위치 기록.
+- 기존 이미지·판정·CSV/DB 유지. H100/Server 2022 현장 해결은 미확정. 상세 검증은 RELEASE_NOTES_v4.7.21_KR.md 참조.
 
 ## v4.7.20 / Agent 1.3.10
 - 자동 상태 점검에서 GPU 초기화/종료 제거. 실제 모델 로드와 기존 검사·미리보기 기능 유지.

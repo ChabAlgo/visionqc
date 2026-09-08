@@ -25,6 +25,6 @@ test('explicit workspace inspection and real preload retain GPU support for high
   assert.match(inspect,/EnsureInspectionControl\(useGpu, mode, gpuList, false\)/);
   assert.match(inspect,/EnsureInspectionControl\(useGpu, mode, gpuList, fallbackDeferred\)/);
   const preload=server.slice(server.indexOf('private RuntimePreloadResponse PreloadRuntime'),server.indexOf('private WorkspaceInspectionResponse InspectWorkspace'));
-  assert.match(preload,/control = new LocalRuntime.Control\(gpuMode, gpuList\)/);
+  assert.match(preload,/GreenRuntimeFactory.Create\(gpuMode, gpuList/);
   assert.match(preload,/RememberPreloadedRuntimeLocked/);
 });

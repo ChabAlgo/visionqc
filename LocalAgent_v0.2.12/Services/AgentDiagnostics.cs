@@ -8,7 +8,7 @@ namespace VisionQC.LocalAgent.Services
 {
     // Diagnostics remain local. A native crash cannot run catch/finally, so record the
     // active operation before entering the SDK, independently of browser event delivery.
-    internal static class AgentDiagnostics
+    internal static partial class AgentDiagnostics
     {
         private static readonly object Sync = new object();
         private static string _directory;
@@ -42,7 +42,7 @@ namespace VisionQC.LocalAgent.Services
                         File.Copy(_logPath, _logPath + ".previous", true);
                         File.WriteAllText(_logPath, "", Encoding.UTF8);
                     }
-                    File.AppendAllText(_logPath, DateTime.Now.ToString("O") + " | " + level + " | " + message + Environment.NewLine, Encoding.UTF8);
+                    File.AppendAllText(_logPath, DateTime.Now.ToString("O") + " | PID=" + Process.GetCurrentProcess().Id + " | Thread=" + System.Threading.Thread.CurrentThread.ManagedThreadId + " | " + level + " | " + message + Environment.NewLine, Encoding.UTF8);
                 }
             }
             catch { /* Diagnostics must not stop an inspection. */ }

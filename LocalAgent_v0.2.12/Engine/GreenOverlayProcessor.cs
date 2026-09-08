@@ -26,6 +26,8 @@ namespace VpdlGreenHeatmapOverlay
             public Dictionary<string, Runtime.ITool> ToolMap { get; set; }
             public List<ToolRoiConfig> Tools { get; set; }
             public Dictionary<string, string> ToolDiagnostics { get; set; }
+            public string RuntimeIdentity { get; set; }
+            public bool GpuSnapshotCaptured { get; set; }
         }
 
         private sealed class ImageJob
@@ -123,7 +125,7 @@ namespace VpdlGreenHeatmapOverlay
             var cellPositionOrder = new List<string>();
             var sw = Stopwatch.StartNew();
 
-            var control = sharedControl ?? new LocalRuntime.Control(gpuMode, gpuList);
+            var control = sharedControl ?? GreenRuntimeFactory.Create(gpuMode, gpuList, config.DetailedDiagnostics, config.DisableOptimizedGpuMemory, "Green.Run");
             bool ownsControl = sharedControl == null;
             try
             {
@@ -222,8 +224,10 @@ namespace VpdlGreenHeatmapOverlay
 
                 string workspaceName = "ws_" + slot.Key;
                 Report(progress, slot.DisplayName + (reusePreloadedWorkspaces ? " 사전 로드 Runtime 연결 중..." : " 워크스페이스 로드 중..."));
-                Runtime.IWorkspace workspace = ResolveWorkspace(control, workspaceName, slot.WorkspacePath, reusePreloadedWorkspaces);
-                Runtime.IStream stream = workspace.Streams[slot.StreamName];
+                Runtime.IWorkspace workspace = AgentDiagnostics.Measure(reusePreloadedWorkspaces ? "Workspace.Reuse" : "Workspace.Load", GreenRuntimeFactory.Describe(control) + " | Path=" + slot.WorkspacePath, config.DetailedDiagnostics,
+                    () => ResolveWorkspace(control, workspaceName, slot.WorkspacePath, reusePreloadedWorkspaces));
+                Runtime.IStream stream = AgentDiagnostics.Measure("Stream.Resolve", slot.DisplayName + " | Stream=" + slot.StreamName, config.DetailedDiagnostics,
+                    () => workspace.Streams[slot.StreamName]);
 
                 var applicableTools = config.Tools.Where(t => t.AppliesTo(slot.Key)).ToList();
                 var activeTools = new List<ToolRoiConfig>();
@@ -257,7 +261,7 @@ namespace VpdlGreenHeatmapOverlay
                 if (activeTools.Count == 0)
                     throw new System.InvalidOperationException(slot.DisplayName + "에서 실행 가능한 Tool이 없습니다. Option의 Tool 위치 체크와 Workspace 내 ToolName을 확인하세요.");
 
-                contexts[slot.Key] = new WorkspaceContext { Slot = slot, Workspace = workspace, Stream = stream, ToolMap = toolMap, Tools = activeTools,
+                contexts[slot.Key] = new WorkspaceContext { Slot = slot, Workspace = workspace, Stream = stream, ToolMap = toolMap, Tools = activeTools, RuntimeIdentity = GreenRuntimeFactory.Describe(control),
                     ToolDiagnostics = toolMap.ToDictionary(kv => kv.Key, kv => GreenRuntimePolicy.Describe(kv.Value.ParametersBase), StringComparer.OrdinalIgnoreCase) };
                 Report(progress, string.Format("{0} 워크스페이스 로드 완료 - 실행 Tool {1}/{2}개", slot.DisplayName, activeTools.Count, applicableTools.Count));
             }
@@ -350,7 +354,7 @@ namespace VpdlGreenHeatmapOverlay
             if (control == null)
             {
                 var gpuMode = config.UseGpu ? GpuMode.SingleDevicePerTool : GpuMode.NoSupport;
-                control = new LocalRuntime.Control(gpuMode, config.UseGpu ? config.GpuDevices : new List<int>());
+                control = GreenRuntimeFactory.Create(gpuMode, config.UseGpu ? config.GpuDevices : new List<int>(), config.DetailedDiagnostics, config.DisableOptimizedGpuMemory, "Green.InspectSingle");
             }
             try
             {
@@ -580,10 +584,10 @@ namespace VpdlGreenHeatmapOverlay
             };
 
             AgentDiagnostics.Operation("Green image load | Position=" + context.Slot.DisplayName + " | Image=" + job.ImagePath);
-            using (var vidiImage = new LocalImages.LibraryImage(job.ImagePath))
-            using (ISample sample = context.Stream.CreateSample())
+            using (var vidiImage = AgentDiagnostics.Measure("Image.Load", context.Slot.DisplayName + " | Image=" + job.ImagePath, config.DetailedDiagnostics, () => new LocalImages.LibraryImage(job.ImagePath)))
+            using (ISample sample = AgentDiagnostics.Measure("Sample.Create", context.RuntimeIdentity, config.DetailedDiagnostics, () => context.Stream.CreateSample()))
             {
-                sample.AddImage(vidiImage);
+                AgentDiagnostics.Measure("Sample.AddImage", context.RuntimeIdentity, config.DetailedDiagnostics, () => sample.AddImage(vidiImage));
                 string imageSize = vidiImage.Width + "x" + vidiImage.Height;
                 SD.Bitmap sourceBitmap = null;
                 try
@@ -596,26 +600,35 @@ namespace VpdlGreenHeatmapOverlay
                         string inferenceContext = "Position=" + context.Slot.DisplayName + " | Tool=" + cfg.ToolName
                             + " | Image=" + imageSize
                             + " | GPU=" + config.UseGpu + " | Devices=" + string.Join(",", config.GpuDevices)
-                            + " | " + context.ToolDiagnostics[cfg.ToolName];
+                            + " | " + context.ToolDiagnostics[cfg.ToolName] + " | " + context.RuntimeIdentity
+                            + " | Sample=" + AgentDiagnostics.Identity(sample) + " | ToolObject=" + AgentDiagnostics.Identity(tool);
+                        if (config.DetailedDiagnostics && !context.GpuSnapshotCaptured)
+                        {
+                            context.GpuSnapshotCaptured = true;
+                            AgentDiagnostics.CaptureEnvironment("before-first-inference");
+                        }
                         // Persist before native entry: fatal native errors may bypass catch/finally.
                         AgentDiagnostics.SaveText("last-green-inference.txt", DateTime.Now.ToString("O") + " | " + inferenceContext);
-                        try { sample.Process(tool); }
+                        try { AgentDiagnostics.Measure("Sample.Process", inferenceContext, config.DetailedDiagnostics, () => sample.Process(tool)); }
                         catch (System.Exception ex)
                         {
-                            string failure = inferenceContext + Environment.NewLine + ex;
+                            string failure = "SDK inference exception; no completed marking/result was returned." + Environment.NewLine
+                                + inferenceContext + Environment.NewLine + AgentDiagnostics.ExceptionDetails(ex);
                             AgentDiagnostics.SaveText("last-green-failure.txt", DateTime.Now.ToString("O") + " | " + failure);
                             AgentDiagnostics.Write("GREEN_INFERENCE_ERROR", failure);
                             AgentDiagnostics.WriteLoadedLibraries();
                             AgentDiagnostics.WriteNvidiaEnvironment();
+                            AgentDiagnostics.CaptureEnvironment("inference-failure");
                             throw new System.InvalidOperationException("Green 추론 실패 (" + context.Slot.DisplayName + " / " + cfg.ToolName
                                 + ", " + imageSize + "): " + ex.Message
-                                + " | 서버 logs/last-green-failure.txt 확인", ex);
+                                + " | 검사 출력 ERROR가 아니라 SDK 추론 중단입니다. logs/last-sdk-failure.txt, last-green-failure.txt, cognex-sdk-log-locations.txt 확인", ex);
                         }
                         string decision = "ERR";
                         double score = double.NaN;
                         SD.Bitmap heatmapBmp = null;
                         IGreenView view = null;
-                        var greenMarking = sample.Markings[tool.Name] as IGreenMarking;
+                        var greenMarking = AgentDiagnostics.Measure("Result.ReadMarking", inferenceContext, config.DetailedDiagnostics,
+                            () => sample.Markings[tool.Name] as IGreenMarking);
                         if (greenMarking != null && greenMarking.Views != null && greenMarking.Views.Count > 0)
                         {
                             view = greenMarking.Views[0];
@@ -634,7 +647,7 @@ namespace VpdlGreenHeatmapOverlay
                                 try
                                 {
                                     AgentDiagnostics.Operation("Green heatmap | Position=" + context.Slot.DisplayName + " | Tool=" + cfg.ToolName + " | Image=" + job.ImagePath);
-                                    IImage hm = view.HeatMap;
+                                    IImage hm = AgentDiagnostics.Measure("Result.ReadHeatmap", inferenceContext, config.DetailedDiagnostics, () => view.HeatMap);
                                     if (hm != null) heatmapBmp = CloneBitmapFromUnknown(GetPropertyValue(hm, "Bitmap"));
                                 }
                                 catch (System.Exception ex)
@@ -674,6 +687,7 @@ namespace VpdlGreenHeatmapOverlay
                             }
                         }
                         if (heatmapBmp != null) heatmapBmp.Dispose();
+                        if (config.DetailedDiagnostics) AgentDiagnostics.Write("TOOL_RESULT", inferenceContext + " | Decision=" + decision + " | Score=" + score);
                         result.ToolResults[cfg.ToolName] = new ToolResult { Decision = decision, Score = score, OverlayPath = overlayPath };
                     }
                 }
@@ -789,7 +803,7 @@ namespace VpdlGreenHeatmapOverlay
                 {
                     var gpuMode = _config.UseGpu ? GpuMode.SingleDevicePerTool : GpuMode.NoSupport;
                     var gpuList = _config.UseGpu ? _config.GpuDevices : new List<int>();
-                    _control = new LocalRuntime.Control(gpuMode, gpuList);
+                    _control = GreenRuntimeFactory.Create(gpuMode, gpuList, _config.DetailedDiagnostics, _config.DisableOptimizedGpuMemory, "Green.Streaming");
                     _ownsControl = true;
                 }
 

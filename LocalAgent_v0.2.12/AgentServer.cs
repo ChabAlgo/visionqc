@@ -595,7 +595,9 @@ namespace VisionQC.LocalAgent
                     var gpuList = ParseGpuList(gpuDevices, useGpu);
                     AgentDiagnostics.Operation("Runtime preload | Mode=" + mode + " | GPU=" + useGpu + " | Devices=" + gpuDevices);
                     AgentDiagnostics.Write("GPU_LIFECYCLE", "Actual runtime initialization | Mode=" + mode + " | Devices=" + gpuDevices);
-                    control = new LocalRuntime.Control(gpuMode, gpuList);
+                    control = mode == "green"
+                        ? GreenRuntimeFactory.Create(gpuMode, gpuList, GetGreenOptions(req).detailedDiagnostics, GetGreenOptions(req).disableOptimizedGpuMemory, "Runtime File Load")
+                        : new LocalRuntime.Control(gpuMode, gpuList);
                     AgentDiagnostics.WriteLoadedLibraries();
 
                     var response = new RuntimePreloadResponse { ok = true, mode = mode, installedVpdlVersion = _vpdlVersion, vpdlVersion = _vpdlVersion };
@@ -609,7 +611,7 @@ namespace VisionQC.LocalAgent
                         if (mode != "blue")
                         {
                             string path = FirstNonEmpty(position.greenWorkspacePath, position.workspacePath);
-                            response.items.Add(LoadPreloadedWorkspace(control, position, "green", "ws_" + position.key, path));
+                            response.items.Add(LoadPreloadedWorkspace(control, position, "green", "ws_" + position.key, path, mode == "green" && GetGreenOptions(req).detailedDiagnostics));
                             completed++;
                             AppendAgentLog("INFO", "Runtime File Load 진행 " + completed + "/" + total + " | " + position.displayName + " Green");
                         }
@@ -658,14 +660,17 @@ namespace VisionQC.LocalAgent
             }
         }
 
-        private RuntimePreloadItem LoadPreloadedWorkspace(LocalRuntime.Control control, AgentPositionRequest position, string kind, string workspaceName, string path)
+        private RuntimePreloadItem LoadPreloadedWorkspace(LocalRuntime.Control control, AgentPositionRequest position, string kind, string workspaceName, string path, bool detailed = false)
         {
             AppendAgentLog("INFO", position.displayName + " " + kind.ToUpperInvariant() + " Runtime 로드 중: " + Path.GetFileName(path));
-            ViDi2.Runtime.IWorkspace workspace = control.Workspaces.Add(workspaceName, path);
+            ViDi2.Runtime.IWorkspace workspace = AgentDiagnostics.Measure("Workspace.Load", GreenRuntimeFactory.Describe(control) + " | Workspace=" + path, detailed,
+                () => control.Workspaces.Add(workspaceName, path));
             // VPDL Workspaces 컬렉션은 버전에 따라 문자열 indexer가 동일하게 동작하지 않습니다.
             // Add가 반환한 실제 객체를 Control과 이름으로 직접 보관해 Simulation에서 재사용합니다.
             RuntimeWorkspaceRegistry.Register(control, workspaceName, workspace);
-            WorkspaceInspectionResponse info = BuildWorkspaceInspectionResult(workspace, path, "RuntimePreload");
+            WorkspaceInspectionResponse info = AgentDiagnostics.Measure("Workspace.Structure", GreenRuntimeFactory.Describe(control), detailed,
+                () => BuildWorkspaceInspectionResult(workspace, path, "RuntimePreload"));
+            if (detailed) AgentDiagnostics.CaptureEnvironment("after-workspace-load");
             return new RuntimePreloadItem
             {
                 positionKey = position.key,
@@ -708,6 +713,7 @@ namespace VisionQC.LocalAgent
             sb.Append(mode).Append('|');
             if (mode == "green") sb.Append(green.useGpu).Append('|').Append(green.gpuDevices ?? "");
             else sb.Append(blue.useGpu).Append('|').Append(blue.gpuDevices ?? "");
+            sb.Append(RuntimeDiagnosticSignature(req));
             foreach (var p in EnabledPositions(req).OrderBy(x => x.key, StringComparer.OrdinalIgnoreCase))
             {
                 sb.Append('|').Append(p.key ?? "");
@@ -723,10 +729,17 @@ namespace VisionQC.LocalAgent
             if (mode == "green")
             {
                 AgentGreenOptions green = GetGreenOptions(req);
-                return green.useGpu + "|" + (green.gpuDevices ?? "");
+                return green.useGpu + "|" + (green.gpuDevices ?? "") + RuntimeDiagnosticSignature(req);
             }
             AgentBlueOptions blue = GetBlueOptions(req);
-            return blue.useGpu + "|" + (blue.gpuDevices ?? "");
+            return blue.useGpu + "|" + (blue.gpuDevices ?? "") + RuntimeDiagnosticSignature(req);
+        }
+
+        private string RuntimeDiagnosticSignature(AgentStartRequest req)
+        {
+            bool green = string.Equals(req.mode ?? "green", "green", StringComparison.OrdinalIgnoreCase);
+            var options = GetGreenOptions(req);
+            return "|D:" + (green && options.detailedDiagnostics) + "|M:" + (green && options.disableOptimizedGpuMemory);
         }
 
         private string BuildGreenWorkspaceSignature(AgentStartRequest req)
@@ -1261,8 +1274,8 @@ namespace VisionQC.LocalAgent
                         simulationControl = null;
                         oldControl.Dispose();
                         token.ThrowIfCancellationRequested();
-                        simulationControl = new LocalRuntime.Control(greenConfig.UseGpu ? VpdlGpuMode.SingleDevicePerTool : VpdlGpuMode.NoSupport,
-                            greenConfig.UseGpu ? greenConfig.GpuDevices : new List<int>());
+                        simulationControl = GreenRuntimeFactory.Create(greenConfig.UseGpu ? VpdlGpuMode.SingleDevicePerTool : VpdlGpuMode.NoSupport,
+                            greenConfig.UseGpu ? greenConfig.GpuDevices : new List<int>(), greenConfig.DetailedDiagnostics, greenConfig.DisableOptimizedGpuMemory, "Fresh Runtime");
                     }
                     var summary = GreenOverlayProcessor.Run(greenConfig, simulationControl, !greenOptions.freshRuntime, progress, token);
                     lock (_sync)
@@ -1637,6 +1650,8 @@ namespace VisionQC.LocalAgent
                 KeywordMode = integrated ? false : opt.keywordMode,
                 KeywordInputRoot = integrated ? "" : FirstNonEmpty(GetGreenKeywordImageRoots(opt).ToArray()),
                 NamingProfile = req.namingProfile,
+                DetailedDiagnostics = !integrated && opt.detailedDiagnostics,
+                DisableOptimizedGpuMemory = !integrated && opt.disableOptimizedGpuMemory,
                 UseGpu = opt.useGpu,
                 GpuDevices = ParseGpuList(opt.gpuDevices, opt.useGpu),
                 JpegQuality = Clamp(opt.jpegQuality, 1, 100, 80),

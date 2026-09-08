@@ -1,7 +1,7 @@
 (() => {
   'use strict';
 
-  const VERSION = '4.7.20';
+  const VERSION = '4.7.21';
   const DEFAULT_POSITION_DEFS = [
     { key:'CA_TOP', name:'CA(TOP)' },
     { key:'AN_TOP', name:'AN(TOP)' },
@@ -25,9 +25,9 @@
   const NG_POSITION_PREFIX = 'ng-position:';
   const IMG_RE = /\.(png|jpe?g|bmp|gif|webp|tif?f)$/i;
   const LOCAL_AGENT_URL = 'http://127.0.0.1:17891';
-  const EXPECTED_AGENT_VERSION = '1.3.10';
-  const AGENT_INSTALLER_URL = './downloads/VisionQC_Agent_Installer_v1.3.10.exe';
-  const OFFLINE_PACKAGE_URL = './downloads/VisionQC_Offline_v4.7.20.zip';
+  const EXPECTED_AGENT_VERSION = '1.3.11';
+  const AGENT_INSTALLER_URL = './downloads/VisionQC_Agent_Installer_v1.3.11.exe';
+  const OFFLINE_PACKAGE_URL = './downloads/VisionQC_Offline_v4.7.21.zip';
   // SQLite에는 사용자가 명시적으로 남기려는 두 종류의 결과만 표시한다.
   // 이전 버전의 단발 검사(single-inspection) 이력은 보존하되 화면 집계에서는 제외한다.
   const PERSISTED_HISTORY_SOURCE_TYPES = ['simulation', 'csv-import', 'csv-file-stream'];
@@ -1020,6 +1020,8 @@
     useGpu:'켜면 지정한 NVIDIA GPU로 VPDL Tool을 실행합니다.',
     gpuDevices:'사용할 GPU 장치 번호입니다. 여러 장치는 쉼표로 구분합니다.',
     disableTensorRt:'Green 단독 검사에서 TensorRT를 끕니다. GPU별 최적화 문제를 구분하는 호환 옵션이며 속도·Score가 달라질 수 있습니다. 원본 Workspace는 저장하지 않으며 검사 후 다시 로드해야 합니다.',
+    detailedDiagnostics:'Cognex SDK 상세 로그와 단계별 실행·GPU 메모리 상태를 서버 내부에 저장합니다. 실제 저장 위치는 Agent logs의 cognex-sdk-log-locations.txt에 기록합니다. 진단이 끝나면 해제하세요. 로그 용량과 실행 시간이 증가할 수 있습니다. 변경 후 Runtime File Load가 필요합니다.',
+    disableOptimizedGpuMemory:'Green 단독 검사에서 GPU 메모리 선할당을 0으로 명시합니다. Green Standard 메모리 문제를 비교하는 선택 옵션이며 해결을 보장하지 않습니다. Workspace와 드라이버는 변경하지 않습니다. 변경 후 Runtime File Load가 필요합니다.',
     freshRuntime:'Green 단독 검사 시작 때 Runtime을 새로 열어 사전 로드 재사용 영향을 구분합니다. GPU 선택은 유지하며 검사 후 다시 로드해야 합니다.',
     jpegQuality:'저장 JPEG 품질입니다. 1~100 범위입니다.',
     printEvery:'이 수만큼 처리할 때마다 상세 결과와 진행률을 Web으로 전송합니다.',
@@ -2812,7 +2814,7 @@
       green:{
         cellIdCsvPath:'', keywordMode:false, keywordInputRoot:'', keywordInputRoots:[], keepSubfolders:false,
         useGpu:true, gpuDevices:'0', jpegQuality:80, heatmapAlpha:55, heatmapAlphaCut:25,
-        heatmapImageSave:true, forceJet:true, printEvery:100, disableTensorRt:false, freshRuntime:false,
+        heatmapImageSave:true, forceJet:true, printEvery:100, disableTensorRt:false, freshRuntime:false, detailedDiagnostics:true, disableOptimizedGpuMemory:false,
         tools:simulationDefaultTools(), judgements:simulationDefaultJudgements()
       },
       blue:{
@@ -3998,6 +4000,7 @@
     const mode = String(request?.mode || 'green').trim().toLowerCase();
     const options = mode === 'green' ? request?.green || {} : request?.blue || {};
     let signature = `${mode}|${options.useGpu ? 'True' : 'False'}|${String(options.gpuDevices || '')}`;
+    signature += `|D:${mode === 'green' && options.detailedDiagnostics !== false ? 'True' : 'False'}|M:${mode === 'green' && options.disableOptimizedGpuMemory ? 'True' : 'False'}`;
     const positions = Array.isArray(request?.positions) ? [...request.positions] : [];
     positions.sort((left, right) => {
       const a = String(left?.key || '').toUpperCase(), b = String(right?.key || '').toUpperCase();
@@ -4014,7 +4017,7 @@
   function simulationRuntimeControlSignature(request) {
     const mode = String(request?.mode || 'green').trim().toLowerCase();
     const options = mode === 'green' ? request?.green || {} : request?.blue || {};
-    return `${options.useGpu ? 'True' : 'False'}|${String(options.gpuDevices || '')}`;
+    return `${options.useGpu ? 'True' : 'False'}|${String(options.gpuDevices || '')}|D:${mode === 'green' && options.detailedDiagnostics !== false ? 'True' : 'False'}|M:${mode === 'green' && options.disableOptimizedGpuMemory ? 'True' : 'False'}`;
   }
 
   function simulationGreenWorkspaceSignature(request) {
@@ -4137,7 +4140,7 @@
       if (notReady.length) throw new Error(`Runtime File Load를 먼저 완료하세요: ${notReady.map((target) => `${target.displayName} ${target.kind.toUpperCase()}`).join(', ')}`);
       const request = buildSimulationRequest();
       if (!request.positions.length) throw new Error('현재 시뮬레이션 모드에서 사용할 Position을 1개 이상 체크하세요.');
-      if (request.mode === 'green' && (request.green.disableTensorRt || request.green.freshRuntime) && state.simulationAgent.version !== EXPECTED_AGENT_VERSION) {
+      if (request.mode === 'green' && (request.green.disableTensorRt || request.green.freshRuntime || request.green.detailedDiagnostics || request.green.disableOptimizedGpuMemory) && state.simulationAgent.version !== EXPECTED_AGENT_VERSION) {
         throw new Error(`Green 호환 옵션은 Agent ${EXPECTED_AGENT_VERSION}에서 확인되었습니다. 먼저 해당 Agent로 업데이트하세요.`);
       }
       const runtimeReady = !!state.simulationRuntimeToken &&
@@ -4727,7 +4730,7 @@
   function greenRuntimeOptions(integrated=false) {
     return `<section class="vq43-sim-option-section"><h3>Green Runtime / HeatMap</h3><div class="vq43-sim-option-grid">
       ${simulationCheck('green','useGpu','GPU 사용')}${simulationText('green','gpuDevices','GPU Devices','0')}
-      ${!integrated?`${simulationCheck('green','disableTensorRt','TensorRT 해제 (호환 검사)')}${simulationCheck('green','freshRuntime','새 Runtime으로 검사 (진단)')}`:''}
+      ${!integrated?`${simulationCheck('green','disableTensorRt','TensorRT 해제 (호환 검사)')}${simulationCheck('green','freshRuntime','새 Runtime으로 검사 (진단)')}${simulationCheck('green','detailedDiagnostics','상세 진단 로그 (서버 내부 저장)')}${simulationCheck('green','disableOptimizedGpuMemory','GPU 메모리 선할당 해제 (Green 호환)')}`:''}
       ${simulationNumber('green','jpegQuality','JPEG Quality',1,100)}${simulationNumber('green','printEvery','Progress Update',1,1000000)}
       ${simulationCheck('green','keepSubfolders','하위 폴더 구조 유지')}${!integrated?simulationCheck('green','heatmapImageSave','NG 원본 위 Heatmap Overlay 저장'):''}
       ${!integrated?`${simulationCheck('green','forceJet','Gray HeatMap → Jet 변환')}${simulationNumber('green','heatmapAlpha','HeatMap Alpha %',0,100)}`:''}

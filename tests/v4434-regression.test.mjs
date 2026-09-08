@@ -11,11 +11,11 @@ const html = read('index.html');
 const js = read('visionqc-extension.js');
 const css = read('visionqc-v4433-clean.css');
 
-test('v4.7.20 assets and the supplied TOPTEC logo are exact', () => {
-  assert.match(html, /VisionQC DirectExport v4\.7\.20/);
+test('v4.7.21 assets and the supplied TOPTEC logo are exact', () => {
+  assert.match(html, /VisionQC DirectExport v4\.7\.21/);
   assert.match(html, /assets\/index-v4\.4\.33\.js/);
-  assert.match(html, /visionqc-v4433-clean\.css\?v=4\.7\.20/);
-  assert.match(html, /visionqc-extension\.js\?v=4\.7\.20/);
+  assert.match(html, /visionqc-v4433-clean\.css\?v=4\.7\.21/);
+  assert.match(html, /visionqc-extension\.js\?v=4\.7\.21/);
   assert.ok(existsSync(resolve(root, 'assets/index-v4.4.33.js')));
   const logo = readFileSync(resolve(root, 'assets/toptec-logo.png'));
   assert.equal(createHash('sha256').update(logo).digest('hex'), 'ab35afda21bd2d40052b79ca46b75613096f60a7b8a84d6112ccd25daa5aa4a4');
@@ -194,7 +194,7 @@ test('Web preload signature matches Agent ordering and Windows path normalizatio
       {key:'AN_TOP',greenWorkspacePath:'h:\\Runtime\\AN.vrws'}
     ]
   });
-  assert.equal(value, 'green|True|0|AN_TOP|G:H:\\RUNTIME\\AN.VRWS|CA_TOP|G:H:\\RUNTIME\\CA.VRWS');
+  assert.equal(value, 'green|True|0|D:True|M:False|AN_TOP|G:H:\\RUNTIME\\AN.VRWS|CA_TOP|G:H:\\RUNTIME\\CA.VRWS');
 });
 
 test('notification rail, unread badge, large toast, and tooltips are present', () => {

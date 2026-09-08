@@ -1,19 +1,19 @@
 {
-  "releaseTag": "visionqc-v4.7.20-agent-v1.3.10",
-  "webVersion": "4.7.20",
-  "agentVersion": "1.3.10",
-  "minimumAgentVersion": "1.3.10",
+  "releaseTag": "visionqc-v4.7.21-agent-v1.3.11",
+  "webVersion": "4.7.21",
+  "agentVersion": "1.3.11",
+  "minimumAgentVersion": "1.3.11",
   "compatibility": {
-    "web": "4.7.20",
-    "agent": "1.3.10"
+    "web": "4.7.21",
+    "agent": "1.3.11"
   },
   "artifacts": {
-    "agentInstaller": "downloads/VisionQC_Agent_Installer_v1.3.10.exe",
-    "offlinePackage": "downloads/VisionQC_Offline_v4.7.20.zip",
+    "agentInstaller": "downloads/VisionQC_Agent_Installer_v1.3.11.exe",
+    "offlinePackage": "downloads/VisionQC_Offline_v4.7.21.zip",
     "sha256": {
-      "agentInstaller": "8C12EB544CB1C8B1B28F5F2EF5A6253995322CD16598FA82DA96C325A107400A",
-      "offlinePackage": "5CA58F5E438C692A079F297CF167D011CAB00ACD1911BC8211A8B15D7C886702"
+      "agentInstaller": "2257F9DF97FF590F2F2DF8DF7E9C5200A66B183C2A44B775618C900E44263B86",
+      "offlinePackage": "4A81C16CFA5D051C199F54B90DC9B1EAE5B3AF3FCECC46C1D9C6F1ACF3A5DC83"
     }
   },
-  "notes": "자동 상태 점검의 GPU 초기화/폐기 제거. 날짜·시간 통합 파일명 규칙과 기존 설정 호환. C# 16, 코드 112, 브라우저 26 및 VPDL 4.0/4.2 Green·Core DB 저장 검증. H100 6cc4a157 현장 해결은 미확정."
+  "notes": "Green GPU 메모리 선할당 해제 선택 옵션과 SDK 단계·GPU·실제 Cognex 로그 위치 기록. C# 39, 코드 115, 브라우저 27 및 VPDL 4.0/4.2 Green·Core 검증. H100 6cc4a157 현장 해결은 미확정."
 }
