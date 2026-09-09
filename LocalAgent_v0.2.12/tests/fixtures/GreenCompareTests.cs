@@ -24,6 +24,7 @@ internal static class GreenCompareTests
                 File.WriteAllText(Path.Combine(dir, "last-cleanup-stage.txt"), "BEGIN | Sample.Dispose");
                 return unchecked((int)0xc0000409);
             }
+            File.WriteAllText(Path.Combine(dir, "first-sdk-failure.txt"), "ViDi2.NotInitializedException: test recovered exception");
             File.WriteAllText(Path.Combine(dir, "result.json"), "{\"TotalImages\":1}");
             return 0;
         }
@@ -47,6 +48,14 @@ internal static class GreenCompareTests
         string summary = Comparison.Run(seedFile, root, bins, _=>{}, CancellationToken.None);
         string text=File.ReadAllText(summary);
         Check(text.Split(new[]{"PASS"},StringSplitOptions.None).Length-1==4, "four cases complete");
+        Check(text.Contains("최종 실패 아님") && !text.Contains("NotInitializedException"), "recovered exception cannot appear as final failure");
+        Check(text.Contains("미로드 판정 아님"), "missing NVIDIA capture does not assert unloaded");
+        var modules = new Dictionary<string, object> { ["driver"] = new { name="NVCUDA.dll", path=@"C:\Windows\System32\nvcuda.dll", version="32.0.15.9282" } };
+        Check(Comparison.NvidiaModuleSummary(modules).Contains(@"C:\Windows\System32\nvcuda.dll") && Comparison.NvidiaModuleSummary(modules).Contains("32.0.15.9282"), "captured driver path and version shown");
+        var failureRow = new Dictionary<string, object> { ["status"]="FAIL", ["sdkFailure"]="ViDi2.RuntimeException: actual failure", ["firstChanceException"]="ViDi2.NotInitializedException: observed" };
+        Check(Comparison.ExceptionSummary(failureRow).Contains("actual failure") && !Comparison.ExceptionSummary(failureRow).Contains("NotInitializedException"), "actual failure preferred to first chance");
+        failureRow["sdkFailure"]="";
+        Check(Comparison.ExceptionSummary(failureRow).Contains("종료 원인 확정 아님"), "first chance alone is not asserted as root cause");
         string comparisonRoot=Path.GetDirectoryName(summary);
         Check(Directory.GetFiles(Path.Combine(comparisonRoot,"input")).Length==1, "one local image copy");
         Check(File.ReadAllText(image)=="image fixture" && File.ReadAllText(workspace)=="workspace fixture", "source files unchanged");

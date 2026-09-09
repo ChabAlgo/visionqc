@@ -80,7 +80,7 @@ namespace VisionQC.LocalAgent.Services
                     Write("DLL", assembly.FullName + " | " + assembly.Location);
                 using (var process = Process.GetCurrentProcess())
                     foreach (ProcessModule module in process.Modules)
-                        if (new[] { "vidi_", "cudart", "cublas", "cudnn", "nvinfer", "nvrtc", "mkl", "libiomp" }
+                        if (new[] { "vidi_", "nvcuda", "cudart", "cublas", "cudnn", "nvinfer", "nvrtc", "mkl", "libiomp" }
                             .Any(prefix => module.ModuleName.StartsWith(prefix, StringComparison.OrdinalIgnoreCase)))
                             Write("NATIVE", module.ModuleName + " | " + module.FileVersionInfo.FileVersion + " | " + module.FileName);
             }

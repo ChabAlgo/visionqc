@@ -10,9 +10,16 @@ test('baseline engine is byte-identical to supplied original sources', () => {
     'Models.cs':'7d2577bb40b64d1ae4b5d897efc31ab5bab32c10f71486b3cc9ae25b5dd9767e'
   })) assert.equal(createHash('sha256').update(readFileSync(new URL('../' + dir + 'GreenBaseline/Original/' + name, import.meta.url))).digest('hex'), hash);
 });
-test('comparison never forces production to use diagnostic native search', () => {
+test('production uses successful original search; pinned search stays diagnostic-only', () => {
   const runner=read(dir+'GreenRunner/Program.cs'), compare=read(dir+'GreenCompare/Program.cs');
-  assert.match(runner,/pipeName != null && searchMode != "pinned"/);
+  assert.match(runner,/searchMode = diagnosticSearch \?\? "original"/);
+  assert.match(runner,/pipeName != null && searchMode != "original"/);
+  assert.match(runner,/if \(diagnosticSearch == null \|\| searchMode == "pinned"\)[\s\S]*?Environment.SetEnvironmentVariable\("PATH"/);
+  assert.match(runner,/if \(searchMode == "pinned" && !SetDllDirectory/);
+  assert.match(runner,/SetDllDirectory\(null\)/);
+  assert.match(runner,/if \(originalPath != null\) Environment.SetEnvironmentVariable\("PATH", originalPath\)/);
+  assert.match(runner,/FirstOrDefault\(x => x.ApiVersion == api\)/);
+  assert.match(runner,/AppDomain.CurrentDomain.AssemblyResolve \+= ResolveAssembly/);
   for(const id of ['A-baseline-original','B-baseline-pinned','C-current-original','D-current-pinned']) assert.ok(compare.includes(id));
   assert.match(compare,/TotalImages/); assert.match(compare,/WorkspaceUnchanged/);
   assert.match(compare,/child.Refresh\(\)/);

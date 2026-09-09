@@ -240,7 +240,8 @@ namespace VisionQC.GreenCompare
             var row = new Dictionary<string, object> { ["status"] = timedOut ? "TIMEOUT" : completed ? "PASS" : "FAIL",
                 ["exit"] = code + " (0x" + unchecked((uint)code).ToString("X8") + ")",
                 ["seconds"] = watch.Elapsed.TotalSeconds, ["directory"] = dir, ["modules"] = modules,
-                ["sdkFailure"] = ReadIfExists(dir, "first-sdk-failure.txt") + ReadIfExists(dir, "last-sdk-failure.txt"),
+                ["sdkFailure"] = ReadIfExists(dir, "last-sdk-failure.txt"),
+                ["firstChanceException"] = ReadIfExists(dir, "first-sdk-failure.txt"),
                 ["cleanup"] = ReadIfExists(dir, "last-cleanup-stage.txt"),
                 ["moduleCount"] = modules.Count, ["moduleReadErrors"] = ReadIfExists(dir, "module-read-errors.txt") };
             File.WriteAllText(Path.Combine(dir, "case.json"), Json().Serialize(row));
@@ -277,12 +278,12 @@ namespace VisionQC.GreenCompare
             report.AppendLine("Workspace 변경 여부: " + (unchanged ? "변경 없음" : "변경됨 — 비교 무효"));
             foreach (var row in rows) {
                 report.AppendLine(); report.AppendLine(row["case"] + ": " + row["status"] + " | Exit=" + row["exit"]);
-                string failure = Convert.ToString(row["sdkFailure"]);
-                if (failure.Length > 0) report.AppendLine(failure.Split(new[] { '\r', '\n' }, StringSplitOptions.RemoveEmptyEntries).FirstOrDefault(x => x.Contains("Exception")) ?? failure.Split('\n')[0]);
+                report.Append(ExceptionSummary(row));
+                report.AppendLine("NVIDIA DLL: " + NvidiaModuleSummary((Dictionary<string, object>)row["modules"]));
                 if (Convert.ToString(row["cleanup"]).Length > 0) report.AppendLine("정리 단계: " + row["cleanup"]);
             }
             report.AppendLine("\r\n해석 기준 (원인 확정이 아니라 구분 실험):");
-            report.AppendLine("A/C 성공, B/D 실패 → 고정 DLL 검색 영향 우선 확인.");
+            report.AppendLine("A/C 성공, B/D 실패 → 고정 DLL 검색 영향 우선 확인. 일반 Green 검사는 C 방식 사용.");
             report.AppendLine("A/B 성공, C/D 실패 → 현재 검사 엔진/진단/호스트 차이 우선 확인.");
             report.AppendLine("네 경우 모두 실패 + 실제 원본 GUI 정상 → 원본 GUI의 실제 DLL/환경과 비교 필요.");
             report.AppendLine("네 경우 모두 성공 → 단일 이미지 조건에서 미재현. 전체 실행/시점 차이 확인.");
@@ -290,6 +291,33 @@ namespace VisionQC.GreenCompare
             report.AppendLine("\r\n위 결과 화면을 확인하세요. 상세 modules.json/요청/이미지 사본은 서버 안에만 보관하세요.");
             report.AppendLine("결과 폴더: " + root);
             string path = Path.Combine(root, "결과요약.txt"); File.WriteAllText(path, report.ToString(), Encoding.UTF8); return path;
+        }
+
+        internal static string ExceptionSummary(Dictionary<string, object> row)
+        {
+            object firstChance;
+            string observed = row.TryGetValue("firstChanceException", out firstChance) ? Convert.ToString(firstChance) : "";
+            string failure = Convert.ToString(row["sdkFailure"]);
+            bool passed = Convert.ToString(row["status"]) == "PASS";
+            if (passed) {
+                return observed.Length > 0 || failure.Length > 0
+                    ? "참고: 실행 중 예외 기록이 있으나 최종 검사 1장 완료 및 정상 종료 확인 (최종 실패 아님)." + Environment.NewLine
+                    : "";
+            }
+            string detail = failure.Length > 0 ? failure : observed;
+            if (detail.Length == 0) return "";
+            string label = failure.Length > 0 ? "실패 단계 SDK 예외: " : "실행 중 포착된 SDK 예외 (종료 원인 확정 아님): ";
+            return label + (detail.Split(new[] { '\r', '\n' }, StringSplitOptions.RemoveEmptyEntries).FirstOrDefault(x => x.Contains("Exception")) ?? detail.Split('\n')[0]) + Environment.NewLine;
+        }
+
+        internal static string NvidiaModuleSummary(Dictionary<string, object> modules)
+        {
+            // Captured module records may be anonymous objects or deserialized dictionaries.
+            // Missing sampling evidence is not proof that a DLL was never loaded.
+            var records = modules.Values.Select(x => Json().Deserialize<Dictionary<string, object>>(Json().Serialize(x)))
+                .Where(x => string.Equals(Convert.ToString(x["name"]), "nvcuda.dll", StringComparison.OrdinalIgnoreCase))
+                .Select(x => Convert.ToString(x["path"]) + " | 버전=" + Convert.ToString(x["version"]));
+            return records.Any() ? string.Join("; ", records) : "nvcuda.dll 포착 기록 없음 (미로드 판정 아님)";
         }
     }
 }

@@ -1,5 +1,13 @@
 # VisionQC 변경 이력
 
+## v4.7.24 / Agent 1.3.14
+
+- 현장 A/C 성공·B/D 실패에 따라 독립 Green의 DLL 검색 고정 제거. Windows 시스템 DLL 우선 및 선택 SDK의 의존 DLL PATH 탐색을 함께 유지.
+- VPDL 4.0/4.2 동시 설치 회귀 검증, 현재 검사 엔진·Workspace·판정·출력 기능 유지.
+- 비교진단에 nvcuda.dll 경로·버전 표시. PASS의 중간 예외를 최종 실패와 구분.
+- 코드 123·브라우저 29·C# 89, 실제 4.0/4.2/Universal 검사, 원본 Score 48개 비교 통과.
+- 세부 근거·보안 서버 확인 절차: RELEASE_NOTES_v4.7.24_KR.md. 서버 해결은 현장 재확인 필요.
+
 ## v4.7.22 / Agent 1.3.12
 
 - Green 검사를 별도 프로세스로 실행: 원본 2인자 Runtime 생성자, 새 Workspace 로드, 한 검사 스레드에서 생성·실행·정리. 기본 켜짐이며 이전 방식도 선택 가능.

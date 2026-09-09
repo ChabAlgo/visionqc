@@ -116,6 +116,8 @@ try {
     if(!workerLogs.includes('GREEN_CHILD_EXIT') || !runnerLogs.includes('ORIGINAL_RUNTIME') || !runnerLogs.includes('ORIGINAL_PROCESS')) throw new Error('Isolated original execution missing');
     if(!bad && !runnerLogs.includes('Stage=Sample.Process')) throw new Error('Isolated inference missing');
     if(runnerLogs.includes('Explicit OptimizedGPUMemory(0)') || runnerLogs.includes('Workspace reuse')) throw new Error('Original runtime mutated or reused');
+    if(!runnerLogs.includes('NativeSearch=original') || runnerLogs.includes('NativeSearch=pinned')) throw new Error('Production runner did not use successful C search policy');
+    if(!bad && !runnerLogs.toLowerCase().includes('nvcuda.dll')) throw new Error('Loaded NVIDIA driver identity missing');
     result.originalProcessVerified=true;
   }
   const sdkLogs=join(process.env.APPDATA,'Cognex Corporation','Cognex VisionPro Deep Learning '+product,'logs');
