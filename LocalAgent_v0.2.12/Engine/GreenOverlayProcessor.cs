@@ -125,7 +125,9 @@ namespace VpdlGreenHeatmapOverlay
             var cellPositionOrder = new List<string>();
             var sw = Stopwatch.StartNew();
 
-            var control = sharedControl ?? GreenRuntimeFactory.Create(gpuMode, gpuList, config.DetailedDiagnostics, config.DisableOptimizedGpuMemory, "Green.Run");
+            var control = sharedControl ?? (config.OriginalExecution
+                ? GreenRuntimeFactory.CreateOriginal(gpuMode, gpuList, config.DetailedDiagnostics)
+                : GreenRuntimeFactory.Create(gpuMode, gpuList, config.DetailedDiagnostics, config.DisableOptimizedGpuMemory, "Green.Run"));
             bool ownsControl = sharedControl == null;
             try
             {
@@ -238,7 +240,8 @@ namespace VpdlGreenHeatmapOverlay
                     Runtime.ITool tool;
                     if (TryGetTool(stream, cfg.ToolName, out tool))
                     {
-                        AgentDiagnostics.Write("GREEN_TOOL", "Position=" + slot.DisplayName + " | Tool=" + cfg.ToolName + " | " + GreenRuntimePolicy.Describe(tool.ParametersBase));
+                        if (!config.OriginalExecution)
+                            AgentDiagnostics.Write("GREEN_TOOL", "Position=" + slot.DisplayName + " | Tool=" + cfg.ToolName + " | " + GreenRuntimePolicy.Describe(tool.ParametersBase));
                         if (config.DisableTensorRt)
                         {
                             string policy = GreenRuntimePolicy.DisableTensorRt(tool.ParametersBase);
@@ -262,7 +265,7 @@ namespace VpdlGreenHeatmapOverlay
                     throw new System.InvalidOperationException(slot.DisplayName + "에서 실행 가능한 Tool이 없습니다. Option의 Tool 위치 체크와 Workspace 내 ToolName을 확인하세요.");
 
                 contexts[slot.Key] = new WorkspaceContext { Slot = slot, Workspace = workspace, Stream = stream, ToolMap = toolMap, Tools = activeTools, RuntimeIdentity = GreenRuntimeFactory.Describe(control),
-                    ToolDiagnostics = toolMap.ToDictionary(kv => kv.Key, kv => GreenRuntimePolicy.Describe(kv.Value.ParametersBase), StringComparer.OrdinalIgnoreCase) };
+                    ToolDiagnostics = toolMap.ToDictionary(kv => kv.Key, kv => config.OriginalExecution ? "Original Workspace settings unchanged" : GreenRuntimePolicy.Describe(kv.Value.ParametersBase), StringComparer.OrdinalIgnoreCase) };
                 Report(progress, string.Format("{0} 워크스페이스 로드 완료 - 실행 Tool {1}/{2}개", slot.DisplayName, activeTools.Count, applicableTools.Count));
             }
             return contexts;
@@ -602,7 +605,7 @@ namespace VpdlGreenHeatmapOverlay
                             + " | GPU=" + config.UseGpu + " | Devices=" + string.Join(",", config.GpuDevices)
                             + " | " + context.ToolDiagnostics[cfg.ToolName] + " | " + context.RuntimeIdentity
                             + " | Sample=" + AgentDiagnostics.Identity(sample) + " | ToolObject=" + AgentDiagnostics.Identity(tool);
-                        if (config.DetailedDiagnostics && !context.GpuSnapshotCaptured)
+                        if (config.DetailedDiagnostics && !config.OriginalExecution && !context.GpuSnapshotCaptured)
                         {
                             context.GpuSnapshotCaptured = true;
                             AgentDiagnostics.CaptureEnvironment("before-first-inference");

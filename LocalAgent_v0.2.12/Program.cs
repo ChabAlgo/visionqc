@@ -11,9 +11,10 @@ namespace VisionQC.LocalAgent
 {
     internal static class Program
     {
-        internal const string AgentVersion = "1.3.11";
+        internal const string AgentVersion = "1.3.12";
         internal static VpdlRuntimeCatalog.Installation ActiveVpdlInstallation { get; private set; }
         private static int _requestedExitCode;
+        internal static string OriginalProcessPath { get; private set; }
 
         internal static string AgentHomeDirectory
         {
@@ -34,6 +35,7 @@ namespace VisionQC.LocalAgent
             Application.SetCompatibleTextRenderingDefault(false);
             AgentDiagnostics.Initialize(AgentHomeDirectory, "worker", AgentVersion);
             AppDomain.CurrentDomain.AssemblyResolve += ResolveAssemblyFromLocalOrVpdInstall;
+            OriginalProcessPath = Environment.GetEnvironmentVariable("PATH");
             ConfigureVpdlNativeSearchPath();
             AgentDiagnostics.Write("RUNTIME", "Requested API=" + Environment.GetEnvironmentVariable("VISIONQC_VPDL_API_VERSION") + " | Mode=" + Environment.GetEnvironmentVariable("VISIONQC_VPDL_WORKER_MODE") + " | Studio=" + (ActiveVpdlInstallation == null ? "none" : ActiveVpdlInstallation.StudioDirectory));
 

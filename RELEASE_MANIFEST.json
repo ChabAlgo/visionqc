@@ -1,19 +1,19 @@
 {
-  "releaseTag": "visionqc-v4.7.21-agent-v1.3.11",
-  "webVersion": "4.7.21",
-  "agentVersion": "1.3.11",
-  "minimumAgentVersion": "1.3.11",
+  "releaseTag": "visionqc-v4.7.22-agent-v1.3.12",
+  "webVersion": "4.7.22",
+  "agentVersion": "1.3.12",
+  "minimumAgentVersion": "1.3.12",
   "compatibility": {
-    "web": "4.7.21",
-    "agent": "1.3.11"
+    "web": "4.7.22",
+    "agent": "1.3.12"
   },
   "artifacts": {
-    "agentInstaller": "downloads/VisionQC_Agent_Installer_v1.3.11.exe",
-    "offlinePackage": "downloads/VisionQC_Offline_v4.7.21.zip",
+    "agentInstaller": "downloads/VisionQC_Agent_Installer_v1.3.12.exe",
+    "offlinePackage": "downloads/VisionQC_Offline_v4.7.22.zip",
     "sha256": {
-      "agentInstaller": "2257F9DF97FF590F2F2DF8DF7E9C5200A66B183C2A44B775618C900E44263B86",
-      "offlinePackage": "4A81C16CFA5D051C199F54B90DC9B1EAE5B3AF3FCECC46C1D9C6F1ACF3A5DC83"
+      "agentInstaller": "890163D35F9B31590265C54616EC961C8F12A324203A137616BBAF2E41F9DB44",
+      "offlinePackage": "D950FD0EADE0366E9EB144C2C1BB766174CE369B15474A96B8F4FBCE57838F2F"
     }
   },
-  "notes": "Green GPU 메모리 선할당 해제 선택 옵션과 SDK 단계·GPU·실제 Cognex 로그 위치 기록. C# 39, 코드 115, 브라우저 27 및 VPDL 4.0/4.2 Green·Core 검증. H100 6cc4a157 현장 해결은 미확정."
+  "notes": "원본 Runtime 수명주기의 독립 Green 실행. 코드 120, 브라우저 29, C# 62 및 VPDL 4.0/4.2 검사 검증. 원본 ZIP 엔진 대비 판정 일치, 48개 Score 비교 최대 차이 0.000088. H100/Server 2022 현장 해결은 미확정."
 }

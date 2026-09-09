@@ -1260,6 +1260,22 @@ namespace VisionQC.LocalAgent
                 {
                     var greenOptions = GetGreenOptions(req);
                     var greenConfig = BuildGreenConfig(req, req.outputRoot, null, false);
+                    ProcessSummary summary;
+                    if (greenOptions.originalProcess)
+                    {
+                        runtimeReusable = false;
+                        AppendAgentLog("INFO", "[ORIGINAL] 사전 로드 객체를 넘기지 않고 독립 프로세스에서 원본 방식으로 검사합니다. TensorRT/메모리 변경 옵션은 적용하지 않습니다.");
+                        RuntimeWorkspaceRegistry.Remove(simulationControl);
+                        var previewControl = simulationControl;
+                        simulationControl = null;
+                        previewControl.Dispose();
+                        token.ThrowIfCancellationRequested();
+                        summary = GreenProcessHost.Run(greenConfig, progress, token,
+                            Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "VisionQC.GreenRunner.exe"),
+                            Program.AgentHomeDirectory, Program.OriginalProcessPath);
+                    }
+                    else
+                    {
                     greenConfig.DisableTensorRt = greenOptions.disableTensorRt;
                     // Never reuse a runtime whose in-memory inference settings were changed.
                     runtimeReusable = !greenOptions.disableTensorRt && !greenOptions.freshRuntime;
@@ -1277,7 +1293,8 @@ namespace VisionQC.LocalAgent
                         simulationControl = GreenRuntimeFactory.Create(greenConfig.UseGpu ? VpdlGpuMode.SingleDevicePerTool : VpdlGpuMode.NoSupport,
                             greenConfig.UseGpu ? greenConfig.GpuDevices : new List<int>(), greenConfig.DetailedDiagnostics, greenConfig.DisableOptimizedGpuMemory, "Fresh Runtime");
                     }
-                    var summary = GreenOverlayProcessor.Run(greenConfig, simulationControl, !greenOptions.freshRuntime, progress, token);
+                    summary = GreenOverlayProcessor.Run(greenConfig, simulationControl, !greenOptions.freshRuntime, progress, token);
+                    }
                     lock (_sync)
                     {
                         _state.processed = summary.TotalImages;

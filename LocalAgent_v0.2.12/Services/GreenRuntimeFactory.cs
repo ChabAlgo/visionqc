@@ -13,6 +13,18 @@ namespace VisionQC.LocalAgent.Services
         private static readonly ConditionalWeakTable<LocalRuntime.Control, Origin> Origins =
             new ConditionalWeakTable<LocalRuntime.Control, Origin>();
 
+        internal static LocalRuntime.Control CreateOriginal(GpuMode mode, List<int> devices, bool detailed)
+        {
+            // Exact constructor used by DL_Simulation v1.13. No SDK debug overload,
+            // memory policy override, metadata Control, or TensorRT parameter mutation.
+            var control = AgentDiagnostics.Measure("Runtime.Create", "Original process | Mode=" + mode
+                + " | RequestedDevices=" + string.Join(",", devices), detailed,
+                () => new LocalRuntime.Control(mode, devices));
+            Origins.Add(control, new Origin { Thread = Thread.CurrentThread.ManagedThreadId, Id = Guid.NewGuid().ToString("N") });
+            AgentDiagnostics.Write("ORIGINAL_RUNTIME", Describe(control) + " | Original constructor; SDK policy unchanged");
+            return control;
+        }
+
         internal static LocalRuntime.Control Create(GpuMode mode, List<int> devices, bool detailed, bool disableMemoryPool, string purpose)
         {
             string context = purpose + " | Mode=" + mode + " | RequestedDevices=" + string.Join(",", devices)

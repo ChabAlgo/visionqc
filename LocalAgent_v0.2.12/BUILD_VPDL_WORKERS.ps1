@@ -62,6 +62,8 @@ foreach ($installation in $installations) {
     New-Item -ItemType Directory -Path $output -Force | Out-Null
     & $msbuild (Join-Path $agentRoot 'VisionQC.LocalAgent.csproj') /m /t:Rebuild /p:Configuration=Release /p:Platform=x64 ("/p:CognexDir=$($installation.Studio)") /p:AssemblyName=VisionQC.VpdlWorker ("/p:OutDir=$output")
     if ($LASTEXITCODE -ne 0) { throw "VPDL $($installation.ProductVersion) Worker 빌드 실패" }
+    & $msbuild (Join-Path $agentRoot 'GreenRunner\VisionQC.GreenRunner.csproj') /m /t:Rebuild /p:Configuration=Release /p:Platform=x64 ("/p:CognexDir=$($installation.Studio)") ("/p:OutDir=$output")
+    if ($LASTEXITCODE -ne 0 -or -not (Test-Path -LiteralPath (Join-Path $output 'VisionQC.GreenRunner.exe'))) { throw "VPDL $($installation.ProductVersion) Green Runner 빌드 실패" }
     if (-not $universalSource) { $universalSource = $output }
     $manifest += [pscustomobject]@{
         productVersion = $installation.ProductVersion

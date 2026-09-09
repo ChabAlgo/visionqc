@@ -6,6 +6,7 @@ test('Green compatibility options are off by default, persist and stay out of In
   await expect(page.locator('[data-sim-field="disableTensorRt"]')).toHaveCount(0);
   await page.locator('[data-vq-action="simulation-mode"][data-vq-mode="green"]').click();
   const tensor = page.locator('input[data-sim-field="disableTensorRt"]');
+  await page.locator('[data-sim-field="originalProcess"]').uncheck();
   const fresh = page.locator('input[data-sim-field="freshRuntime"]');
   await expect(tensor).not.toBeChecked();
   await expect(fresh).not.toBeChecked();
@@ -30,6 +31,7 @@ test('Green diagnostic and memory options persist and do not leak into Integrate
   await page.evaluate(() => window.__VISIONQC_DEBUG__.seedRuntimeToolColors());
   await page.locator('[data-vq-action="simulation-mode"][data-vq-mode="green"]').click();
   const detailed = page.locator('input[data-sim-field="detailedDiagnostics"]');
+  await page.locator('[data-sim-field="originalProcess"]').uncheck();
   const memory = page.locator('input[data-sim-field="disableOptimizedGpuMemory"]');
   await expect(detailed).toBeChecked();
   await expect(memory).not.toBeChecked();

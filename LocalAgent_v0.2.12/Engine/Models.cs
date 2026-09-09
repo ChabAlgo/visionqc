@@ -47,6 +47,7 @@ namespace VpdlGreenHeatmapOverlay
 
     internal class AppConfig
     {
+        public bool OriginalExecution { get; set; }
         public bool DisableTensorRt { get; set; }
         public bool DetailedDiagnostics { get; set; }
         public bool DisableOptimizedGpuMemory { get; set; }

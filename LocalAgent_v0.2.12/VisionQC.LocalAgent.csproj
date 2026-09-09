@@ -59,6 +59,8 @@
     <Compile Include="Services\GreenRuntimePolicy.cs" />
     <Compile Include="Services\DiagnosticTrace.cs" />
     <Compile Include="Services\GreenRuntimeFactory.cs" />
+    <Compile Include="Services\GreenProcessProtocol.cs" />
+    <Compile Include="Services\GreenProcessHost.cs" />
     <Compile Include="AgentServer.cs" />
     <Compile Include="AgentDtos.cs" />
     <Compile Include="NativeShellPicker.cs" />

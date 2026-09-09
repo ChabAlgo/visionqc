@@ -37,7 +37,10 @@ config.green.disableTensorRt=profile==='notrt'||profile==='both';
 config.green.freshRuntime=profile==='fresh'||profile==='both';
 config.green.detailedDiagnostics=profile!=='quiet';
 config.green.disableOptimizedGpuMemory=profile==='memory';
-if(profile==='bad'){
+const original=profile.startsWith('original');
+const bad=profile==='bad'||profile==='original-bad';
+config.green.originalProcess=original;
+if(bad){
   const input=join(reportRoot,'invalid-input');mkdirSync(input);
   writeFileSync(join(input,'20260807_074705_J1037G87P611903999.jpg'),'Intentionally invalid image for failure-stage regression');
   for(const p of config.positions){p.greenImageRoot=input;p.greenImageRoots=[input];}
@@ -95,19 +98,26 @@ try {
   let final; for(let i=0;i<150;i++){if(child.exitCode!==null)throw new Error('Worker crashed during simulation: '+child.exitCode);await sleep(1000);try{status=await request('/api/status',undefined,5000);}catch(e){if(child.exitCode!==null)throw e;continue;}if(!status.running){final=status.state;break;}}
   if(!final)throw new Error('Simulation deadline exceeded');
   result={...result,final};log('RESULT',{state:final});
-  if(profile==='bad'){
+  if(bad){
     const failure=readFileSync(join(reportRoot,'logs','last-sdk-failure.txt'),'utf8');
     if(!final.error || !failure.includes('Stage=Image.Load') || !failure.includes('HResult=0x')) throw new Error('Expected image-load failure was not diagnosed');
     result.expectedFailureVerified=true;
   } else if(final.error)throw new Error(final.error);
   await sleep(1000); const after=await request('/api/status');
   result.runtimePreloadedAfter=after.runtimePreloaded;
-  if(['fresh','notrt','both','bad'].includes(profile)&&after.runtimePreloaded) throw new Error('Compatibility runtime was incorrectly cached');
-  if(profile!=='bad' && !(final.processed>0))throw new Error('No images processed');
+  if((original||['fresh','notrt','both','bad'].includes(profile))&&after.runtimePreloaded) throw new Error('Compatibility runtime was incorrectly cached');
+  if(!bad && !(final.processed>0))throw new Error('No images processed');
   const workerLogs=readdirSync(join(reportRoot,'logs')).filter(n=>n.startsWith('agent-worker-')&&n.endsWith('.log')).map(n=>readFileSync(join(reportRoot,'logs',n),'utf8')).join('\n');
   if(profile!=='quiet' && !workerLogs.includes('SDK_BEGIN')) throw new Error('Detailed stage log missing');
   if(profile==='memory' && !workerLogs.includes('Explicit OptimizedGPUMemory(0) call succeeded')) throw new Error('Memory policy missing');
   result.diagnosticStagesVerified=workerLogs.includes('SDK_BEGIN');
+  if(original){
+    const runnerLogs=readdirSync(join(reportRoot,'logs')).filter(n=>n.startsWith('agent-green-runner-')).map(n=>readFileSync(join(reportRoot,'logs',n),'utf8')).join('\n');
+    if(!workerLogs.includes('GREEN_CHILD_EXIT') || !runnerLogs.includes('ORIGINAL_RUNTIME') || !runnerLogs.includes('ORIGINAL_PROCESS')) throw new Error('Isolated original execution missing');
+    if(!bad && !runnerLogs.includes('Stage=Sample.Process')) throw new Error('Isolated inference missing');
+    if(runnerLogs.includes('Explicit OptimizedGPUMemory(0)') || runnerLogs.includes('Workspace reuse')) throw new Error('Original runtime mutated or reused');
+    result.originalProcessVerified=true;
+  }
   const sdkLogs=join(process.env.APPDATA,'Cognex Corporation','Cognex VisionPro Deep Learning '+product,'logs');
   result.nativeSdkLogDirectory=sdkLogs;
   result.nativeSdkLogs=existsSync(sdkLogs)?readdirSync(sdkLogs).filter(n=>n.startsWith(basename(worker,'.exe').toLowerCase()+'_')&&n.endsWith('.debug.log')&&statSync(join(sdkLogs,n)).mtimeMs>=childStartedAt&&statSync(join(sdkLogs,n)).size>0):[];

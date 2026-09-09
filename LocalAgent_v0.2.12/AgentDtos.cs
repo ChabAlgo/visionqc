@@ -198,6 +198,7 @@ namespace VisionQC.LocalAgent
 
     public sealed class AgentGreenOptions
     {
+        public bool originalProcess { get; set; } = true;
         public bool disableTensorRt { get; set; }
         public bool freshRuntime { get; set; }
         public bool detailedDiagnostics { get; set; } = true;
