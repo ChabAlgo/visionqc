@@ -3,6 +3,7 @@ param(
     [Parameter(Mandatory=$true)][string]$AgentReportRoot
 )
 $ErrorActionPreference = 'Stop'
+Add-Type -AssemblyName System.IO.Compression.FileSystem
 $taskRepo = [IO.Path]::GetFullPath((Join-Path $PSScriptRoot '..\..'))
 $taskStage = Join-Path ([IO.Path]::GetTempPath()) ('VisionQC-original-parity-' + [guid]::NewGuid().ToString('N'))
 New-Item -ItemType Directory -Path $taskStage | Out-Null
@@ -32,7 +33,7 @@ $taskExe = Join-Path $taskStage 'OriginalParity.exe'
 if ($LASTEXITCODE -ne 0) { throw 'Unmodified original build failed' }
 Copy-Item -LiteralPath (Join-Path $taskRepo 'LocalAgent_v0.2.12\GreenRunner\App.config') -Destination ($taskExe + '.config')
 $taskInput = Get-ChildItem -LiteralPath (Join-Path $AgentReportRoot 'logs\green-runs') -Directory | Sort-Object LastWriteTime -Descending | Select-Object -First 1
-$taskConfig = Get-Content -LiteralPath (Join-Path $taskInput.FullName 'request.json') -Raw | ConvertFrom-Json
+$taskConfig = Get-Content -LiteralPath (Join-Path $taskInput.FullName 'request.json') -Raw -Encoding UTF8 | ConvertFrom-Json
 $taskRuns = @{}
 foreach ($taskMode in @('original','standalone')) {
     $taskDir = Join-Path $taskStage $taskMode
@@ -54,9 +55,9 @@ foreach ($taskMode in @('original','standalone')) {
     $taskProcess = [Diagnostics.Process]::Start($taskInfo)
     if (-not $taskProcess.WaitForExit(180000)) { $taskProcess.Kill(); throw "$taskMode timed out" }
     if ($taskProcess.ExitCode -ne 0) { throw "$taskMode failed: $($taskProcess.ExitCode); $taskDir" }
-    $taskRuns[$taskMode] = Get-Content -LiteralPath $taskResult -Raw | ConvertFrom-Json
+    $taskRuns[$taskMode] = Get-Content -LiteralPath $taskResult -Raw -Encoding UTF8 | ConvertFrom-Json
 }
-$taskRuns['agent'] = Get-Content -LiteralPath (Join-Path $taskInput.FullName 'result.json') -Raw | ConvertFrom-Json
+$taskRuns['agent'] = Get-Content -LiteralPath (Join-Path $taskInput.FullName 'result.json') -Raw -Encoding UTF8 | ConvertFrom-Json
 $taskCases = 0; $taskMaxDelta = 0.0
 foreach ($taskPosition in $taskRuns.original.SlotCsvPaths.PSObject.Properties.Name) {
     $taskOriginalRows = @(Import-Csv -LiteralPath $taskRuns.original.SlotCsvPaths.$taskPosition)

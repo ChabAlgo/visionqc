@@ -14,6 +14,13 @@ namespace VisionQC.LocalAgent.Services
         private static string _directory;
         private static string _logPath;
         private static string _operation;
+        private static string _runDirectory;
+
+        internal static void SetRunDirectory(string directory)
+        {
+            _runDirectory = Path.GetFullPath(directory);
+            Directory.CreateDirectory(_runDirectory);
+        }
         private const long MaxLogBytes = 8 * 1024 * 1024;
 
         internal static void Initialize(string agentHome, string role, string version)
@@ -57,7 +64,11 @@ namespace VisionQC.LocalAgent.Services
         internal static void SaveText(string fileName, string text)
         {
             if (string.IsNullOrEmpty(_directory)) return;
-            try { lock (Sync) File.WriteAllText(Path.Combine(_directory, Path.GetFileName(fileName)), text ?? "", Encoding.UTF8); }
+            try { lock (Sync) {
+                File.WriteAllText(Path.Combine(_directory, Path.GetFileName(fileName)), text ?? "", Encoding.UTF8);
+                if (!string.IsNullOrEmpty(_runDirectory))
+                    File.WriteAllText(Path.Combine(_runDirectory, Path.GetFileName(fileName)), text ?? "", Encoding.UTF8);
+            } }
             catch { }
         }
 

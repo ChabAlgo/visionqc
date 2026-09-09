@@ -1,0 +1,2 @@
+# Preserve supplied engine files byte-for-byte, including BOM and CRLF.
+LocalAgent_v0.2.12/GreenBaseline/Original/*.cs -text

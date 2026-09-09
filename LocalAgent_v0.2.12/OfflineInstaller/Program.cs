@@ -16,7 +16,7 @@ namespace VisionQC.AgentInstaller
     internal static class Program
     {
         private const string AgentExe = "VisionQC.LocalAgent.exe";
-        private const string ProductVersion = "1.3.12";
+        private const string ProductVersion = "1.3.13";
         private static readonly PayloadFile[] Payload =
         {
             new PayloadFile("VisionQC.AgentInstaller.Payload.Launcher.VisionQC.LocalAgent.exe", AgentExe),
@@ -196,6 +196,13 @@ namespace VisionQC.AgentInstaller
                 shortcut.IconLocation = agentPath + ",0";
                 shortcut.Description = "VisionQC 오프라인 UI 실행";
                 shortcut.Save();
+                dynamic diagnostic = shell.CreateShortcut(Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.DesktopDirectory), "VisionQC Green 비교 진단.lnk"));
+                diagnostic.TargetPath = agentPath;
+                diagnostic.Arguments = "--green-compare";
+                diagnostic.WorkingDirectory = installDir;
+                diagnostic.IconLocation = agentPath + ",0";
+                diagnostic.Description = "원본 Green 엔진과 현재 엔진 단일 이미지 비교 (서버 내부 저장)";
+                diagnostic.Save();
             }
             catch { }
         }

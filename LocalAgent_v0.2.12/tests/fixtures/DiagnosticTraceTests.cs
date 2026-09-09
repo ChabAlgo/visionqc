@@ -4,6 +4,10 @@ using VisionQC.LocalAgent.Services;
 
 internal static class DiagnosticTraceTests
 {
+    private sealed class Disposable : IDisposable {
+        internal Action Action;
+        public void Dispose() { Action(); }
+    }
     private static int checks;
     private static void Check(bool value) { if (!value) throw new Exception("Check " + (checks + 1) + " failed"); checks++; }
     public static void Main()
@@ -28,6 +32,19 @@ internal static class DiagnosticTraceTests
         Check(File.ReadAllText(Path.Combine(root, "logs", "last-sdk-stage.txt")).Contains("FAIL"));
         Check(AgentDiagnostics.Measure("Test.Disabled", "", false, () => 7) == 7);
         Check(File.ReadAllText(Path.Combine(root, "logs", "last-sdk-stage.txt")).Contains("Sample.Process"));
+        string run = Path.Combine(root, "run-one");
+        AgentDiagnostics.SetRunDirectory(run);
+        AgentDiagnostics.SaveText("scope.txt", "scoped");
+        Check(File.ReadAllText(Path.Combine(run, "scope.txt")) == "scoped");
+        int disposed = 0;
+        using (var tracked = AgentDiagnostics.Track(new Disposable { Action = () => disposed++ }, "Sample.Dispose", true))
+            Check(tracked.Value != null);
+        Check(disposed == 1);
+        Check(File.ReadAllText(Path.Combine(run, "last-cleanup-stage.txt")).Contains("OK"));
+        try { AgentDiagnostics.Cleanup("Control.Dispose", true, () => { throw new Exception("cleanup error"); }); }
+        catch (Exception ex) { Check(ex.Message == "cleanup error"); }
+        Check(File.ReadAllText(Path.Combine(run, "last-cleanup-stage.txt")).Contains("FAIL"));
+        Check(File.ReadAllText(Path.Combine(root, "logs", "last-sdk-failure.txt")) == failure);
         Console.WriteLine("PASS " + checks + " | " + root);
     }
 }

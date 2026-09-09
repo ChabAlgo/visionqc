@@ -36,7 +36,7 @@ internal static class GreenProcessTests
         Check(round.TotalImages == 2 && round.Elapsed.Ticks == 1234567 && round.CsvPath == summary.CsvPath, "summary totals paths time roundtrip");
         Check(round.FilterCellIdCount == 7 && round.SkippedByCellIdCount == 3 && round.NgCountByTool["crack"] == 1 && round.CountByJudgement["damage"] == 1 && round.SlotCsvPaths["ca(top)"] == "slot.csv", "all summary fields and case-insensitive lookup preserved");
         string exe = Assembly.GetExecutingAssembly().Location;
-        foreach (string mode in new[] { "success", "failed", "crash", "invalid", "cancel", "stuck", "callback" })
+        foreach (string mode in new[] { "success", "failed", "crash", "error-crash", "invalid", "cancel", "stuck", "callback" })
         {
             using (var cancel = new CancellationTokenSource())
             {
@@ -57,6 +57,9 @@ internal static class GreenProcessTests
                 else if (mode == "cancel" || mode == "stuck") Check(failure is OperationCanceledException && clock.Elapsed.TotalSeconds < 22, mode + " bounded owned-child cancellation");
                 else if (mode == "failed") Check(failure != null && failure.Message.Contains("6cc4a157"), "SDK error detail retained");
                 else if (mode == "crash") Check(failure != null && failure.Message.Contains("0x00000017"), "native exit code retained");
+                else if (mode == "error-crash") Check(failure != null && failure.Message.Contains("6cc4a157")
+                    && failure.Message.Contains("0xC0000409") && failure.Message.Contains("BEGIN | Sample.Dispose"),
+                    "first SDK error and cleanup boundary survive subsequent native crash");
                 else if (mode == "invalid") Check(failure is System.IO.InvalidDataException, "duplicate terminal message rejected");
                 else Check(failure != null && failure.Message == "callback failed", "callback failure retained");
                 bool alive = false; try { using (var p = Process.GetProcessById(pid)) alive = !p.HasExited; } catch (ArgumentException) { }
@@ -85,6 +88,12 @@ internal static class GreenProcessTests
                 if (mode == "cancel") { commands.ReadLine(); send(new GreenProcessMessage { Type = "cancelled" }); return 2; }
                 if (mode == "stuck" || mode == "callback") { Thread.Sleep(60000); return 3; }
                 if (mode == "crash") return 23;
+                if (mode == "error-crash") {
+                    string directory = Path.GetDirectoryName(args[Array.IndexOf(args, "--request") + 1]);
+                    File.WriteAllText(Path.Combine(directory, "last-sdk-failure.txt"), "Sample.Process Cognex internal error (6cc4a157)");
+                    File.WriteAllText(Path.Combine(directory, "last-cleanup-stage.txt"), "BEGIN | Sample.Dispose");
+                    return unchecked((int)0xC0000409);
+                }
                 if (mode == "failed") { send(new GreenProcessMessage { Type = "failed", Error = "Cognex internal error (6cc4a157)" }); return 1; }
                 var completed = new GreenProcessMessage { Type = "completed", Result = GreenProcessResult.From(new ProcessSummary { TotalImages = 2 }) };
                 send(completed); if (mode == "invalid") send(completed);

@@ -11,6 +11,36 @@ namespace VisionQC.LocalAgent.Services
     internal static partial class AgentDiagnostics
     {
         private static long _stageSequence;
+        // Separate cleanup checkpoints must not overwrite the first inference failure.
+        internal static void Cleanup(string stage, bool enabled, Action dispose)
+        {
+            if (!enabled) { dispose(); return; }
+            string header = "Stage=" + stage + " | PID=" + Process.GetCurrentProcess().Id
+                + " | Thread=" + Thread.CurrentThread.ManagedThreadId;
+            Write("CLEANUP_BEGIN", header);
+            SaveText("last-cleanup-stage.txt", DateTime.Now.ToString("O") + " | BEGIN | " + header);
+            try {
+                dispose();
+                Write("CLEANUP_OK", header);
+                SaveText("last-cleanup-stage.txt", DateTime.Now.ToString("O") + " | OK | " + header);
+            } catch (Exception ex) {
+                Write("CLEANUP_FAIL", header + " | " + ex);
+                SaveText("last-cleanup-stage.txt", DateTime.Now.ToString("O") + " | FAIL | " + header + Environment.NewLine + ex);
+                throw;
+            }
+        }
+
+        internal static TrackedResource<T> Track<T>(T value, string stage, bool enabled) where T : IDisposable
+        { return new TrackedResource<T>(value, stage, enabled); }
+
+        internal sealed class TrackedResource<T> : IDisposable where T : IDisposable
+        {
+            internal T Value { get; private set; }
+            private readonly string _stage;
+            private readonly bool _enabled;
+            internal TrackedResource(T value, string stage, bool enabled) { Value = value; _stage = stage; _enabled = enabled; }
+            public void Dispose() { Cleanup(_stage, _enabled, () => Value.Dispose()); }
+        }
         internal static string Identity(object value)
         {
             return value == null ? "none" : value.GetType().Name + "#" + RuntimeHelpers.GetHashCode(value);

@@ -66,6 +66,10 @@ namespace VisionQC.GreenRunner
                     }
                     Send(new GreenProcessMessage { Type = "ready", Pid = Process.GetCurrentProcess().Id });
                     string requestPath = Path.GetFullPath(Argument(args, "--request") ?? throw new ArgumentException("--request is required"));
+                    AgentDiagnostics.SetRunDirectory(Path.GetDirectoryName(requestPath));
+                    string searchMode = Argument(args, "--diagnostic-search") ?? "pinned";
+                    if (searchMode != "pinned" && searchMode != "original") throw new ArgumentException("Unknown diagnostic search mode");
+                    if (pipeName != null && searchMode != "pinned") throw new ArgumentException("Original search is diagnostic-only; not enabled for production runs");
                     var json = GreenProcessMessage.Serializer();
                     var config = json.Deserialize<AppConfig>(File.ReadAllText(requestPath, Encoding.UTF8));
                     if (config == null) throw new ArgumentException("Empty Green request");
@@ -83,8 +87,8 @@ namespace VisionQC.GreenRunner
                     if (_installation == null) throw new InvalidOperationException("일치하는 VPDL 설치본을 찾지 못했습니다: API " + api);
                     string nativePrefix = string.Join(";", new[] { _installation.NativeDirectory,
                         _installation.StudioDirectory, Path.Combine(_installation.RootDirectory, "Service") }.Where(Directory.Exists));
-                    Environment.SetEnvironmentVariable("PATH", nativePrefix + ";" + Environment.GetEnvironmentVariable("PATH"));
-                    if (!SetDllDirectory(_installation.NativeDirectory))
+                    if (searchMode == "pinned") Environment.SetEnvironmentVariable("PATH", nativePrefix + ";" + Environment.GetEnvironmentVariable("PATH"));
+                    if (searchMode == "pinned" && !SetDllDirectory(_installation.NativeDirectory))
                         throw new System.ComponentModel.Win32Exception(Marshal.GetLastWin32Error(), "Selected SDK native search failed");
                     Environment.SetEnvironmentVariable("VISIONQC_VPDL_PRODUCT_VERSION", _installation.ProductVersion);
                     AgentDiagnostics.Write("ORIGINAL_PROCESS", "Fresh process | RequestSHA256=" + Hash(requestPath)
@@ -92,7 +96,7 @@ namespace VisionQC.GreenRunner
                         + " | API=" + api + " | Studio=" + _installation.StudioDirectory
                         + " | Native=" + _installation.NativeLibraryPath + " | NativeSHA256=" + Hash(_installation.NativeLibraryPath)
                         + " | InputGpuDevices=" + string.Join(",", config.GpuDevices)
-                        + " | Cwd=" + Environment.CurrentDirectory + " | Selected SDK native search pinned=" + nativePrefix
+                        + " | Cwd=" + Environment.CurrentDirectory + " | NativeSearch=" + searchMode + " | Selected SDK native search pinned=" + (searchMode == "pinned" ? nativePrefix : "not applied (diagnostic)")
                         + " | TensorRT/memory overrides not applied; Workspace is not saved");
                     // Like the original WinForms program: one background MTA execution
                     // creates, loads, processes, and disposes its own Control synchronously.

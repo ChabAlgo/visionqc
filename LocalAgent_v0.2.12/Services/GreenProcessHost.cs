@@ -62,7 +62,7 @@ namespace VisionQC.LocalAgent.Services
                     while (!connected.Wait(100))
                     {
                         token.ThrowIfCancellationRequested();
-                        if (child.HasExited) throw ExitFailure(child);
+                        if (child.HasExited) throw ExitFailure(child, runDirectory);
                         if (startup.ElapsedMilliseconds > 30000) throw new TimeoutException("독립 Green 프로세스 연결 제한 시간 초과 (30초)");
                     }
                     using (var reader = new StreamReader(pipe, Encoding.UTF8, false, 65536, true))
@@ -119,7 +119,7 @@ namespace VisionQC.LocalAgent.Services
                                 // Drain buffered messages even after process exit, including
                                 // the final SDK exception. IsConnected alone loses these.
                                 if (!exited.IsRunning) exited.Start();
-                                if (exited.ElapsedMilliseconds > 10000) throw ExitFailure(child);
+                                if (exited.ElapsedMilliseconds > 10000) throw ExitFailure(child, runDirectory);
                             }
                         }
                         if (!child.WaitForExit(10000)) throw new TimeoutException("검사 결과 전달 후 독립 Green 프로세스 종료 지연");
@@ -128,12 +128,12 @@ namespace VisionQC.LocalAgent.Services
                         token.ThrowIfCancellationRequested();
                         if (cancelled) throw new OperationCanceledException("독립 Green 검사 중지");
                         if (failure != null) throw new InvalidOperationException(failure);
-                        if (child.ExitCode != 0 || !ready || result == null) throw ExitFailure(child);
+                        if (child.ExitCode != 0 || !ready || result == null) throw ExitFailure(child, runDirectory);
                         return result.ToSummary();
                     }
                 }
                 catch (Exception) when (token.IsCancellationRequested) { throw new OperationCanceledException(token); }
-                catch (IOException) when (started && child.WaitForExit(1000)) { throw ExitFailure(child); }
+                catch (IOException) when (started && child.WaitForExit(1000)) { throw ExitFailure(child, runDirectory); }
                 finally
                 {
                     // Broken callbacks/pipe errors cannot leave an orphan inference running.
@@ -142,11 +142,25 @@ namespace VisionQC.LocalAgent.Services
             }
         }
 
-        private static Exception ExitFailure(Process child)
+        private static Exception ExitFailure(Process child, string runDirectory)
         {
             string code = child.HasExited ? child.ExitCode + " (0x" + unchecked((uint)child.ExitCode).ToString("X8") + ")" : "unknown";
+            string first = ReadDiagnostic(runDirectory, "last-sdk-failure.txt");
+            string cleanup = ReadDiagnostic(runDirectory, "last-cleanup-stage.txt");
             return new InvalidOperationException("독립 Green 프로세스가 정상 결과 없이 종료되었습니다. Exit=" + code
-                + " | logs/last-sdk-stage.txt, last-green-runner-failure.txt, agent-green-runner-*.log 확인");
+                + (first.Length > 0 ? Environment.NewLine + "최초 SDK 오류 (후속 종료와 구분): " + first : "")
+                + (cleanup.Length > 0 ? Environment.NewLine + "마지막 자원 해제 단계: " + cleanup : "")
+                + Environment.NewLine + "실행별 로그: " + runDirectory);
+        }
+
+        private static string ReadDiagnostic(string directory, string name)
+        {
+            try {
+                string path = Path.Combine(directory, name);
+                if (!File.Exists(path)) return "";
+                string value = File.ReadAllText(path);
+                return value.Length > 6000 ? value.Substring(0, 6000) : value;
+            } catch { return ""; }
         }
 
         private static string Limit(string line) { return line.Length > 16384 ? line.Substring(0, 16384) : line; }

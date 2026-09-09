@@ -23,7 +23,8 @@ test('only standalone Green simulation changes policy and never caches the chang
 });
 test('inference diagnostic survives native cleanup and does not export data',()=>{
   assert.match(green,/last-green-inference.txt[\s\S]*?AgentDiagnostics.Measure\("Sample.Process"[\s\S]*?sample.Process\(tool\)/);
-  assert.match(green,/last-green-failure.txt[\s\S]*?WriteLoadedLibraries\(\)[\s\S]*?throw new System.InvalidOperationException/);
+  assert.match(green,/last-green-failure.txt[\s\S]*?CaptureEnvironment\("inference-failure"\)[\s\S]*?throw new System.InvalidOperationException/);
+  assert.match(read('LocalAgent_v0.2.12/Services/DiagnosticTrace.cs'),/CaptureEnvironment[\s\S]*?WriteLoadedLibraries\(\)/);
   const policy=read('LocalAgent_v0.2.12/Services/GreenRuntimePolicy.cs');
   assert.match(policy,/ProcessWithTrt/);
   assert.match(policy,/property.GetValue\(parameters, null\), disabled/);

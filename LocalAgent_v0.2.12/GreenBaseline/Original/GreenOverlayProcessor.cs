@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.Diagnostics;
 using System.IO;
@@ -12,7 +12,6 @@ using ViDi2;
 using Runtime = ViDi2.Runtime;
 using LocalRuntime = ViDi2.Runtime.Local;
 using LocalImages = ViDi2.Local;
-using VisionQC.LocalAgent.Services;
 
 namespace VpdlGreenHeatmapOverlay
 {
@@ -25,20 +24,13 @@ namespace VpdlGreenHeatmapOverlay
             public Runtime.IStream Stream { get; set; }
             public Dictionary<string, Runtime.ITool> ToolMap { get; set; }
             public List<ToolRoiConfig> Tools { get; set; }
-            public Dictionary<string, string> ToolDiagnostics { get; set; }
-            public string RuntimeIdentity { get; set; }
-            public bool GpuSnapshotCaptured { get; set; }
         }
 
         private sealed class ImageJob
         {
             public string ImagePath { get; set; }
-            // ImagePath는 Runtime에 투입할 파일이다. 통합 모드에서는 Blue Crop 결과가 된다.
-            // SourceFullPath는 사용자가 클릭해서 확인할 원본 Grab 이미지 경로다.
-            public string SourceFullPath { get; set; }
             public string WorkspaceKey { get; set; }
             public string InputRoot { get; set; }
-            public string InputRootTag { get; set; }
             public string SlotDisplayName { get; set; }
         }
 
@@ -46,7 +38,6 @@ namespace VpdlGreenHeatmapOverlay
         {
             public string Decision { get; set; }
             public double Score { get; set; }
-            public string OverlayPath { get; set; }
         }
 
         private sealed class ProcessOneResult
@@ -57,7 +48,6 @@ namespace VpdlGreenHeatmapOverlay
             public string TimeText { get; set; }
             public string FileName { get; set; }
             public string FullPath { get; set; }
-            public string ProcessingPath { get; set; }
             public string CellId { get; set; }
             public string Position { get; set; }
             public Dictionary<string, ToolResult> ToolResults { get; set; } = new Dictionary<string, ToolResult>(StringComparer.OrdinalIgnoreCase);
@@ -70,11 +60,6 @@ namespace VpdlGreenHeatmapOverlay
         }
 
         public static ProcessSummary Run(AppConfig config, IProgress<ProcessProgress> progress, CancellationToken token)
-        {
-            return Run(config, null, false, progress, token);
-        }
-
-        internal static ProcessSummary Run(AppConfig config, LocalRuntime.Control sharedControl, bool reusePreloadedWorkspaces, IProgress<ProcessProgress> progress, CancellationToken token)
         {
             if (config == null) throw new ArgumentNullException(nameof(config));
             if (string.IsNullOrWhiteSpace(config.OutputRoot)) throw new DirectoryNotFoundException("출력 폴더가 지정되지 않았습니다.");
@@ -125,13 +110,9 @@ namespace VpdlGreenHeatmapOverlay
             var cellPositionOrder = new List<string>();
             var sw = Stopwatch.StartNew();
 
-            var control = sharedControl ?? (config.OriginalExecution
-                ? GreenRuntimeFactory.CreateOriginal(gpuMode, gpuList, config.DetailedDiagnostics)
-                : GreenRuntimeFactory.Create(gpuMode, gpuList, config.DetailedDiagnostics, config.DisableOptimizedGpuMemory, "Green.Run"));
-            bool ownsControl = sharedControl == null;
-            try
+            using (var control = new LocalRuntime.Control(gpuMode, gpuList))
             {
-                var contexts = LoadWorkspaceContexts(config, control, progress, reusePreloadedWorkspaces);
+                var contexts = LoadWorkspaceContexts(config, control, progress);
                 var activeSlotToolNames = contexts.ToDictionary(
                     kv => kv.Key,
                     kv => GetDistinctToolNames(kv.Value.Tools),
@@ -166,13 +147,6 @@ namespace VpdlGreenHeatmapOverlay
                             if (!countByJudgement.ContainsKey(one.Judgement)) countByJudgement[one.Judgement] = 0;
                             countByJudgement[one.Judgement]++;
 
-                            progress?.Report(new ProcessProgress
-                            {
-                                Message = string.Format("{0}%  {1}/{2} | Total OK={3}, NG={4}", imageJobs.Count > 0 ? (int)Math.Round(idx * 100.0 / imageJobs.Count) : 0, idx, imageJobs.Count, totalOkCount, totalNgCount),
-                                Processed = idx, Total = imageJobs.Count, OkCount = totalOkCount, NgCount = totalNgCount, CurrentFile = job.ImagePath,
-                                LiveRecord = ToLiveRecord(one)
-                            });
-
                             WriteIntegratedSummaryRow(integratedCsv, one);
                             UpdateCellPositionSummary(cellPositionSummary, cellPositionOrder, one);
                             StreamWriter slotWriter;
@@ -192,12 +166,8 @@ namespace VpdlGreenHeatmapOverlay
                     foreach (var w in slotWriters.Values) w.Dispose();
                 }
             }
-            finally
-            {
-                if (ownsControl) AgentDiagnostics.Cleanup("Control.Dispose", config.DetailedDiagnostics, () => control.Dispose());
-            }
 
-            string cellPositionSummaryCsvPath = WriteCellPositionSummaryCsv(config.OutputRoot, runStamp, cellPositionSummary, cellPositionOrder, config.WorkspaceSlots.Where(x => x != null && x.Enabled).Select(x => x.DisplayName));
+            string cellPositionSummaryCsvPath = WriteCellPositionSummaryCsv(config.OutputRoot, runStamp, cellPositionSummary, cellPositionOrder);
 
             return new ProcessSummary
             {
@@ -216,7 +186,7 @@ namespace VpdlGreenHeatmapOverlay
             };
         }
 
-        private static Dictionary<string, WorkspaceContext> LoadWorkspaceContexts(AppConfig config, LocalRuntime.Control control, IProgress<ProcessProgress> progress, bool reusePreloadedWorkspaces = false)
+        private static Dictionary<string, WorkspaceContext> LoadWorkspaceContexts(AppConfig config, LocalRuntime.Control control, IProgress<ProcessProgress> progress)
         {
             var contexts = new Dictionary<string, WorkspaceContext>(StringComparer.OrdinalIgnoreCase);
             foreach (var slot in config.WorkspaceSlots.Where(s => s.Enabled))
@@ -225,11 +195,9 @@ namespace VpdlGreenHeatmapOverlay
                     throw new FileNotFoundException(slot.DisplayName + " 워크스페이스 파일이 없습니다.", slot.WorkspacePath);
 
                 string workspaceName = "ws_" + slot.Key;
-                Report(progress, slot.DisplayName + (reusePreloadedWorkspaces ? " 사전 로드 Runtime 연결 중..." : " 워크스페이스 로드 중..."));
-                Runtime.IWorkspace workspace = AgentDiagnostics.Measure(reusePreloadedWorkspaces ? "Workspace.Reuse" : "Workspace.Load", GreenRuntimeFactory.Describe(control) + " | Path=" + slot.WorkspacePath, config.DetailedDiagnostics,
-                    () => ResolveWorkspace(control, workspaceName, slot.WorkspacePath, reusePreloadedWorkspaces));
-                Runtime.IStream stream = AgentDiagnostics.Measure("Stream.Resolve", slot.DisplayName + " | Stream=" + slot.StreamName, config.DetailedDiagnostics,
-                    () => workspace.Streams[slot.StreamName]);
+                Report(progress, slot.DisplayName + " 워크스페이스 로드 중...");
+                Runtime.IWorkspace workspace = control.Workspaces.Add(workspaceName, slot.WorkspacePath);
+                Runtime.IStream stream = workspace.Streams[slot.StreamName];
 
                 var applicableTools = config.Tools.Where(t => t.AppliesTo(slot.Key)).ToList();
                 var activeTools = new List<ToolRoiConfig>();
@@ -240,13 +208,6 @@ namespace VpdlGreenHeatmapOverlay
                     Runtime.ITool tool;
                     if (TryGetTool(stream, cfg.ToolName, out tool))
                     {
-                        if (!config.OriginalExecution)
-                            AgentDiagnostics.Write("GREEN_TOOL", "Position=" + slot.DisplayName + " | Tool=" + cfg.ToolName + " | " + GreenRuntimePolicy.Describe(tool.ParametersBase));
-                        if (config.DisableTensorRt)
-                        {
-                            string policy = GreenRuntimePolicy.DisableTensorRt(tool.ParametersBase);
-                            Report(progress, "[COMPAT] " + slot.DisplayName + " / " + cfg.ToolName + " | " + policy + " (메모리에만 적용)");
-                        }
                         toolMap[cfg.ToolName] = tool;
                         activeTools.Add(cfg);
                     }
@@ -264,19 +225,10 @@ namespace VpdlGreenHeatmapOverlay
                 if (activeTools.Count == 0)
                     throw new System.InvalidOperationException(slot.DisplayName + "에서 실행 가능한 Tool이 없습니다. Option의 Tool 위치 체크와 Workspace 내 ToolName을 확인하세요.");
 
-                contexts[slot.Key] = new WorkspaceContext { Slot = slot, Workspace = workspace, Stream = stream, ToolMap = toolMap, Tools = activeTools, RuntimeIdentity = GreenRuntimeFactory.Describe(control),
-                    ToolDiagnostics = toolMap.ToDictionary(kv => kv.Key, kv => config.OriginalExecution ? "Original Workspace settings unchanged" : GreenRuntimePolicy.Describe(kv.Value.ParametersBase), StringComparer.OrdinalIgnoreCase) };
+                contexts[slot.Key] = new WorkspaceContext { Slot = slot, Workspace = workspace, Stream = stream, ToolMap = toolMap, Tools = activeTools };
                 Report(progress, string.Format("{0} 워크스페이스 로드 완료 - 실행 Tool {1}/{2}개", slot.DisplayName, activeTools.Count, applicableTools.Count));
             }
             return contexts;
-        }
-
-        private static Runtime.IWorkspace ResolveWorkspace(LocalRuntime.Control control, string workspaceName, string workspacePath, bool reusePreloaded)
-        {
-            if (!reusePreloaded) return control.Workspaces.Add(workspaceName, workspacePath);
-            Runtime.IWorkspace workspace;
-            if (RuntimeWorkspaceRegistry.TryGet(control, workspaceName, out workspace)) return workspace;
-            throw new System.InvalidOperationException("사전 로드 Runtime을 찾지 못했습니다: " + workspaceName + ". Runtime File Load를 다시 실행하세요.");
         }
 
         private static List<string> GetDistinctToolNames(IEnumerable<ToolRoiConfig> tools)
@@ -321,80 +273,11 @@ namespace VpdlGreenHeatmapOverlay
             csv.WriteLine(string.Join(",", row.Select(EscapeCsv)));
         }
 
-        private static LiveAnalysisRecord ToLiveRecord(ProcessOneResult result)
-        {
-            var live = new LiveAnalysisRecord
-            {
-                FileName = result.FileName,
-                FullPath = result.FullPath,
-                ProcessingPath = result.ProcessingPath,
-                CellId = result.CellId,
-                Position = result.Position,
-                TotalResult = result.IsTotalOk ? "OK" : "NG",
-                Judgement = result.Judgement
-            };
-            foreach (var pair in result.ToolResults)
-            {
-                double? score = double.IsNaN(pair.Value.Score) ? (double?)null : pair.Value.Score;
-                live.Tools[pair.Key] = new LiveToolResult { Tool = pair.Key, Result = pair.Value.Decision, Score = score, OverlayPath = pair.Value.OverlayPath };
-            }
-            return live;
-        }
-
-        // 결과 CSV나 Heatmap 파일을 만들지 않는 단일 이미지 검사 진입점이다.
-        // 분류 화면과 향후 Image Viewer는 이 메서드를 통해 대량 Simulation과 같은 Green 판단 규칙을 재사용한다.
-        internal static LiveAnalysisRecord InspectSingle(AppConfig config, string slotKey, string imagePath, LocalRuntime.Control sharedControl, bool reusePreloadedWorkspaces, CancellationToken token)
-        {
-            if (config == null) throw new ArgumentNullException(nameof(config));
-            if (string.IsNullOrWhiteSpace(slotKey)) throw new ArgumentException("Position Key가 비어 있습니다.", nameof(slotKey));
-            if (string.IsNullOrWhiteSpace(imagePath) || !File.Exists(imagePath)) throw new FileNotFoundException("검사할 이미지 파일이 없습니다.", imagePath);
-
-            var slot = config.WorkspaceSlots.FirstOrDefault(x => x != null && x.Enabled && string.Equals(x.Key, slotKey, StringComparison.OrdinalIgnoreCase));
-            if (slot == null) throw new System.InvalidOperationException("단일 검사 Position을 찾지 못했습니다: " + slotKey);
-
-            bool ownsControl = sharedControl == null;
-            LocalRuntime.Control control = sharedControl;
-            if (control == null)
-            {
-                var gpuMode = config.UseGpu ? GpuMode.SingleDevicePerTool : GpuMode.NoSupport;
-                control = GreenRuntimeFactory.Create(gpuMode, config.UseGpu ? config.GpuDevices : new List<int>(), config.DetailedDiagnostics, config.DisableOptimizedGpuMemory, "Green.InspectSingle");
-            }
-            try
-            {
-                var contexts = LoadWorkspaceContexts(config, control, null, reusePreloadedWorkspaces);
-                WorkspaceContext context;
-                if (!contexts.TryGetValue(slotKey, out context)) throw new System.InvalidOperationException("단일 검사 Workspace Context를 찾지 못했습니다: " + slotKey);
-
-                var judgementPriority = config.Judgements
-                    .GroupBy(j => j.Name, StringComparer.OrdinalIgnoreCase)
-                    .ToDictionary(g => g.Key, g => g.Min(x => x.Priority), StringComparer.OrdinalIgnoreCase);
-                if (!judgementPriority.ContainsKey("ERROR")) judgementPriority["ERROR"] = int.MaxValue - 1;
-
-                var result = ProcessOneImage(config, context, new ImageJob
-                {
-                    ImagePath = imagePath,
-                    SourceFullPath = imagePath,
-                    WorkspaceKey = slotKey,
-                    InputRoot = slot.InputRoot,
-                    SlotDisplayName = slot.DisplayName
-                }, new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase), judgementPriority, token);
-                return ToLiveRecord(result);
-            }
-            finally
-            {
-                if (ownsControl)
-                {
-                    RuntimeWorkspaceRegistry.Remove(control);
-                    control.Dispose();
-                }
-            }
-        }
-
         private static void WriteIntegratedSummaryHeader(StreamWriter csv)
         {
             var header = new List<string>
             {
-                "Date", "Time", "FileName", "FullPath", "ProcessedPath", "Cell ID", "Position", "total_result", "Judgement"
+                "Date", "Time", "FileName", "FullPath", "Cell ID", "Position", "total_result", "Judgement"
             };
             csv.WriteLine(string.Join(",", header.Select(EscapeCsv)));
         }
@@ -407,7 +290,6 @@ namespace VpdlGreenHeatmapOverlay
                 result.TimeText,
                 result.FileName,
                 result.FullPath,
-                result.ProcessingPath,
                 result.CellId,
                 result.Position,
                 result.IsTotalOk ? "OK" : "NG",
@@ -455,19 +337,13 @@ namespace VpdlGreenHeatmapOverlay
             return p;
         }
 
-        private static string WriteCellPositionSummaryCsv(string outputRoot, string runStamp, Dictionary<string, Dictionary<string, string>> summary, List<string> order, IEnumerable<string> positionColumns)
+        private static string WriteCellPositionSummaryCsv(string outputRoot, string runStamp, Dictionary<string, Dictionary<string, string>> summary, List<string> order)
         {
             string path = Path.Combine(outputRoot, string.Format("cell_position_summary_{0}.csv", runStamp));
-            var columns = (positionColumns ?? Enumerable.Empty<string>())
-                .Where(x => !string.IsNullOrWhiteSpace(x))
-                .Select(NormalizeSummaryPosition)
-                .Distinct(StringComparer.OrdinalIgnoreCase)
-                .ToList();
-            if (columns.Count == 0) columns.AddRange(CellPositionSummaryColumns);
             using (var csv = new StreamWriter(path, false, new System.Text.UTF8Encoding(true)))
             {
                 var header = new List<string> { "Cell ID" };
-                header.AddRange(columns);
+                header.AddRange(CellPositionSummaryColumns);
                 header.Add("total_result");
                 csv.WriteLine(string.Join(",", header.Select(EscapeCsv)));
 
@@ -480,7 +356,7 @@ namespace VpdlGreenHeatmapOverlay
                     bool hasOk = false;
                     var row = new List<string> { cellId };
 
-                    foreach (string pos in columns)
+                    foreach (string pos in CellPositionSummaryColumns)
                     {
                         string value;
                         if (!rowMap.TryGetValue(pos, out value) || string.IsNullOrWhiteSpace(value)) value = "-";
@@ -500,35 +376,23 @@ namespace VpdlGreenHeatmapOverlay
         private static ImageJobListResult BuildImageJobs(AppConfig config, HashSet<string> cellIdFilter, CancellationToken token)
         {
             var jobs = new List<ImageJob>();
-            var knownImagePaths = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
             int skippedByCellId = 0;
 
             foreach (var slot in config.WorkspaceSlots.Where(s => s.Enabled))
             {
-                List<string> inputRoots = GetInputRoots(slot);
-                for (int rootIndex = 0; rootIndex < inputRoots.Count; rootIndex++)
+                if (string.IsNullOrWhiteSpace(slot.InputRoot) || !Directory.Exists(slot.InputRoot)) continue;
+                foreach (var path in EnumerateImages(slot.InputRoot))
                 {
-                    string inputRoot = inputRoots[rootIndex];
-                    if (!Directory.Exists(inputRoot)) continue;
-                    string inputRootTag = inputRoots.Count > 1 ? BuildInputRootTag(inputRoot, rootIndex) : "";
-                    foreach (var path in EnumerateImages(inputRoot))
+                    token.ThrowIfCancellationRequested();
+                    string fileName = Path.GetFileName(path);
+                    if (!FileNameMatchesKeyword(fileName, slot.Keyword))
+                        continue;
+                    if (cellIdFilter.Count > 0 && !MatchesCellIdFilter(fileName, cellIdFilter))
                     {
-                        token.ThrowIfCancellationRequested();
-                        string fileName = Path.GetFileName(path);
-                        // Keyword 모드의 공통 Root는 활성화된 모든 Position이 검사한다. Keyword가 있을 때만
-                        // 그 Position의 대상 파일을 좁힌다. 따라서 중복 제거 키는 파일 경로만이 아니라
-                        // Position(Slot) + 파일 경로여야 하며, 첫 Position이 다음 Position의 작업을 선점하면 안 된다.
-                        if (!FileNameMatchesKeyword(fileName, slot.Keyword))
-                            continue;
-                        string slotImageKey = (slot.Key ?? "") + "\n" + path;
-                        if (!knownImagePaths.Add(slotImageKey)) continue;
-                        if (cellIdFilter.Count > 0 && !MatchesCellIdFilter(fileName, cellIdFilter, config.NamingProfile))
-                        {
-                            skippedByCellId++;
-                            continue;
-                        }
-                        jobs.Add(new ImageJob { ImagePath = path, WorkspaceKey = slot.Key, InputRoot = inputRoot, InputRootTag = inputRootTag, SlotDisplayName = slot.DisplayName });
+                        skippedByCellId++;
+                        continue;
                     }
+                    jobs.Add(new ImageJob { ImagePath = path, WorkspaceKey = slot.Key, InputRoot = slot.InputRoot, SlotDisplayName = slot.DisplayName });
                 }
             }
 
@@ -541,27 +405,6 @@ namespace VpdlGreenHeatmapOverlay
             return new ImageJobListResult { Jobs = jobs, SkippedByCellIdCount = skippedByCellId };
         }
 
-        private static List<string> GetInputRoots(WorkspaceSlotConfig slot)
-        {
-            var roots = new List<string>();
-            Action<string> add = value =>
-            {
-                string path = (value ?? "").Trim();
-                if (!string.IsNullOrWhiteSpace(path) && !roots.Any(existing => string.Equals(existing, path, StringComparison.OrdinalIgnoreCase))) roots.Add(path);
-            };
-            if (slot != null && slot.InputRoots != null) foreach (string root in slot.InputRoots) add(root);
-            if (slot != null) add(slot.InputRoot);
-            return roots;
-        }
-
-        private static string BuildInputRootTag(string inputRoot, int index)
-        {
-            string name = Path.GetFileName((inputRoot ?? "").TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar));
-            if (string.IsNullOrWhiteSpace(name)) name = "Root";
-            foreach (char invalid in Path.GetInvalidFileNameChars()) name = name.Replace(invalid, '_');
-            return string.Format("Source_{0:D2}_{1}", index + 1, name);
-        }
-
         private static bool FileNameMatchesKeyword(string fileName, string keyword)
         {
             if (string.IsNullOrWhiteSpace(keyword)) return true;
@@ -570,9 +413,8 @@ namespace VpdlGreenHeatmapOverlay
 
         private static ProcessOneResult ProcessOneImage(AppConfig config, WorkspaceContext context, ImageJob job, Dictionary<string, int> ngCountByTool, Dictionary<string, int> judgementPriority, CancellationToken token)
         {
-            string sourceFullPath = string.IsNullOrWhiteSpace(job.SourceFullPath) ? job.ImagePath : job.SourceFullPath;
-            string fileName = Path.GetFileName(sourceFullPath);
-            string cellId = ExtractCellId(config.NamingProfile, sourceFullPath);
+            string fileName = Path.GetFileName(job.ImagePath);
+            string cellId = ExtractCellId(fileName);
             var judgementCandidates = new List<string>();
             bool allOk = true;
             var result = new ProcessOneResult
@@ -580,25 +422,15 @@ namespace VpdlGreenHeatmapOverlay
                 DateText = DateTime.Now.ToString("yyyyMMdd"),
                 TimeText = DateTime.Now.ToString("HHmmss"),
                 FileName = fileName,
-                FullPath = sourceFullPath,
-                ProcessingPath = job.ImagePath,
+                FullPath = job.ImagePath,
                 CellId = cellId,
                 Position = context.Slot.DisplayName
             };
 
-            AgentDiagnostics.Operation("Green image load | Position=" + context.Slot.DisplayName + " | Image=" + job.ImagePath);
-            if (config.DetailedDiagnostics && config.OriginalExecution)
-                AgentDiagnostics.SaveText("last-green-input.json", GreenProcessMessage.Serializer().Serialize(new {
-                    ImagePath = job.ImagePath, SlotKey = context.Slot.Key,
-                    ApiVersion = Environment.GetEnvironmentVariable("VISIONQC_VPDL_API_VERSION"),
-                    Studio = Environment.GetEnvironmentVariable("COGNEX_VPDL_DLL_DIR") }));
-            using (var imageLifetime = AgentDiagnostics.Track(AgentDiagnostics.Measure("Image.Load", context.Slot.DisplayName + " | Image=" + job.ImagePath, config.DetailedDiagnostics, () => new LocalImages.LibraryImage(job.ImagePath)), "Image.Dispose", config.DetailedDiagnostics))
-            using (var sampleLifetime = AgentDiagnostics.Track(AgentDiagnostics.Measure("Sample.Create", context.RuntimeIdentity, config.DetailedDiagnostics, () => context.Stream.CreateSample()), "Sample.Dispose", config.DetailedDiagnostics))
+            using (var vidiImage = new LocalImages.LibraryImage(job.ImagePath))
+            using (ISample sample = context.Stream.CreateSample())
             {
-                var vidiImage = imageLifetime.Value;
-                ISample sample = sampleLifetime.Value;
-                AgentDiagnostics.Measure("Sample.AddImage", context.RuntimeIdentity, config.DetailedDiagnostics, () => sample.AddImage(vidiImage));
-                string imageSize = vidiImage.Width + "x" + vidiImage.Height;
+                sample.AddImage(vidiImage);
                 SD.Bitmap sourceBitmap = null;
                 try
                 {
@@ -606,41 +438,12 @@ namespace VpdlGreenHeatmapOverlay
                     {
                         token.ThrowIfCancellationRequested();
                         Runtime.ITool tool = context.ToolMap[cfg.ToolName];
-                        AgentDiagnostics.Operation("Green process | Position=" + context.Slot.DisplayName + " | Tool=" + cfg.ToolName + " | Image=" + job.ImagePath);
-                        string inferenceContext = "Position=" + context.Slot.DisplayName + " | Tool=" + cfg.ToolName
-                            + " | Image=" + imageSize
-                            + " | GPU=" + config.UseGpu + " | Devices=" + string.Join(",", config.GpuDevices)
-                            + " | " + context.ToolDiagnostics[cfg.ToolName] + " | " + context.RuntimeIdentity
-                            + " | Sample=" + AgentDiagnostics.Identity(sample) + " | ToolObject=" + AgentDiagnostics.Identity(tool);
-                        if (config.DetailedDiagnostics && !config.OriginalExecution && !context.GpuSnapshotCaptured)
-                        {
-                            context.GpuSnapshotCaptured = true;
-                            AgentDiagnostics.CaptureEnvironment("before-first-inference");
-                        }
-                        // Persist before native entry: fatal native errors may bypass catch/finally.
-                        AgentDiagnostics.SaveText("last-green-inference.txt", DateTime.Now.ToString("O") + " | " + inferenceContext);
-                        try { AgentDiagnostics.Measure("Sample.Process", inferenceContext, config.DetailedDiagnostics, () => sample.Process(tool)); }
-                        catch (System.Exception ex)
-                        {
-                            string failure = "SDK inference exception; no completed marking/result was returned." + Environment.NewLine
-                                + inferenceContext + Environment.NewLine + AgentDiagnostics.ExceptionDetails(ex);
-                            AgentDiagnostics.SaveText("last-green-failure.txt", DateTime.Now.ToString("O") + " | " + failure);
-                            AgentDiagnostics.Write("GREEN_INFERENCE_ERROR", failure);
-                            // Record the boundary before diagnostics too: a native crash may
-                            // occur on another SDK thread while the caught error is reported.
-                            AgentDiagnostics.SaveText("last-error-handler-stage.txt", "BEGIN | CaptureEnvironment | " + DateTime.Now.ToString("O"));
-                            AgentDiagnostics.CaptureEnvironment("inference-failure");
-                            AgentDiagnostics.SaveText("last-error-handler-stage.txt", "OK | CaptureEnvironment | " + DateTime.Now.ToString("O"));
-                            throw new System.InvalidOperationException("Green 추론 실패 (" + context.Slot.DisplayName + " / " + cfg.ToolName
-                                + ", " + imageSize + "): " + ex.Message
-                                + " | 검사 출력 ERROR가 아니라 SDK 추론 중단입니다. logs/last-sdk-failure.txt, last-green-failure.txt, cognex-sdk-log-locations.txt 확인", ex);
-                        }
+                        sample.Process(tool);
                         string decision = "ERR";
                         double score = double.NaN;
                         SD.Bitmap heatmapBmp = null;
                         IGreenView view = null;
-                        var greenMarking = AgentDiagnostics.Measure("Result.ReadMarking", inferenceContext, config.DetailedDiagnostics,
-                            () => sample.Markings[tool.Name] as IGreenMarking);
+                        var greenMarking = sample.Markings[tool.Name] as IGreenMarking;
                         if (greenMarking != null && greenMarking.Views != null && greenMarking.Views.Count > 0)
                         {
                             view = greenMarking.Views[0];
@@ -658,15 +461,10 @@ namespace VpdlGreenHeatmapOverlay
                             {
                                 try
                                 {
-                                    AgentDiagnostics.Operation("Green heatmap | Position=" + context.Slot.DisplayName + " | Tool=" + cfg.ToolName + " | Image=" + job.ImagePath);
-                                    IImage hm = AgentDiagnostics.Measure("Result.ReadHeatmap", inferenceContext, config.DetailedDiagnostics, () => view.HeatMap);
+                                    IImage hm = view.HeatMap;
                                     if (hm != null) heatmapBmp = CloneBitmapFromUnknown(GetPropertyValue(hm, "Bitmap"));
                                 }
-                                catch (System.Exception ex)
-                                {
-                                    AgentDiagnostics.Write("HEATMAP_ERROR", "Tool=" + cfg.ToolName + " | Image=" + job.ImagePath + Environment.NewLine + ex);
-                                    heatmapBmp = null;
-                                }
+                                catch { heatmapBmp = null; }
                             }
                         }
                         else decision = "ERR_NO_MARKING";
@@ -684,7 +482,6 @@ namespace VpdlGreenHeatmapOverlay
                             judgementCandidates.Add("ERROR");
                         }
 
-                        string overlayPath = null;
                         if (decision == "NG" && config.HeatmapImageSave && heatmapBmp != null)
                         {
                             if (sourceBitmap == null)
@@ -693,14 +490,13 @@ namespace VpdlGreenHeatmapOverlay
                             {
                                 SD.Rectangle? overlayRoi = ResolveRuntimeOverlayRoi(tool, view, heatmapBmp, sourceBitmap.Width, sourceBitmap.Height);
                                 if (overlayRoi.HasValue)
-                                    overlayPath = SaveOverlayImage(config, context.Slot, job, cfg.ToolName, sourceBitmap, heatmapBmp, overlayRoi.Value);
+                                    SaveOverlayImage(config, context.Slot, job, cfg.ToolName, sourceBitmap, heatmapBmp, overlayRoi.Value);
                                 else
                                     SaveRoiReadFailDiagnostic(config, context.Slot, job, cfg.ToolName, sourceBitmap, heatmapBmp, tool, view);
                             }
                         }
                         if (heatmapBmp != null) heatmapBmp.Dispose();
-                        if (config.DetailedDiagnostics) AgentDiagnostics.Write("TOOL_RESULT", inferenceContext + " | Decision=" + decision + " | Score=" + score);
-                        result.ToolResults[cfg.ToolName] = new ToolResult { Decision = decision, Score = score, OverlayPath = overlayPath };
+                        result.ToolResults[cfg.ToolName] = new ToolResult { Decision = decision, Score = score };
                     }
                 }
                 finally
@@ -740,18 +536,12 @@ namespace VpdlGreenHeatmapOverlay
 
         internal static StreamingSession BeginStreaming(AppConfig config, LocalRuntime.Control sharedControl, IProgress<ProcessProgress> progress, CancellationToken token)
         {
-            return new StreamingSession(config, sharedControl, false, progress, token);
-        }
-
-        internal static StreamingSession BeginStreaming(AppConfig config, LocalRuntime.Control sharedControl, bool reusePreloadedWorkspaces, IProgress<ProcessProgress> progress, CancellationToken token)
-        {
-            return new StreamingSession(config, sharedControl, reusePreloadedWorkspaces, progress, token);
+            return new StreamingSession(config, sharedControl, progress, token);
         }
 
         internal sealed class StreamingSession : IDisposable
         {
             private readonly AppConfig _config;
-            private readonly IProgress<ProcessProgress> _progress;
             private readonly string _runStamp;
             private readonly HashSet<string> _cellIdFilter;
             private readonly LocalRuntime.Control _control;
@@ -777,21 +567,15 @@ namespace VpdlGreenHeatmapOverlay
             internal int TotalNgCount { get { return _totalNgCount; } }
 
             internal StreamingSession(AppConfig config, IProgress<ProcessProgress> progress, CancellationToken token)
-                : this(config, null, false, progress, token)
+                : this(config, null, progress, token)
             {
             }
 
             internal StreamingSession(AppConfig config, LocalRuntime.Control sharedControl, IProgress<ProcessProgress> progress, CancellationToken token)
-                : this(config, sharedControl, false, progress, token)
-            {
-            }
-
-            internal StreamingSession(AppConfig config, LocalRuntime.Control sharedControl, bool reusePreloadedWorkspaces, IProgress<ProcessProgress> progress, CancellationToken token)
             {
                 if (config == null) throw new ArgumentNullException(nameof(config));
                 if (string.IsNullOrWhiteSpace(config.OutputRoot)) throw new DirectoryNotFoundException("출력 폴더가 지정되지 않았습니다.");
                 _config = config;
-                _progress = progress;
                 _runStamp = DateTime.Now.ToString("yyyyMMdd_HHmmss");
                 Directory.CreateDirectory(_config.OutputRoot);
 
@@ -815,11 +599,11 @@ namespace VpdlGreenHeatmapOverlay
                 {
                     var gpuMode = _config.UseGpu ? GpuMode.SingleDevicePerTool : GpuMode.NoSupport;
                     var gpuList = _config.UseGpu ? _config.GpuDevices : new List<int>();
-                    _control = GreenRuntimeFactory.Create(gpuMode, gpuList, _config.DetailedDiagnostics, _config.DisableOptimizedGpuMemory, "Green.Streaming");
+                    _control = new LocalRuntime.Control(gpuMode, gpuList);
                     _ownsControl = true;
                 }
 
-                _contexts = LoadWorkspaceContexts(_config, _control, progress, reusePreloadedWorkspaces);
+                _contexts = LoadWorkspaceContexts(_config, _control, progress);
                 _activeSlotToolNames = _contexts.ToDictionary(
                     kv => kv.Key,
                     kv => GetDistinctToolNames(kv.Value.Tools),
@@ -854,17 +638,16 @@ namespace VpdlGreenHeatmapOverlay
                 WriteIntegratedSummaryHeader(_integratedCsv);
             }
 
-            internal bool ProcessImage(string slotKey, string imagePath, string sourceFullPath, string inputRoot, CancellationToken token)
+            internal bool ProcessImage(string slotKey, string imagePath, string inputRoot, CancellationToken token)
             {
                 token.ThrowIfCancellationRequested();
-                string sourcePath = string.IsNullOrWhiteSpace(sourceFullPath) ? imagePath : sourceFullPath;
-                string fileName = Path.GetFileName(sourcePath);
+                string fileName = Path.GetFileName(imagePath);
                 WorkspaceSlotConfig slotCfg = null;
                 foreach (var s in _config.WorkspaceSlots)
                     if (string.Equals(s.Key, slotKey, StringComparison.OrdinalIgnoreCase)) { slotCfg = s; break; }
                 if (slotCfg != null && !FileNameMatchesKeyword(fileName, slotCfg.Keyword))
                     return false;
-                if (_cellIdFilter.Count > 0 && !MatchesCellIdFilter(fileName, _cellIdFilter, _config.NamingProfile))
+                if (_cellIdFilter.Count > 0 && !MatchesCellIdFilter(fileName, _cellIdFilter))
                 {
                     _skippedByCellIdCount++;
                     return false;
@@ -877,7 +660,6 @@ namespace VpdlGreenHeatmapOverlay
                 var job = new ImageJob
                 {
                     ImagePath = imagePath,
-                    SourceFullPath = sourcePath,
                     WorkspaceKey = slotKey,
                     InputRoot = inputRoot,
                     SlotDisplayName = context.Slot.DisplayName
@@ -895,14 +677,6 @@ namespace VpdlGreenHeatmapOverlay
                 if (_slotWriters.TryGetValue(slotKey, out slotWriter))
                     WriteRow(_activeSlotToolNames[slotKey], slotWriter, one);
 
-                _progress?.Report(new ProcessProgress
-                {
-                    OkCount = _totalOkCount,
-                    NgCount = _totalNgCount,
-                    CurrentFile = imagePath,
-                    LiveRecord = ToLiveRecord(one)
-                });
-
                 return true;
             }
 
@@ -912,7 +686,7 @@ namespace VpdlGreenHeatmapOverlay
                 _finished = true;
                 foreach (var w in _slotWriters.Values) w.Flush();
                 _integratedCsv.Flush();
-                WriteCellPositionSummaryCsv(_config.OutputRoot, _runStamp, _cellPositionSummary, _cellPositionOrder, _config.WorkspaceSlots.Where(x => x != null && x.Enabled).Select(x => x.DisplayName));
+                WriteCellPositionSummaryCsv(_config.OutputRoot, _runStamp, _cellPositionSummary, _cellPositionOrder);
                 _sw.Stop();
                 return BuildSummary();
             }
@@ -1044,9 +818,9 @@ namespace VpdlGreenHeatmapOverlay
             if (v.Length > 0) set.Add(v);
         }
 
-        private static bool MatchesCellIdFilter(string fileName, HashSet<string> filter, VisionQC.LocalAgent.Domain.NamingProfile profile = null)
+        private static bool MatchesCellIdFilter(string fileName, HashSet<string> filter)
         {
-            string cellId = ExtractCellId(profile, fileName);
+            string cellId = ExtractCellId(fileName);
             return cellId.Length > 0 && filter.Contains(cellId);
         }
 
@@ -1420,7 +1194,9 @@ namespace VpdlGreenHeatmapOverlay
 
         private static void SaveRoiReadFailDiagnostic(AppConfig config, WorkspaceSlotConfig slot, ImageJob job, string toolName, SD.Bitmap source, SD.Bitmap heatmap, Runtime.ITool tool, IGreenView view)
         {
-            string relDir = GetOutputRelativeDirectory(config, job);
+            string relDir = "";
+            if (config.KeepSubfolders)
+                relDir = Path.GetDirectoryName(GetRelativePath(job.InputRoot, job.ImagePath)) ?? "";
             string saveDir = Path.Combine(GetSlotOutputDir(config, slot), toolName, "ROI_READ_FAIL", relDir);
             Directory.CreateDirectory(saveDir);
             string stem = Path.GetFileNameWithoutExtension(job.ImagePath);
@@ -1512,10 +1288,10 @@ namespace VpdlGreenHeatmapOverlay
             }
         }
 
-        private static string SaveOverlayImage(AppConfig config, WorkspaceSlotConfig slot, ImageJob job, string toolName, SD.Bitmap source, SD.Bitmap heatmap, SD.Rectangle roi)
+        private static void SaveOverlayImage(AppConfig config, WorkspaceSlotConfig slot, ImageJob job, string toolName, SD.Bitmap source, SD.Bitmap heatmap, SD.Rectangle roi)
         {
             var safeRoi = ClampRoi(roi, source.Width, source.Height);
-            if (safeRoi.Width <= 0 || safeRoi.Height <= 0) return null;
+            if (safeRoi.Width <= 0 || safeRoi.Height <= 0) return;
 
             using (var outBmp = (SD.Bitmap)source.Clone())
             using (var heatResized = new SD.Bitmap(heatmap, new SD.Size(safeRoi.Width, safeRoi.Height)))
@@ -1523,23 +1299,15 @@ namespace VpdlGreenHeatmapOverlay
             using (var g = SD.Graphics.FromImage(outBmp))
             {
                 g.DrawImage(overlay, safeRoi);
-                string relDir = GetOutputRelativeDirectory(config, job);
+                string relDir = "";
+                if (config.KeepSubfolders)
+                    relDir = Path.GetDirectoryName(GetRelativePath(job.InputRoot, job.ImagePath)) ?? "";
                 string saveDir = Path.Combine(GetSlotOutputDir(config, slot), toolName, relDir);
                 Directory.CreateDirectory(saveDir);
                 string stem = Path.GetFileNameWithoutExtension(job.ImagePath);
                 string outPath = Path.Combine(saveDir, stem + ".jpg");
                 SaveJpeg(outBmp, outPath, config.JpegQuality);
-                return outPath;
             }
-        }
-
-        private static string GetOutputRelativeDirectory(AppConfig config, ImageJob job)
-        {
-            string relative = "";
-            if (config.KeepSubfolders)
-                relative = Path.GetDirectoryName(GetRelativePath(job.InputRoot, job.ImagePath)) ?? "";
-            if (string.IsNullOrWhiteSpace(job.InputRootTag)) return relative;
-            return string.IsNullOrWhiteSpace(relative) ? job.InputRootTag : Path.Combine(job.InputRootTag, relative);
         }
 
         private static SD.Bitmap BuildHeatmapOverlay_KeepColorOrJet_NoUnsafe(SD.Bitmap heat, float alphaScale, byte alphaCut, bool forceJetIfGray)
@@ -1703,20 +1471,6 @@ namespace VpdlGreenHeatmapOverlay
             }
 
             return "";
-        }
-
-        private static string ExtractCellId(VisionQC.LocalAgent.Domain.NamingProfile profile, string pathOrFileName)
-        {
-            try
-            {
-                if (profile != null)
-                {
-                    var parsed = NamingProfileParser.Parse(profile, pathOrFileName);
-                    if (!string.IsNullOrWhiteSpace(parsed.cellId)) return parsed.cellId;
-                }
-            }
-            catch { }
-            return ExtractCellId(pathOrFileName);
         }
 
         private static string EscapeCsv(string s)
