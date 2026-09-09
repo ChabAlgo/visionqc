@@ -13,6 +13,7 @@ namespace VpdlGreenHeatmapOverlay
 
     internal sealed class LiveAnalysisRecord
     {
+        public string CaptureTimestamp { get; set; }
         public string FileName { get; set; }
         public string FullPath { get; set; }
         public string ProcessingPath { get; set; }

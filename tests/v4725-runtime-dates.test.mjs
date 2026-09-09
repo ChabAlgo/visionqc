@@ -1,0 +1,31 @@
+import test from 'node:test';
+import assert from 'node:assert/strict';
+import { readFileSync } from 'node:fs';
+const web=readFileSync(new URL('../visionqc-extension.js',import.meta.url),'utf8');
+const code=web.slice(web.indexOf('function strictCaptureTimestamp'),web.indexOf('function dashboardDateFromText'));
+const h=new Function(code+';return {strictCaptureTimestamp,filenameCaptureTimestamp};')();
+const p=(mode,index=3,delimiter='_')=>({delimiter,dateTime:{mode,tokenIndex:index}});
+test('capture dates reject rollover, Cell IDs and directory numbers without timezone shifting',()=>{
+ const f=h.filenameCaptureTimestamp, s=h.strictCaptureTimestamp;
+ assert.equal(f('C:/20261120123456/TAB_J1037G87P611903999_20260824074705_CRACK.jpg',p('compact')),'2026-08-24T07:47:05');
+ assert.equal(f('TAB_J1037G87P611903999_20260903_235959.jpg',p('split')),'2026-09-03T23:59:59');
+ assert.equal(f('TAB_J1037G87P611903999_20260903_235959.jpg',p('compact')),'');
+ assert.equal(f('TAB_X20260824074705Y.jpg',p('compact')),'');
+ assert.equal(f('TAB_20260824000000_20260903000000.jpg',p('compact')),'');
+ assert.equal(f('TAB_CELL_20260824074705.jpg',p('token')),'2026-08-24T07:47:05');
+ assert.equal(f('TAB|CELL|20260824|074705.jpg',p('token',3,'|')),'2026-08-24T07:47:05');
+ for(const bad of ['20260230000000','20260229000000','20261301000000','20260824240000','20260824006000']) assert.equal(s(bad),'');
+ assert.equal(s('2024-02-29T23:59:59-04:00'),'2024-02-29T23:59:59');
+ assert.equal(s('2026-09-03T00:00:00Z'),'2026-09-03T00:00:00');
+});
+test('AI Suggest uses local runtime and rejects incomplete inspection results',()=>{
+ const bundle=readFileSync(new URL('../assets/index-v4.4.33.js',import.meta.url),'utf8');
+ const bridge=web.slice(web.indexOf('function installLegacyAiSuggestRuntimeBridge'),web.indexOf('function installLegacyAiSuggestRuntimeBridge')+2500);
+ assert.match(bundle,/__VISIONQC_LOCAL_AI_SUGGEST__/);
+ assert.match(bridge,/inspect-upload/);
+ assert.doesNotMatch(bridge,/generativelanguage|window.fetch =/);
+ const start=web.indexOf('function legacySuggestionFromRuntimeRecord');
+ const fn=web.slice(start,web.indexOf('\n  function ',start+10));
+ assert.match(fn,/throw new Error/);
+ assert.match(fn,/OK.*NG/);
+});

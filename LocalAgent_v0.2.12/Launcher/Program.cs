@@ -12,15 +12,11 @@ namespace VisionQC.LocalAgent.Launcher
 {
     internal static class Program
     {
-        private const string LauncherVersion = "1.3.14";
+        private const string LauncherVersion = "1.3.15";
 
         [STAThread]
         private static void Main(string[] args)
         {
-            if (args != null && args.Any(arg => arg == "--green-compare")) {
-                LaunchGreenCompare();
-                return;
-            }
             bool ownsMutex;
             using (var mutex = new Mutex(true, "Local\\VisionQC.LocalAgent.Launcher", out ownsMutex))
             {
@@ -48,22 +44,7 @@ namespace VisionQC.LocalAgent.Launcher
             }
         }
 
-        private static void LaunchGreenCompare()
-        {
-            try {
-                var installation = ResolveInstallation(VpdlWorkerSelection.Read());
-                if (installation == null) throw new InvalidOperationException("VPDL이 설치된 PC에서 사용할 수 있습니다.");
-                bool universal;
-                string worker = VpdlWorkerLocator.Resolve(AppDomain.CurrentDomain.BaseDirectory, installation.ApiVersion, out universal);
-                if (string.IsNullOrEmpty(worker)) throw new FileNotFoundException("선택한 VPDL 실행기가 없습니다.");
-                string compare = Path.Combine(Path.GetDirectoryName(worker), "VisionQC.GreenCompare.exe");
-                if (!File.Exists(compare)) throw new FileNotFoundException("비교 진단 실행기가 없습니다. 최신 Agent를 설치하세요.");
-                var start = new ProcessStartInfo { FileName = compare, WorkingDirectory = AppDomain.CurrentDomain.BaseDirectory,
-                    UseShellExecute = false };
-                start.EnvironmentVariables["VISIONQC_AGENT_HOME"] = AppDomain.CurrentDomain.BaseDirectory;
-                Process.Start(start);
-            } catch (Exception ex) { MessageBox.Show(ex.Message, "VisionQC Green 비교 진단", MessageBoxButtons.OK, MessageBoxIcon.Warning); }
-        }
+
 
         private static void RunWorker(string selected, bool offline)
         {

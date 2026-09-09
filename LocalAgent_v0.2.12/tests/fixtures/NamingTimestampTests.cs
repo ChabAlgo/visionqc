@@ -42,6 +42,15 @@ internal static class NamingTimestampTests
         var preview = NamingProfileParser.Preview(new NamingPreviewRequest { profile = Profile("token", 0), fileNames = new List<string> { file } });
         if (preview.ok) throw new Exception("Invalid token index accepted");
         count++;
+        Check("compact strict", Profile("compact"), file, "2026-08-07T07:47:05");
+        Check("split strict", Profile("split"), "TAB_" + Cell + "_20260903_235959.jpg", "2026-09-03T23:59:59");
+        Check("compact rejects split", Profile("compact"), "TAB_" + Cell + "_20260903_235959.jpg", null, "partial");
+        Check("split rejects compact", Profile("split"), file, null, "partial");
+        Check("compact invalid month", Profile("compact"), "TAB_" + Cell + "_20261301000000.jpg", null, "partial");
+        Check("compact invalid leap", Profile("compact"), "TAB_" + Cell + "_20260229000000.jpg", null, "partial");
+        Check("compact no embedded ID date", Profile("compact"), "TAB_" + Cell + "_X20260824000000Y.jpg", null, "partial");
+        Check("folder date ignored", Profile("compact"), @"C:\20261120123456\TAB_" + Cell + "_20260824000000.jpg", "2026-08-24T00:00:00");
+        Check("compact ambiguous", Profile("compact"), "TAB_" + Cell + "_20260824000000_20260903000000.jpg", null, "ambiguous");
         Console.WriteLine("PASS " + count + " naming timestamp cases"); return 0;
     }
 }

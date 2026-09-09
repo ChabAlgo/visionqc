@@ -87,14 +87,11 @@ test('Actual NG folders defer original-file reads and exclude high-score other-T
 });
 
 test('main date dashboard stays in the current analysis set and Auto Scroll reacts only to new log lines', () => {
-  const dashboardStart = js.indexOf('function dashboardDateFromText');
-  const dashboardEnd = js.indexOf('function mainHistoryDashboardPanel', dashboardStart);
-  const state = { model:{ records:[
-    { cellId:'CELL-1', position:'AN(TOP)', totalResult:'NG', sourceRows:[{ fullPath:'C:/images/20260203_085900_CELL-1.jpg' }] },
-    { cellId:'CELL-2', position:'CA(TOP)', totalResult:'OK', sourceRows:[{ fullPath:'C:/images/20260203_085901_CELL-2.jpg' }] }
-  ] } };
-  const currentAnalysisDashboardData = new Function('state', `${js.slice(dashboardStart, dashboardEnd)};return currentAnalysisDashboardData;`)(state);
-  assert.deepEqual(currentAnalysisDashboardData(), { totalCount:2, ngCount:1, uniqueCellCount:2, daily:[{ date:'2026-02-03', total:2, ng:1, ngRate:0.5 }] });
+  const code = js.slice(js.indexOf('function currentAnalysisDashboardData'), js.indexOf('function mainHistoryDashboardPanel'));
+  assert.doesNotMatch(code, /state.history|agentFetch/);
+  assert.match(code, /state.resultInputs/);
+  assert.match(code, /state.dashboardModel/);
+  // Full behavioral date/filter coverage lives in v4725-browser.spec.mjs.
   const statusDom = js.slice(js.indexOf('function updateSimulationStatusDom'), js.indexOf('function simulationModeLabel'));
   const appendLog = js.slice(js.indexOf('function appendSimulationLog'), js.indexOf('function simulationLogLineHtml'));
   assert.doesNotMatch(statusDom, /scrollSimulationLogToBottom/);

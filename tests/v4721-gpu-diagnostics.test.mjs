@@ -6,10 +6,10 @@ const web=read('visionqc-extension.js'),server=read('LocalAgent_v0.2.12/AgentSer
 const factory=read('LocalAgent_v0.2.12/Services/GreenRuntimeFactory.cs');
 const trace=read('LocalAgent_v0.2.12/Services/DiagnosticTrace.cs');
 const helpers=new Function(web.slice(web.indexOf('  function runtimeSignaturePath('),web.indexOf('  function simulationGreenWorkspaceSignature('))+';return {simulationRuntimeSignature,simulationRuntimeControlSignature};')();
-test('diagnostics default on, memory intervention remains explicitly opt-in',()=>{
- assert.match(web,/detailedDiagnostics:true, disableOptimizedGpuMemory:false/);
+test('production diagnostics default quiet and experimental controls are removed',()=>{
+ assert.match(web,/detailedDiagnostics:false, disableOptimizedGpuMemory:false/);
  for(const name of ['detailedDiagnostics','disableOptimizedGpuMemory']){
-  assert.ok(web.includes("simulationCheck('green','"+name+"'"));
+  assert.ok(!web.includes("simulationCheck('green','"+name+"'"));
   assert.ok(read('LocalAgent_v0.2.12/AgentDtos.cs').includes('bool '+name));
  }
  assert.match(factory,/new LocalRuntime.Control\(new LocalRuntime.LibraryAccess\(\), mode, devices, true\)/);

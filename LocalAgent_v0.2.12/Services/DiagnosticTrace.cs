@@ -48,7 +48,17 @@ namespace VisionQC.LocalAgent.Services
 
         internal static T Measure<T>(string stage, string context, bool enabled, Func<T> action)
         {
-            if (!enabled) return action();
+            if (!enabled)
+            {
+                try { return action(); }
+                catch (Exception ex)
+                {
+                    string failure = DateTime.Now.ToString("O") + " | Stage=" + stage + " | " + context + Environment.NewLine + ExceptionDetails(ex);
+                    Write("SDK_FAIL", failure);
+                    SaveText("last-sdk-failure.txt", failure);
+                    throw;
+                }
+            }
             long id = Interlocked.Increment(ref _stageSequence);
             string header = "Stage=" + stage + " | Step=" + id + " | PID=" + Process.GetCurrentProcess().Id
                 + " | Thread=" + Thread.CurrentThread.ManagedThreadId + " | " + context;

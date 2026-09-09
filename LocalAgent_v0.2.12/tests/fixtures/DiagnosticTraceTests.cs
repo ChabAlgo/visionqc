@@ -45,6 +45,9 @@ internal static class DiagnosticTraceTests
         catch (Exception ex) { Check(ex.Message == "cleanup error"); }
         Check(File.ReadAllText(Path.Combine(run, "last-cleanup-stage.txt")).Contains("FAIL"));
         Check(File.ReadAllText(Path.Combine(root, "logs", "last-sdk-failure.txt")) == failure);
+        try { AgentDiagnostics.Measure<int>("Quiet.Process", "GPU=1", false, () => { throw original; }); }
+        catch (InvalidOperationException caught) { Check(object.ReferenceEquals(caught, original)); }
+        Check(File.ReadAllText(Path.Combine(run, "last-sdk-failure.txt")).Contains("Quiet.Process"));
         Console.WriteLine("PASS " + checks + " | " + root);
     }
 }

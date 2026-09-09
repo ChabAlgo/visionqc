@@ -26,10 +26,10 @@ test('production uses successful original search; pinned search stays diagnostic
   assert.match(compare,/Elapsed.TotalSeconds > 180/);
   assert.doesNotMatch(compare,/EnvironmentVariableTarget\.(Machine|User)|Sqlite|SQLite|https:\/\//);
 });
-test('installer and multi-version build include comparison executables', () => {
+test('installer and multi-version build exclude comparison executables but preserve developer regression sources', () => {
   const build=read(dir+'BUILD_VPDL_WORKERS.ps1');
-  assert.ok(build.includes("@('GreenBaseline', 'GreenCompare')"));
-  assert.ok(build.includes("$diagnosticProject + '\\VisionQC.' + $diagnosticProject + '.csproj'"));
-  assert.ok(read(dir+'Launcher/Program.cs').includes('--green-compare'));
+  assert.ok(!build.includes("@('GreenBaseline', 'GreenCompare')"));
+  assert.ok(!build.includes("$diagnosticProject + '\\VisionQC.' + $diagnosticProject + '.csproj'"));
+  assert.ok(!read(dir+'Launcher/Program.cs').includes('--green-compare'));
   assert.ok(read(dir+'OfflineInstaller/Program.cs').includes('VisionQC Green 비교 진단'));
 });

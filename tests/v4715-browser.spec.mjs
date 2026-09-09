@@ -1,60 +1,27 @@
 import { expect, test } from '@playwright/test';
 
-test('Green compatibility options are off by default, persist and stay out of Integrated', async ({ page }) => {
+test('production Green and Integrated hide diagnostic experiments after mode changes', async ({page})=>{
   await open(page);
-  await page.evaluate(() => window.__VISIONQC_DEBUG__.seedRuntimeToolColors());
-  await expect(page.locator('[data-sim-field="disableTensorRt"]')).toHaveCount(0);
-  await page.locator('[data-vq-action="simulation-mode"][data-vq-mode="green"]').click();
-  const tensor = page.locator('input[data-sim-field="disableTensorRt"]');
-  await page.locator('[data-sim-field="originalProcess"]').uncheck();
-  const fresh = page.locator('input[data-sim-field="freshRuntime"]');
-  await expect(tensor).not.toBeChecked();
-  await expect(fresh).not.toBeChecked();
-  await tensor.check();
-  await fresh.check();
-  await page.locator('[data-vq-action="simulation-mode"][data-vq-mode="integrated"]').click();
-  await expect(tensor).toHaveCount(0);
-  await page.locator('[data-vq-action="simulation-mode"][data-vq-mode="green"]').click();
-  await expect(tensor).toBeChecked();
-  await expect(fresh).toBeChecked();
-  const bounds = await tensor.locator('..').evaluate(el => {
-    const r=el.getBoundingClientRect(); const p=el.closest('.vq43-sim-option-section').getBoundingClientRect();
-    return {left:r.left-p.left,right:p.right-r.right};
-  });
-  expect(bounds.left).toBeGreaterThanOrEqual(0);
-  expect(bounds.right).toBeGreaterThanOrEqual(0);
+  await page.evaluate(()=>window.__VISIONQC_DEBUG__.seedRuntimeToolColors());
+  for(const mode of ['green','integrated','green']) {
+    await page.locator('[data-vq-action="simulation-mode"][data-vq-mode="'+mode+'"]').click();
+    for(const name of ['originalProcess','disableTensorRt','freshRuntime','detailedDiagnostics','disableOptimizedGpuMemory'])
+      await expect(page.locator('[data-sim-field="'+name+'"]')).toHaveCount(0);
+    await expect(page.locator('[data-sim-scope="green"][data-sim-field="useGpu"]')).toBeVisible();
+  }
 });
-
-
-test('Green diagnostic and memory options persist and do not leak into Integrated', async ({ page }) => {
+test('stored experimental settings are neutralized without resetting GPU selection',async({page})=>{
   await open(page);
-  await page.evaluate(() => window.__VISIONQC_DEBUG__.seedRuntimeToolColors());
-  await page.locator('[data-vq-action="simulation-mode"][data-vq-mode="green"]').click();
-  const detailed = page.locator('input[data-sim-field="detailedDiagnostics"]');
-  await page.locator('[data-sim-field="originalProcess"]').uncheck();
-  const memory = page.locator('input[data-sim-field="disableOptimizedGpuMemory"]');
-  await expect(detailed).toBeChecked();
-  await expect(memory).not.toBeChecked();
-  await memory.check();
-  await detailed.uncheck();
-  await page.locator('[data-vq-action="simulation-mode"][data-vq-mode="integrated"]').click();
-  await expect(memory).toHaveCount(0);
-  await expect(detailed).toHaveCount(0);
-  await page.locator('[data-vq-action="simulation-mode"][data-vq-mode="green"]').click();
-  await expect(memory).toBeChecked();
-  await expect(detailed).not.toBeChecked();
-  await page.reload({ waitUntil:'domcontentloaded' });
-  await page.waitForFunction(() => Boolean(window.__VISIONQC_DEBUG__));
-  await page.getByRole('button', { name:'시뮬레이션', exact:true }).click();
-  await page.locator('[data-vq-action="simulation-mode"][data-vq-mode="green"]').click();
-  await expect(memory).toBeChecked();
-  await expect(detailed).not.toBeChecked();
-  const bounds = await memory.locator('..').evaluate(el => {
-    const r = el.getBoundingClientRect(), parent = el.closest('.vq43-sim-option-section').getBoundingClientRect();
-    return { left:r.left-parent.left, right:parent.right-r.right };
+  await page.evaluate(()=>{
+    window.__VISIONQC_DEBUG__.seedRuntimeToolColors();
   });
-  expect(bounds.left).toBeGreaterThanOrEqual(0);
-  expect(bounds.right).toBeGreaterThanOrEqual(0);
+  await page.locator('[data-vq-action="simulation-mode"][data-vq-mode="green"]').click();
+  const gpu=page.locator('[data-sim-scope="green"][data-sim-field="gpuDevices"]');
+  await gpu.fill('1');await gpu.blur();
+  await page.reload({waitUntil:'domcontentloaded'});
+  await page.getByRole('button',{name:'시뮬레이션',exact:true}).click();
+  await expect(gpu).toHaveValue('1');
+  await expect(page.locator('[data-sim-field="disableOptimizedGpuMemory"]')).toHaveCount(0);
 });
 
 async function open(page) {

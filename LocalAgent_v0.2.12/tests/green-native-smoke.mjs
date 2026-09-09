@@ -35,9 +35,15 @@ else {
 }
 config.green.disableTensorRt=profile==='notrt'||profile==='both';
 config.green.freshRuntime=profile==='fresh'||profile==='both';
-config.green.detailedDiagnostics=profile!=='quiet';
+const quiet=profile.includes('quiet');
+config.green.detailedDiagnostics=!quiet;
 config.green.disableOptimizedGpuMemory=profile==='memory';
 const original=profile.startsWith('original');
+if (profile==='blue'||profile==='integrated') {
+  config.mode=profile; config.integrated.keywordMode=false; config.integrated.keywordInputRoot='';config.integrated.keywordInputRoots=[];
+  for(const p of config.positions){p.blueImageRoot=p.greenImageRoot;p.blueImageRoots=p.greenImageRoots;p.integratedKeyword='';}
+}
+
 const bad=profile==='bad'||profile==='original-bad';
 config.green.originalProcess=original;
 if(bad){
@@ -108,13 +114,13 @@ try {
   if((original||['fresh','notrt','both','bad'].includes(profile))&&after.runtimePreloaded) throw new Error('Compatibility runtime was incorrectly cached');
   if(!bad && !(final.processed>0))throw new Error('No images processed');
   const workerLogs=readdirSync(join(reportRoot,'logs')).filter(n=>n.startsWith('agent-worker-')&&n.endsWith('.log')).map(n=>readFileSync(join(reportRoot,'logs',n),'utf8')).join('\n');
-  if(profile!=='quiet' && !workerLogs.includes('SDK_BEGIN')) throw new Error('Detailed stage log missing');
+  if(config.mode==='green' && !quiet && !workerLogs.includes('SDK_BEGIN')) throw new Error('Detailed stage log missing');
   if(profile==='memory' && !workerLogs.includes('Explicit OptimizedGPUMemory(0) call succeeded')) throw new Error('Memory policy missing');
   result.diagnosticStagesVerified=workerLogs.includes('SDK_BEGIN');
   if(original){
     const runnerLogs=readdirSync(join(reportRoot,'logs')).filter(n=>n.startsWith('agent-green-runner-')).map(n=>readFileSync(join(reportRoot,'logs',n),'utf8')).join('\n');
     if(!workerLogs.includes('GREEN_CHILD_EXIT') || !runnerLogs.includes('ORIGINAL_RUNTIME') || !runnerLogs.includes('ORIGINAL_PROCESS')) throw new Error('Isolated original execution missing');
-    if(!bad && !runnerLogs.includes('Stage=Sample.Process')) throw new Error('Isolated inference missing');
+    if(!bad && !quiet && !runnerLogs.includes('Stage=Sample.Process')) throw new Error('Isolated inference missing');
     if(runnerLogs.includes('Explicit OptimizedGPUMemory(0)') || runnerLogs.includes('Workspace reuse')) throw new Error('Original runtime mutated or reused');
     if(!runnerLogs.includes('NativeSearch=original') || runnerLogs.includes('NativeSearch=pinned')) throw new Error('Production runner did not use successful C search policy');
     if(!bad && !runnerLogs.toLowerCase().includes('nvcuda.dll')) throw new Error('Loaded NVIDIA driver identity missing');
@@ -123,11 +129,30 @@ try {
   const sdkLogs=join(process.env.APPDATA,'Cognex Corporation','Cognex VisionPro Deep Learning '+product,'logs');
   result.nativeSdkLogDirectory=sdkLogs;
   result.nativeSdkLogs=existsSync(sdkLogs)?readdirSync(sdkLogs).filter(n=>n.startsWith(basename(worker,'.exe').toLowerCase()+'_')&&n.endsWith('.debug.log')&&statSync(join(sdkLogs,n)).mtimeMs>=childStartedAt&&statSync(join(sdkLogs,n)).size>0):[];
-  if(profile!=='quiet' && !result.nativeSdkLogs.length) throw new Error('SDK native debug log missing or empty');
+  if(config.mode==='green' && !quiet && !result.nativeSdkLogs.length) throw new Error('SDK native debug log missing or empty');
   const db=new DatabaseSync(join(reportRoot,'history.sqlite'),{readOnly:true});
   const rows=db.prepare('SELECT full_path,position_key,total_result FROM images ORDER BY sequence_no').all();
   const tools=db.prepare('SELECT tool_name,result,score,overlay_path FROM tool_results ORDER BY tool_result_id').all();db.close();
+  if (tools.some(t=>!['OK','NG'].includes(t.result))) throw new Error('Stored ERROR tool result');
+  if(config.mode==='blue' && !/Saved 6 \/ Error 0/.test(final.message)) throw new Error('Blue crop count mismatch');
   result.rows=rows;result.tools=tools;result.savedOverlays=tools.filter(t=>t.overlay_path&&existsSync(t.overlay_path)).length;
+  if (!bad && process.env.VISIONQC_TEST_AI === '1') {
+    const position=config.positions.find(p=>p.enabled!==false);
+    const input=position.greenImageRoot;
+    const name=readdirSync(input).find(n=>/\.(jpg|jpeg|png|bmp)$/i.test(n));
+    const payload={...config,mode:'green',imageBase64:readFileSync(join(input,name)).toString('base64'),fileName:position.displayName+'_'+name,mimeType:'image/jpeg'};
+    for(let i=0;i<2;i++){
+      const ai=await request('/api/classification/inspect-upload',payload,240000);
+      const record=ai.record; const toolList=Object.values(record.Tools||record.tools||{});
+      if(!toolList.length || toolList.some(t=>!['OK','NG'].includes(t.Result||t.result))) throw new Error('AI Suggest returned incomplete tool results: '+JSON.stringify(ai));
+    }
+    const invalid=await fetch(base+'/api/classification/inspect-upload',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({...payload,imageBase64:Buffer.from('invalid image').toString('base64')})}).then(r=>r.json());
+    if(invalid.ok!==false)throw new Error('AI accepted invalid image');
+    const verifyDb=new DatabaseSync(join(reportRoot,'history.sqlite'),{readOnly:true});
+    const afterCount=verifyDb.prepare('SELECT COUNT(*) AS n FROM images').get().n; verifyDb.close();
+    if(afterCount!==rows.length)throw new Error('AI Suggest unexpectedly wrote inspection history');
+    result.aiSuggestVerified=true; log('AI_VERIFIED',{repeat:2,invalidRejected:true,historyUnchanged:true});
+  }
   result.success=true;log('VERIFIED',{records:rows.length,tools:tools.length,savedOverlays:result.savedOverlays});
 }catch(e){result.success=false;result.error=String(e);log('FAILED',{error:String(e)});process.exitCode=1;}
 finally{

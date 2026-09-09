@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.Globalization;
 using System.IO;
 using System.Linq;
+using System.Text.RegularExpressions;
 using VisionQC.LocalAgent.Domain;
 
 namespace VisionQC.LocalAgent.Services
@@ -63,13 +64,13 @@ namespace VisionQC.LocalAgent.Services
                 ? string.Equals(profile.dateTime.mode, "legacy", StringComparison.OrdinalIgnoreCase)
                 : IsTokenMode(profile.date) || IsTokenMode(profile.time);
             DateTime timestamp;
-            if (!legacy && TryExtractTimestamp(profile, tokens, out timestamp, out dateAmbiguous))
+            if (!legacy && TryExtractTimestamp(profile, stem, tokens, out timestamp, out dateAmbiguous))
             {
                 result.captureDate = timestamp.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture);
                 result.captureTime = timestamp.ToString("HH:mm:ss", CultureInfo.InvariantCulture);
             }
             else if (dateAmbiguous) result.warnings.Add("날짜·시간 후보가 여러 개입니다. 토큰 번호를 지정하세요.");
-            else if (!legacy && IsTokenMode(profile.dateTime)) result.warnings.Add("지정한 날짜·시간 토큰이 유효하지 않습니다.");
+            else if (!legacy && profile.dateTime != null && profile.dateTime.mode != "auto") result.warnings.Add("선택한 날짜·시간 규칙에 맞는 유효한 값이 없습니다.");
             else
             {
                 // Keep legacy partial dates and explicitly configured non-adjacent tokens intact.
@@ -99,7 +100,7 @@ namespace VisionQC.LocalAgent.Services
         {
             if (profile.cellId == null || profile.date == null || profile.time == null) return "Cell ID, 날짜, 시간 규칙을 모두 지정하세요.";
             if (profile.delimiter == null || profile.delimiter.Length == 0) return "구분자는 비워 둘 수 없습니다.";
-            if (profile.dateTime != null && profile.dateTime.mode != "auto" && profile.dateTime.mode != "token" && profile.dateTime.mode != "legacy") return "날짜·시간 추출 방식을 확인하세요.";
+            if (profile.dateTime != null && profile.dateTime.mode != "auto" && profile.dateTime.mode != "token" && profile.dateTime.mode != "legacy" && profile.dateTime.mode != "compact" && profile.dateTime.mode != "split") return "날짜·시간 추출 방식을 확인하세요.";
             if (IsTokenMode(profile.dateTime) && profile.dateTime.tokenIndex < 1) return "날짜·시간 토큰 번호는 1 이상이어야 합니다.";
             if (IsTokenMode(profile.cellId) && profile.cellId.tokenIndex < 1) return "Cell ID 토큰 번호는 1 이상이어야 합니다.";
             if (IsTokenMode(profile.date) && profile.date.tokenIndex < 1) return "날짜 토큰 번호는 1 이상이어야 합니다.";
@@ -131,12 +132,26 @@ namespace VisionQC.LocalAgent.Services
             return null;
         }
 
-        private static bool TryExtractTimestamp(NamingProfile profile, List<string> tokens, out DateTime timestamp, out bool ambiguous)
+        private static bool TryExtractTimestamp(NamingProfile profile, string stem, List<string> tokens, out DateTime timestamp, out bool ambiguous)
         {
             timestamp = default(DateTime);
             ambiguous = false;
             var valid = new List<DateTime>();
             var rule = profile.dateTime;
+            if (rule != null && (rule.mode == "compact" || rule.mode == "split"))
+            {
+                // Whole filename values only: never accept dates embedded inside a Cell ID/path.
+                string pattern = rule.mode == "compact" ? @"(?<![A-Za-z0-9])[0-9]{14}(?![A-Za-z0-9])"
+                    : @"(?<![A-Za-z0-9])[0-9]{8}_[0-9]{6}(?![A-Za-z0-9])";
+                string format = rule.mode == "compact" ? "yyyyMMddHHmmss" : "yyyyMMdd_HHmmss";
+                foreach (Match match in Regex.Matches(stem, pattern)) {
+                    DateTime parsed;
+                    if (DateTime.TryParseExact(match.Value, format, CultureInfo.InvariantCulture, DateTimeStyles.None, out parsed)) valid.Add(parsed);
+                }
+                ambiguous = valid.Count > 1;
+                if (valid.Count == 1) { timestamp = valid[0]; return true; }
+                return false;
+            }
             bool explicitToken = IsTokenMode(rule);
             IEnumerable<string> candidates = explicitToken ? (IEnumerable<string>)new[] { TokenAt(tokens, rule.tokenIndex) } : tokens;
             foreach (var candidate in candidates)

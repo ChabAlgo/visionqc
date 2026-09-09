@@ -54,6 +54,7 @@ namespace VpdlGreenHeatmapOverlay
             public bool IsTotalOk { get; set; }
             public string Judgement { get; set; }
             public string DateText { get; set; }
+            public string CaptureTimestamp { get; set; }
             public string TimeText { get; set; }
             public string FileName { get; set; }
             public string FullPath { get; set; }
@@ -326,6 +327,7 @@ namespace VpdlGreenHeatmapOverlay
             var live = new LiveAnalysisRecord
             {
                 FileName = result.FileName,
+                CaptureTimestamp = result.CaptureTimestamp,
                 FullPath = result.FullPath,
                 ProcessingPath = result.ProcessingPath,
                 CellId = result.CellId,
@@ -578,6 +580,7 @@ namespace VpdlGreenHeatmapOverlay
             var result = new ProcessOneResult
             {
                 DateText = DateTime.Now.ToString("yyyyMMdd"),
+                CaptureTimestamp = config.NamingProfile == null ? null : NamingProfileParser.Parse(config.NamingProfile, sourceFullPath).captureTimestamp,
                 TimeText = DateTime.Now.ToString("HHmmss"),
                 FileName = fileName,
                 FullPath = sourceFullPath,
@@ -618,7 +621,7 @@ namespace VpdlGreenHeatmapOverlay
                             AgentDiagnostics.CaptureEnvironment("before-first-inference");
                         }
                         // Persist before native entry: fatal native errors may bypass catch/finally.
-                        AgentDiagnostics.SaveText("last-green-inference.txt", DateTime.Now.ToString("O") + " | " + inferenceContext);
+                        if (config.DetailedDiagnostics) AgentDiagnostics.SaveText("last-green-inference.txt", DateTime.Now.ToString("O") + " | " + inferenceContext);
                         try { AgentDiagnostics.Measure("Sample.Process", inferenceContext, config.DetailedDiagnostics, () => sample.Process(tool)); }
                         catch (System.Exception ex)
                         {
@@ -639,12 +642,16 @@ namespace VpdlGreenHeatmapOverlay
                         double score = double.NaN;
                         SD.Bitmap heatmapBmp = null;
                         IGreenView view = null;
-                        var greenMarking = AgentDiagnostics.Measure("Result.ReadMarking", inferenceContext, config.DetailedDiagnostics,
-                            () => sample.Markings[tool.Name] as IGreenMarking);
+                        IView overlayView = null;
+                        var marking = AgentDiagnostics.Measure("Result.ReadMarking", inferenceContext, config.DetailedDiagnostics,
+                            () => sample.Markings[tool.Name]);
+                        var greenMarking = marking as IGreenMarking;
+                        var redMarking = marking as IRedMarking;
                         if (greenMarking != null && greenMarking.Views != null && greenMarking.Views.Count > 0)
                         {
                             view = greenMarking.Views[0];
-                            if (view != null && view.BestTag != null)
+                            overlayView = view;
+                            if (view != null && view.ProcessingError == ViewError.None && view.BestTag != null)
                             {
                                 string bestName = view.BestTag.Name ?? "";
                                 score = view.BestTag.Score;
@@ -666,6 +673,27 @@ namespace VpdlGreenHeatmapOverlay
                                 {
                                     AgentDiagnostics.Write("HEATMAP_ERROR", "Tool=" + cfg.ToolName + " | Image=" + job.ImagePath + Environment.NewLine + ex);
                                     heatmapBmp = null;
+                                }
+                            }
+                        }
+                        else if (redMarking != null && redMarking.Views != null && redMarking.Views.Count > 0)
+                        {
+                            // Red has regions/score maps, not Green BestTag/confidence.
+                            // Use the SDK's post-filtered regions; never overwrite Workspace thresholds.
+                            if (redMarking.Views.Any(v => v == null || v.ProcessingError != ViewError.None))
+                                decision = "ERR_RED_PROCESSING";
+                            else
+                            {
+                                var redView = redMarking.Views.OrderByDescending(v => v.Regions != null && v.Regions.Count > 0)
+                                    .ThenByDescending(v => v.Score).First();
+                                score = redView.Score;
+                                decision = redMarking.Views.Any(v => v.Regions != null && v.Regions.Count > 0) ? "NG" : "OK";
+                                if (double.IsNaN(score) || double.IsInfinity(score)) decision = "ERR_RED_SCORE";
+                                overlayView = redView;
+                                if (decision == "NG" && config.HeatmapImageSave && redView.HasHeatMap)
+                                {
+                                    try { heatmapBmp = CloneBitmapFromUnknown(GetPropertyValue(redView.HeatMap, "Bitmap")); }
+                                    catch (System.Exception ex) { AgentDiagnostics.Write("HEATMAP_ERROR", inferenceContext + " | " + ex); }
                                 }
                             }
                         }
@@ -691,11 +719,11 @@ namespace VpdlGreenHeatmapOverlay
                                 sourceBitmap = CloneBitmapFromUnknown(GetPropertyValue(vidiImage, "Bitmap"));
                             if (sourceBitmap != null)
                             {
-                                SD.Rectangle? overlayRoi = ResolveRuntimeOverlayRoi(tool, view, heatmapBmp, sourceBitmap.Width, sourceBitmap.Height);
+                                SD.Rectangle? overlayRoi = ResolveRuntimeOverlayRoi(tool, overlayView, heatmapBmp, sourceBitmap.Width, sourceBitmap.Height);
                                 if (overlayRoi.HasValue)
                                     overlayPath = SaveOverlayImage(config, context.Slot, job, cfg.ToolName, sourceBitmap, heatmapBmp, overlayRoi.Value);
                                 else
-                                    SaveRoiReadFailDiagnostic(config, context.Slot, job, cfg.ToolName, sourceBitmap, heatmapBmp, tool, view);
+                                    SaveRoiReadFailDiagnostic(config, context.Slot, job, cfg.ToolName, sourceBitmap, heatmapBmp, tool, overlayView);
                             }
                         }
                         if (heatmapBmp != null) heatmapBmp.Dispose();
@@ -1100,7 +1128,7 @@ namespace VpdlGreenHeatmapOverlay
             public int Score;
         }
 
-        private static SD.Rectangle? ResolveRuntimeOverlayRoi(Runtime.ITool tool, IGreenView view, SD.Bitmap heatmap, int imageWidth, int imageHeight)
+        private static SD.Rectangle? ResolveRuntimeOverlayRoi(Runtime.ITool tool, IView view, SD.Bitmap heatmap, int imageWidth, int imageHeight)
         {
             /*
              * v1.11 핵심 수정
@@ -1126,7 +1154,7 @@ namespace VpdlGreenHeatmapOverlay
             return null;
         }
 
-        private static SD.Rectangle? TryReadRoiFromGreenView(IGreenView view, SD.Bitmap heatmap, int imageWidth, int imageHeight)
+        private static SD.Rectangle? TryReadRoiFromGreenView(IView view, SD.Bitmap heatmap, int imageWidth, int imageHeight)
         {
             if (view == null) return null;
 
@@ -1418,7 +1446,7 @@ namespace VpdlGreenHeatmapOverlay
             public int GetHashCode(object obj) { return System.Runtime.CompilerServices.RuntimeHelpers.GetHashCode(obj); }
         }
 
-        private static void SaveRoiReadFailDiagnostic(AppConfig config, WorkspaceSlotConfig slot, ImageJob job, string toolName, SD.Bitmap source, SD.Bitmap heatmap, Runtime.ITool tool, IGreenView view)
+        private static void SaveRoiReadFailDiagnostic(AppConfig config, WorkspaceSlotConfig slot, ImageJob job, string toolName, SD.Bitmap source, SD.Bitmap heatmap, Runtime.ITool tool, IView view)
         {
             string relDir = GetOutputRelativeDirectory(config, job);
             string saveDir = Path.Combine(GetSlotOutputDir(config, slot), toolName, "ROI_READ_FAIL", relDir);

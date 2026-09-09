@@ -74,6 +74,7 @@ VALUES (@run_id, @source_type, @mode, @source_name, @started_at_utc, 'running', 
             Append(session, new HistoryRecordValue
             {
                 SourceFileName = record.FileName,
+                CaptureTimestamp = record.CaptureTimestamp,
                 FullPath = record.FullPath,
                 ProcessedPath = record.ProcessingPath,
                 CellId = record.CellId,

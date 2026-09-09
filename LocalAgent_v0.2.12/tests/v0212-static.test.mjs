@@ -15,11 +15,11 @@ const coreServer = read('CoreWorker/CoreAgentServer.cs');
 const coreProject = read('CoreWorker/VisionQC.CoreWorker.csproj');
 const workerBuild = read('BUILD_VPDL_WORKERS.ps1');
 
-test('Agent v1.3.14 version is consistent', () => {
-  assert.match(program, /AgentVersion = "1\.3\.14"/);
-  assert.match(read('CoreWorker/Program.cs'), /AgentVersion = "1\.3\.14"/);
-  assert.match(read('Properties/AssemblyInfo.cs'), /AssemblyVersion\("1\.3\.14\.0"\)/);
-  assert.match(read('BUILD_RELEASE_x64.cmd'), /v1\.3\.14/);
+test('Agent v1.3.15 version is consistent', () => {
+  assert.match(program, /AgentVersion = "1\.3\.15"/);
+  assert.match(read('CoreWorker/Program.cs'), /AgentVersion = "1\.3\.15"/);
+  assert.match(read('Properties/AssemblyInfo.cs'), /AssemblyVersion\("1\.3\.15\.0"\)/);
+  assert.match(read('BUILD_RELEASE_x64.cmd'), /v1\.3\.15/);
 });
 
 test('HTTP server delegates picker lifecycle to the isolated picker service', () => {
@@ -92,7 +92,8 @@ test('Integrated Runtime is reusable for a compatible Green-only Simulation', ()
 test('Agent resolves only a healthy VPDL installation matching its managed API', () => {
   const catalog = read('Services/VpdlRuntimeCatalog.cs');
   assert.match(program, /ConfigureVpdlNativeSearchPath\(\)/);
-  assert.match(program, /SetDllDirectory\(nativeBin\)/);
+  assert.match(program, /SetDllDirectory\(null\)/);
+  assert.doesNotMatch(program, /SetDllDirectory\(nativeBin\)/);
   assert.match(program, /GetReferencedAssemblies\(\)/);
   assert.match(program, /ActiveVpdlInstallation/);
   assert.doesNotMatch(program, /VisionPro Deep Learning\\4\.0/);

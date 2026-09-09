@@ -1,7 +1,7 @@
 (() => {
   'use strict';
 
-  const VERSION = '4.7.24';
+  const VERSION = '4.7.25';
   const DEFAULT_POSITION_DEFS = [
     { key:'CA_TOP', name:'CA(TOP)' },
     { key:'AN_TOP', name:'AN(TOP)' },
@@ -25,9 +25,9 @@
   const NG_POSITION_PREFIX = 'ng-position:';
   const IMG_RE = /\.(png|jpe?g|bmp|gif|webp|tif?f)$/i;
   const LOCAL_AGENT_URL = 'http://127.0.0.1:17891';
-  const EXPECTED_AGENT_VERSION = '1.3.14';
-  const AGENT_INSTALLER_URL = './downloads/VisionQC_Agent_Installer_v1.3.14.exe';
-  const OFFLINE_PACKAGE_URL = './downloads/VisionQC_Offline_v4.7.24.zip';
+  const EXPECTED_AGENT_VERSION = '1.3.15';
+  const AGENT_INSTALLER_URL = './downloads/VisionQC_Agent_Installer_v1.3.15.exe';
+  const OFFLINE_PACKAGE_URL = './downloads/VisionQC_Offline_v4.7.25.zip';
   // SQLite에는 사용자가 명시적으로 남기려는 두 종류의 결과만 표시한다.
   // 이전 버전의 단발 검사(single-inspection) 이력은 보존하되 화면 집계에서는 제외한다.
   const PERSISTED_HISTORY_SOURCE_TYPES = ['simulation', 'csv-import', 'csv-file-stream'];
@@ -74,7 +74,7 @@
   const defaultNamingProfile = () => ({
     id:'default', name:'기본 파일명 규칙', version:1, delimiter:'_',
     cellId:{ mode:'auto', tokenIndex:3, candidateLength:18, extractLength:16, requireLetter:true },
-    dateTime:{ mode:'auto', tokenIndex:3, format:'YYYYMMDDHHMMSS' },
+    dateTime:{ mode:'compact', tokenIndex:3, format:'YYYYMMDDHHMMSS' },
     date:{ mode:'auto', tokenIndex:1, format:'YYYYMMDD' },
     time:{ mode:'auto', tokenIndex:2, format:'HHMMSS' }
   });
@@ -90,7 +90,7 @@
     const date = source.date && typeof source.date === 'object' ? source.date : {};
     const time = source.time && typeof source.time === 'object' ? source.time : {};
     const dateTime = source.dateTime && typeof source.dateTime === 'object' ? source.dateTime : {};
-    const dateTimeMode = dateTime.mode === 'legacy' || (!source.dateTime && (date.mode === 'token' || time.mode === 'token')) ? 'legacy' : asRuleMode(dateTime.mode);
+    const dateTimeMode = dateTime.mode === 'legacy' || (!source.dateTime && (date.mode === 'token' || time.mode === 'token')) ? 'legacy' : ['compact','split','token'].includes(dateTime.mode) ? dateTime.mode : 'compact';
     const candidateLength = safePositiveInt(cell.candidateLength, defaults.cellId.candidateLength, 256);
     const extractLength = Math.min(safePositiveInt(cell.extractLength, defaults.cellId.extractLength, 256), candidateLength);
     return {
@@ -99,7 +99,7 @@
       version:safePositiveInt(source.version, defaults.version, 9999),
       delimiter:String(source.delimiter || defaults.delimiter).slice(0, 8) || defaults.delimiter,
       cellId:{ mode:asRuleMode(cell.mode), tokenIndex:safePositiveInt(cell.tokenIndex, defaults.cellId.tokenIndex), candidateLength, extractLength, requireLetter:cell.requireLetter !== false },
-      dateTime:{ mode:dateTimeMode, tokenIndex:safePositiveInt(dateTime.tokenIndex, defaults.dateTime.tokenIndex), format:'YYYYMMDDHHMMSS' },
+      dateTime:{ mode:dateTimeMode, tokenIndex:safePositiveInt(dateTime.tokenIndex, defaults.dateTime.tokenIndex), format:dateTimeMode === 'split' ? 'YYYYMMDD_HHMMSS' : 'YYYYMMDDHHMMSS' },
       date:{ mode:asRuleMode(date.mode), tokenIndex:safePositiveInt(date.tokenIndex, defaults.date.tokenIndex), format:'YYYYMMDD' },
       time:{ mode:asRuleMode(time.mode), tokenIndex:safePositiveInt(time.tokenIndex, defaults.time.tokenIndex), format:'HHMMSS' }
     };
@@ -111,6 +111,8 @@
     positions: initialPositions,
     namingProfile: initialNamingProfile,
     namingPreview: null,
+    dashboardDate: '',
+    dashboardModel: null,
     namingPreviewError: '',
     menuOpen: false,
     resultInputs: {},
@@ -438,6 +440,10 @@
           changeModalImage(event.key === 'ArrowLeft' || event.key === 'ArrowUp' ? -1 : 1);
           return;
         }
+        const datePoint = target?.closest?.('.vq43-history-point');
+        if (datePoint && (event.key === 'Enter' || event.key === ' ')) {
+          event.preventDefault(); event.stopImmediatePropagation(); runAction(datePoint); return;
+        }
         if (state.page === 'classification') return;
         const classificationKeys = ['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight', 'Enter', ' ', 'Backspace'];
         if (classificationKeys.includes(event.key) || event.key.length === 1) {
@@ -688,6 +694,7 @@
     else if (action === 'position-add') addCustomPosition();
     else if (action === 'position-remove') removeCustomPosition(control.dataset.positionKey || '');
     else if (action === 'naming-profile-save') saveNamingProfileFromSettings();
+    else if (action === 'naming-profile-load') loadNamingProfileFromSettings();
     else if (action === 'naming-profile-preview') previewNamingProfile();
     else if (action === 'choose-ng-position') chooseNgPositionFolder(control.closest('[data-vq-position]')?.dataset.vqPosition);
     else if (action === 'remove-ng-position') removeNgPositionFolder(control.closest('[data-vq-position]')?.dataset.vqPosition);
@@ -710,6 +717,10 @@
     else if (action === 'save-csv-history') saveCsvAnalysisHistory();
     else if (action === 'history-refresh') refreshHistory(true);
     else if (action === 'history-open') setPage('history');
+    else if (action === 'dashboard-day' || action === 'dashboard-all') {
+      state.dashboardDate = action === 'dashboard-day' ? control.dataset.vqHistoryDay || '' : '';
+      rebuildModel();
+    }
     else if (action === 'history-day') { const day = control.dataset.vqHistoryDay || ''; state.historyFilters.fromDate = day; state.historyFilters.toDate = day; refreshHistory(true); }
     else if (action === 'history-page') changeHistoryPage(Number(control.dataset.vqHistoryPage));
     else if (action === 'history-open-image') openHistoryImage(Number(control.dataset.vqHistoryImageId));
@@ -871,6 +882,15 @@
         event.stopPropagation();
         runAction(control);
       };
+    });
+    $$('[data-naming-key="mode"]', shell).forEach(select => {
+      select.onchange = () => {
+        const input = select.closest('fieldset')?.querySelector('[data-naming-key="tokenIndex"]');
+        if (input) input.disabled = select.value !== 'token';
+      };
+    });
+    $$('.vq43-history-point', shell).forEach(point => {
+      point.onkeydown = event => { if (event.key === 'Enter' || event.key === ' ') { event.preventDefault(); runAction(point); } };
     });
     bindAnalysisDropdowns();
     bindInlineScoreChartControls(shell);
@@ -1377,6 +1397,9 @@
     const totalIndex = keys.indexOf('total_result');
     const fullPathIndex = findFullPathColumn(keys);
     const processedPathIndex = findProcessedPathColumn(keys);
+    const timestampIndex = keys.findIndex(key => ['capturetimestamp','capture_timestamp','datetime','timestamp'].includes(key));
+    const dateIndex = keys.findIndex(key => ['date','capturedate','capture_date'].includes(key));
+    const timeIndex = keys.findIndex(key => ['time','capturetime','capture_time'].includes(key));
     const resultColumns = [];
     const scoreMap = new Map();
     headers.forEach((header, index) => {
@@ -1400,7 +1423,12 @@
         const scoreIndex = scoreMap.get(column.tool.toLowerCase());
         tools[column.tool] = { tool: column.tool, result: normalizeResult(row[column.index]), score: scoreIndex === undefined ? null : parseNumber(row[scoreIndex]) };
       });
-      rows.push({ sourceFileName: file.name, sourceRowNumber: headerRow + offset + 2, fullPath: fullPathIndex >= 0 ? csvFullPathValue(row[fullPathIndex]) : '', processedPath: processedPathIndex >= 0 ? csvFullPathValue(row[processedPathIndex]) : '', cellId, position: selectedPosition, totalResult: normalizeResult(row[totalIndex]), tools });
+      const dateValue = dateIndex >= 0 ? String(row[dateIndex] || '').trim() : '';
+      const timeValue = timeIndex >= 0 ? String(row[timeIndex] || '').trim() : '';
+      const captureTimestamp = strictCaptureTimestamp(timestampIndex >= 0 ? row[timestampIndex] : '') ||
+        (fullPathIndex >= 0 && csvFullPathValue(row[fullPathIndex]) ? '' :
+          strictCaptureTimestamp(dateValue && timeValue ? dateValue + (dateValue.includes('-') ? 'T' : '_') + timeValue : dateValue));
+      rows.push({ captureTimestamp, sourceFileName: file.name, sourceRowNumber: headerRow + offset + 2, fullPath: fullPathIndex >= 0 ? csvFullPathValue(row[fullPathIndex]) : '', processedPath: processedPathIndex >= 0 ? csvFullPathValue(row[processedPathIndex]) : '', cellId, position: selectedPosition, totalResult: normalizeResult(row[totalIndex]), tools });
     });
     if (invalidCell) warnings.push(`Cell ID 추출 실패 ${numberText(invalidCell)}행 제외`);
     if (mismatch) warnings.push(`Position 불일치 ${numberText(mismatch)}행을 ${selectedPosition}으로 처리`);
@@ -1764,14 +1792,13 @@
     });
   }
 
-  function rebuildModel(renderPage = true) {
+  function buildAnalysisModel(rows, ngImages = state.ngImages) {
     const positions = positionNames();
-    const rows = positions.flatMap((position) => state.resultInputs[position]?.rows || []);
     const records = aggregateRows(rows);
     applyThresholdSimulation(records);
     const recordMap = new Map(records.map((record) => [record.key, record]));
     const actualMap = new Map();
-    state.ngImages.forEach((image) => {
+    ngImages.forEach((image) => {
       const key = resultKey(image.position, image.cellId);
       if (!actualMap.has(key)) actualMap.set(key, []);
       actualMap.get(key).push(image);
@@ -1827,8 +1854,8 @@
     const matchedActualKeys = actualKeys.filter((key) => recordMap.has(key));
     const unmatchedActualKeys = actualKeys.filter((key) => !recordMap.has(key));
     const resultCellIdSamples = [...new Set(records.map((record) => record.cellId))].slice(0, 3);
-    const actualCellIdSamples = [...new Set(state.ngImages.map((image) => image.cellId))].slice(0, 3);
-    state.model = {
+    const actualCellIdSamples = [...new Set(ngImages.map((image) => image.cellId))].slice(0, 3);
+    return {
       records,
       recordMap,
       actualMap,
@@ -1847,12 +1874,28 @@
       actualCellIdSamples,
       duplicates: records.filter((record) => record.duplicateCount > 0)
     };
+  }
+
+  function rebuildModel(renderPage = true) {
+    const positions = positionNames();
+    const rows = positions.flatMap(position => state.resultInputs[position]?.rows || []);
+    state.model = buildAnalysisModel(rows);
+    const selectedRows = state.dashboardDate ? rows.filter(row => dashboardDateForRow(row) === state.dashboardDate) : rows;
+    const selectedKeys = new Set(selectedRows.map(row => resultKey(row.position,row.cellId)));
+    const selectedNg = state.dashboardDate ? state.ngImages.filter(image => {
+      const date = filenameCaptureTimestamp(image.relativePath).slice(0,10);
+      return date ? date === state.dashboardDate : selectedKeys.has(resultKey(image.position,image.cellId));
+    }) : state.ngImages;
+    state.dashboardModel = state.dashboardDate ? buildAnalysisModel(selectedRows, selectedNg) : state.model;
+    const { misses, tools } = state.model;
     if (!positions.includes(state.selectedMissPosition)) state.selectedMissPosition = positions[0] || '';
     if (misses.length && !misses.some((item) => item.position === state.selectedMissPosition)) state.selectedMissPosition = misses[0].position;
     if (state.analysisPosition !== 'ALL' && !positions.includes(state.analysisPosition)) state.analysisPosition = 'ALL';
     if (!tools.includes(state.analysisTool)) state.analysisTool = tools[0] || '';
     if (renderPage && state.page !== 'classification' && state.initialized) renderCurrentPage();
   }
+
+
 
   function renderCurrentPage() {
     if (!state.initialized) {
@@ -1985,7 +2028,7 @@
   }
 
   function exportSummaryReport() {
-    const model = state.model;
+    const model = state.page === 'main' ? state.dashboardModel || state.model : state.model;
     if (!model || !model.records.length) {
       showToast('리포트로 내보낼 분석 결과가 없습니다.', true);
       return;
@@ -2004,7 +2047,7 @@
   }
 
   function renderDashboard() {
-    const model = state.model;
+    const model = state.dashboardModel || state.model;
     const persistedHistory = mainHistoryDashboardPanel();
     if (!model?.records.length) {
       $('#vq43-page').innerHTML = `<div class="vq43-content"><div class="vq43-topline"><div><div class="vq43-eyebrow">Main Dashboard</div><h1 class="vq43-title">검사 결과 전체 View</h1><p class="vq43-subtitle">CSV 분석 결과와 Local Agent SQLite 검사 이력을 한 화면에서 확인합니다.</p></div><div class="vq43-top-actions">${packageDownloadActionsHtml()}<button class="vq43-btn" data-vq-action="open-settings">Input 변경</button></div></div>${persistedHistory}<section class="vq43-section"><div class="vq43-empty"><div class="vq43-empty-card"><div class="vq43-empty-symbol">◌</div><h2>분석 Input이 없습니다</h2><p>설정 메뉴에서 Position별 시뮬레이션 결과 파일과 실제 NG 이미지 폴더를 입력하세요. 결과 파일은 1개 Position만 입력해도 분석할 수 있습니다.</p></div></div></section></div>`;
@@ -2034,47 +2077,81 @@
       </div>`;
   }
 
+  function strictCaptureTimestamp(value) {
+    const text = String(value || '').trim();
+    const m = /^(?:([0-9]{4})-([0-9]{2})-([0-9]{2})(?:[T ]([0-9]{2}):([0-9]{2}):([0-9]{2})(?:\.[0-9]+)?(?:Z|[+-][0-9]{2}:[0-9]{2})?)?|([0-9]{4})([0-9]{2})([0-9]{2})_?([0-9]{2})([0-9]{2})([0-9]{2}))$/.exec(text);
+    if (!m) return '';
+    const [y,mo,d,h,mi,se] = (m[1] ? m.slice(1,7) : m.slice(7,13)).map(n => Number(n || 0));
+    const test = new Date(0);
+    test.setUTCFullYear(y, mo - 1, d); test.setUTCHours(h, mi, se, 0);
+    if (y < 1 || y > 9999 || test.getUTCFullYear() !== y || test.getUTCMonth() !== mo-1 || test.getUTCDate() !== d ||
+        test.getUTCHours() !== h || test.getUTCMinutes() !== mi || test.getUTCSeconds() !== se) return '';
+    return String(y).padStart(4,'0') + '-' + String(mo).padStart(2,'0') + '-' + String(d).padStart(2,'0') +
+      'T' + String(h).padStart(2,'0') + ':' + String(mi).padStart(2,'0') + ':' + String(se).padStart(2,'0');
+  }
+
+  function filenameCaptureTimestamp(value, profile = state.namingProfile) {
+    const name = String(value || '').split(/[\\/]/).pop().replace(/\.[^.]+$/, '');
+    const tokens = name.split(profile.delimiter || '_').map(s => s.trim()).filter(Boolean);
+    const rule = profile.dateTime || { mode:'compact' };
+    const candidates = [];
+    const add = raw => { const parsed = strictCaptureTimestamp(raw); if (parsed) candidates.push(parsed); };
+    if (rule.mode === 'token') {
+      const index = Number(rule.tokenIndex)-1, token = tokens[index] || '';
+      if (/^[0-9]{14}$/.test(token)) add(token);
+      else if (/^[0-9]{8}$/.test(token) && /^[0-9]{6}$/.test(tokens[index+1] || '')) add(token+'_'+tokens[index+1]);
+    } else if (rule.mode === 'legacy') {
+      const date = profile.date?.mode === 'token' ? [tokens[profile.date.tokenIndex-1]] : tokens.filter(t=>/^[0-9]{8}$/.test(t));
+      const time = profile.time?.mode === 'token' ? [tokens[profile.time.tokenIndex-1]] : tokens.filter(t=>/^[0-9]{6}$/.test(t));
+      if (date.length === 1 && time.length === 1) add(date[0]+'_'+time[0]);
+    } else {
+      const expression = rule.mode === 'split'
+        ? /(?:^|[^A-Za-z0-9])([0-9]{8}_[0-9]{6})(?![A-Za-z0-9])/g
+        : /(?:^|[^A-Za-z0-9])([0-9]{14})(?![A-Za-z0-9])/g;
+      for (const match of name.matchAll(expression)) add(match[1]);
+    }
+    return candidates.length === 1 ? candidates[0] : '';
+  }
+
   function dashboardDateFromText(value) {
-    const text = String(value || '');
-    const direct = text.match(/(20\d{2})[-_./]?(\d{2})[-_./]?(\d{2})/);
-    if (!direct) return '';
-    const year = Number(direct[1]), month = Number(direct[2]), day = Number(direct[3]);
-    const parsed = new Date(year, month - 1, day);
-    if (parsed.getFullYear() !== year || parsed.getMonth() !== month - 1 || parsed.getDate() !== day) return '';
-    return `${year}-${String(month).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
+    return strictCaptureTimestamp(value).slice(0,10);
+  }
+
+  function dashboardDateForRow(row) {
+    return dashboardDateFromText(row?.captureTimestamp) ||
+      filenameCaptureTimestamp(row?.fullPath || row?.sourceFileName).slice(0,10);
   }
 
   function dashboardDateForRecord(record) {
-    const rows = Array.isArray(record?.sourceRows) ? record.sourceRows : [];
-    for (const row of rows) {
-      const date = dashboardDateFromText(row?.captureTimestamp) || dashboardDateFromText(row?.fullPath) || dashboardDateFromText(row?.sourceFileName);
-      if (date) return date;
-    }
-    return dashboardDateFromText(record?.fullPath) || dashboardDateFromText(record?.sourceFileName) || '';
+    const dates = [...new Set((record?.sourceRows || [record]).map(dashboardDateForRow).filter(Boolean))].sort();
+    return dates[0] || '';
   }
 
   // 메인 대시보드는 SQLite 누적 이력이 아니라, 현재 화면에서 분석 중인 하나의 결과 집합만 표시한다.
   // aggregateRows()가 Cell ID + Position으로 이미 중복을 하나의 record로 통합하므로 동일 이미지 재실행은 다시 세지 않는다.
   function currentAnalysisDashboardData() {
-    const records = Array.isArray(state.model?.records) ? state.model.records : [];
+    const records = Array.isArray(state.dashboardModel?.records) ? state.dashboardModel.records : (state.model?.records || []);
+    const allRows = positionNames().flatMap(position => state.resultInputs[position]?.rows || []);
+    const dailyRows = new Map();
+    allRows.forEach(row => { const date = dashboardDateForRow(row); if (date) {
+      if (!dailyRows.has(date)) dailyRows.set(date, []); dailyRows.get(date).push(row);
+    } });
     const dailyMap = new Map();
-    records.forEach((record) => {
-      const date = dashboardDateForRecord(record);
-      if (!date) return;
-      const item = dailyMap.get(date) || { date, total:0, ng:0 };
-      item.total += 1;
-      if (record.totalResult === 'NG') item.ng += 1;
-      dailyMap.set(date, item);
+    dailyRows.forEach((rows,date) => {
+      const items = aggregateRows(rows); applyThresholdSimulation(items);
+      dailyMap.set(date, { date, total:items.length, ng:items.filter(r=>r.totalResult==='NG').length });
     });
     const daily = Array.from(dailyMap.values()).sort((a, b) => a.date.localeCompare(b.date)).map((item) => ({ ...item, ngRate:item.total ? item.ng / item.total : 0 }));
     const ngCount = records.filter((record) => record.totalResult === 'NG').length;
-    return { totalCount:records.length, ngCount, uniqueCellCount:records.length, daily };
+    return { totalCount:records.length, ngCount, uniqueCellCount:records.length, daily, unknown:allRows.filter(row=>!dashboardDateForRow(row)).length };
   }
 
   function mainHistoryDashboardPanel() {
     const data = currentAnalysisDashboardData();
-    return `<section class="vq43-section vq43-main-history-dashboard"><div class="vq43-section-title"><span class="vq43-step blue">H</span><div><h3>날짜별 검사 NG율 · 현재 분석 결과</h3><p>현재 실행한 시뮬레이션 또는 현재 불러온 CSV 분석 결과만 집계합니다. Cell ID + Position이 같은 중복은 한 번만 계산합니다. 막대를 누르면 이력 화면에서 해당 날짜를 엽니다.</p></div><button class="vq43-btn vq43-btn-blue" data-vq-action="history-open">검사 이력 열기</button></div><div class="vq43-main-history-kpis"><span>검사 Cell·Position <b>${numberText(data.totalCount)}</b></span><span class="ng">NG Cell·Position <b>${numberText(data.ngCount)}</b></span><span>고유 Cell·Position <b>${numberText(data.uniqueCellCount)}</b></span><span class="ng">NG율 <b>${rateText(data.totalCount ? data.ngCount / data.totalCount : 0)}</b></span></div>${historyDateBars(data.daily)}</section>`;
+    return `<section class="vq43-section vq43-main-history-dashboard"><div class="vq43-section-title"><span class="vq43-step blue">H</span><div><h3>날짜별 검사 NG율 · 현재 분석 결과</h3><p>현재 실행한 시뮬레이션 또는 현재 불러온 CSV 분석 결과만 집계합니다. Cell ID + Position이 같은 중복은 한 번만 계산합니다. 날짜를 누르면 메인 대시보드 전체가 해당 날짜로 집계됩니다. 전체보기로 모든 결과를 복원합니다.</p></div><button class="vq43-btn" data-vq-action="dashboard-all">전체보기</button><button class="vq43-btn vq43-btn-blue" data-vq-action="history-open">검사 이력 열기</button></div><div class="vq43-main-history-kpis"><span>검사 Cell·Position <b>${numberText(data.totalCount)}</b></span><span class="ng">NG Cell·Position <b>${numberText(data.ngCount)}</b></span><span>고유 Cell·Position <b>${numberText(data.uniqueCellCount)}</b></span><span class="ng">NG율 <b>${rateText(data.totalCount ? data.ngCount / data.totalCount : 0)}</b></span></div>${state.dashboardDate ? '<p class="vq43-note">선택 날짜: '+escapeHtml(state.dashboardDate)+'</p>' : ''}${data.unknown ? '<p class="vq43-note">날짜 미인식 '+numberText(data.unknown)+'행: 전체 집계에는 포함되며 날짜 그래프에서는 제외됩니다. 파일명 규칙을 확인하세요.</p>' : ''}${historyDateBars(data.daily)}</section>`;
   }
+
+
 
   function kpi(label, value, detail, tone = '', rawDetail = false) {
     return `<div class="vq43-kpi ${tone}"><span>${escapeHtml(label)}</span><strong>${escapeHtml(value)}</strong>${rawDetail ? detail : `<small>${escapeHtml(detail)}</small>`}</div>`;
@@ -2155,7 +2232,7 @@
   }
 
   function downloadMissCsv(position) {
-    const misses = (state.model?.misses || []).filter((item) => item.position === position);
+    const misses = ((state.page === 'main' ? state.dashboardModel : state.model)?.misses || []).filter((item) => item.position === position);
     if (!misses.length) return showToast(`${position} 미검 데이터가 없습니다.`, true);
     const tools = [...new Set(misses.flatMap((miss) => Object.keys(miss.record.tools)))].sort();
     const headers = ['Cell ID', 'Position', 'Simulated_Total_result'];
@@ -2542,7 +2619,7 @@
       const date = escapeHtml(row.date || '');
       const dateLabel = index % labelEvery === 0 || index === rows.length - 1
         ? '<text class="date" x="' + x(index) + '" y="' + (height-15) + '" text-anchor="middle">' + escapeHtml(String(row.date || '').slice(5)) + '</text>' : '';
-      return '<g class="vq43-history-point" data-vq-action="history-day" data-vq-history-day="' + date + '" tabindex="0"><title>' + date + ' · 전체 ' + numberText(total) + ' · NG ' + numberText(ng) + ' (' + rateText(rate) + ')</title><circle cx="' + x(index) + '" cy="' + y(rate) + '" r="5"/><text class="rate" x="' + x(index) + '" y="' + Math.max(14,y(rate)-10) + '" text-anchor="middle">' + rateText(rate) + '</text>' + dateLabel + '</g>';
+      return '<g class="vq43-history-point" data-vq-action="' + (mainCompact ? 'dashboard-day' : 'history-day') + '" data-vq-history-day="' + date + '" role="button" aria-label="' + date + ' 선택" aria-pressed="' + (mainCompact && state.dashboardDate === row.date) + '" tabindex="0"><title>' + date + ' · 전체 ' + numberText(total) + ' · NG ' + numberText(ng) + ' (' + rateText(rate) + ')</title><rect x="' + (index === 0 ? left : (x(index-1)+x(index))/2) + '" y="0" width="' + (rows.length === 1 ? plotW : (index === 0 || index === rows.length-1 ? plotW/(rows.length-1)/2 : plotW/(rows.length-1))) + '" height="' + height + '" fill="' + (mainCompact && state.dashboardDate === row.date ? 'rgba(59,130,246,.12)' : 'transparent') + '" pointer-events="all"/><circle cx="' + x(index) + '" cy="' + y(rate) + '" r="5"/><text class="rate" x="' + x(index) + '" y="' + Math.max(14,y(rate)-10) + '" text-anchor="middle">' + rateText(rate) + '</text>' + dateLabel + '</g>';
     }).join('');
     return '<div class="vq43-history-line-scroll"><svg class="vq43-history-line" viewBox="0 0 ' + width + ' ' + height + '" style="min-width:' + width + 'px">' + grid + '<polyline points="' + points + '"/>' + dots + '</svg></div>';
   }
@@ -2816,7 +2893,7 @@
       green:{
         cellIdCsvPath:'', keywordMode:false, keywordInputRoot:'', keywordInputRoots:[], keepSubfolders:false,
         useGpu:true, gpuDevices:'0', jpegQuality:80, heatmapAlpha:55, heatmapAlphaCut:25,
-        heatmapImageSave:true, forceJet:true, printEvery:100, originalProcess:true, disableTensorRt:false, freshRuntime:false, detailedDiagnostics:true, disableOptimizedGpuMemory:false,
+        heatmapImageSave:true, forceJet:true, printEvery:100, originalProcess:true, disableTensorRt:false, freshRuntime:false, detailedDiagnostics:false, disableOptimizedGpuMemory:false,
         tools:simulationDefaultTools(), judgements:simulationDefaultJudgements()
       },
       blue:{
@@ -2904,6 +2981,9 @@
     // ensureSimulationForm()을 호출할 때마다 사용자가 편집한 Tool/파라미터가 초기화됩니다.
     // 현재 값을 먼저 복사한 뒤 새 객체로 병합해야 기존 설정이 항상 마지막에 남습니다.
     form.green = mergeSimulationSection(defaults.green, legacyGreen, form.green);
+    // Retire experimental settings from saved forms; retain user's inspection/ROI/GPU options.
+    Object.assign(form.green, { originalProcess:true, disableTensorRt:false, freshRuntime:false,
+      disableOptimizedGpuMemory:false, detailedDiagnostics:false });
     form.blue = mergeSimulationSection(defaults.blue, legacyBlue, form.blue);
     form.integrated = mergeSimulationSection(defaults.integrated, legacyIntegrated, form.integrated);
     // v4.7.9 이전 설정은 Crop 결과를 임시 파일로 삭제했습니다. 기존 기본값(false)을
@@ -3261,37 +3341,22 @@
   // 이 브리지는 그 요청만 가로채 현재 Runtime File Load로 준비된 Green Tool 검사로 전환한다.
   // 따라서 API Key/외부 인터넷을 사용하지 않으며, 기존 분류 UI의 결과 반영 방식은 유지한다.
   function installLegacyAiSuggestRuntimeBridge() {
-    if (window.__VISIONQC_V471_AI_SUGGEST_BRIDGE__) return;
     window.__VISIONQC_V471_AI_SUGGEST_BRIDGE__ = true;
-    // 기존 번들은 키가 비어 있으면 요청 생성 전 반환한다. 실제 키를 절대 사용하지 않고
-    // 로컬 브리지용 값만 넣어, 아래 fetch 가로채기까지 정상적으로 도달하게 한다.
-    globalThis.__GEMINI_API_KEY__ = 'VISIONQC_LOCAL_RUNTIME_ONLY';
-    const originalFetch = window.fetch.bind(window);
-    window.fetch = async (input, init = {}) => {
-      const url = typeof input === 'string' ? input : input?.url || '';
-      if (!/generativelanguage\.googleapis\.com/i.test(url)) return originalFetch(input, init);
-      let payload;
-      try { payload = JSON.parse(typeof init.body === 'string' ? init.body : ''); }
-      catch (_) { return originalFetch(input, init); }
-      const parts = payload?.contents?.parts || payload?.contents?.[0]?.parts || [];
-      const inlineData = parts.map((part) => part?.inlineData).find(Boolean);
-      const prompt = parts.map((part) => part?.text || '').join('\n');
-      if (!inlineData?.data || !/Analyze this manufacturing image/i.test(prompt)) return originalFetch(input, init);
+    globalThis.__VISIONQC_LOCAL_AI_SUGGEST__ = async (imageBase64, fileName) => {
       try {
-        const request = buildLoadedRuntimeAiSuggestRequest(inlineData, prompt);
+        const request = buildLoadedRuntimeAiSuggestRequest({ data:imageBase64, mimeType:'image/jpeg' },
+          'Analyze this manufacturing image (file: ' + fileName + ') for quality');
         const data = await agentFetch('/api/classification/inspect-upload', {
           method:'POST', timeout:300000, body:request,
           timeoutMessage:'AI SUGGEST Runtime 검사가 5분을 초과했습니다.'
         });
         if (!data?.ok) throw new Error(data?.error || 'AI SUGGEST Runtime 검사 실패');
         const suggestion = legacySuggestionFromRuntimeRecord(data.record || {}, data.position || '');
-        showToast(`AI SUGGEST Runtime 검사 완료: ${data.position || '-'} · ${suggestion.status}`);
-        return new Response(JSON.stringify({
-          candidates:[{ content:{ role:'model', parts:[{ text:JSON.stringify(suggestion) }] }, finishReason:'STOP' }]
-        }), { status:200, headers:{ 'Content-Type':'application/json' } });
+        showToast('AI SUGGEST Runtime 검사 완료: ' + (data.position || '-') + ' · ' + suggestion.status);
+        return suggestion;
       } catch (error) {
-        showToast(`AI SUGGEST Runtime 검사 실패: ${error.message || error}`, true);
-        return new Response(JSON.stringify({ error:{ message:String(error.message || error) } }), { status:503, headers:{ 'Content-Type':'application/json' } });
+        showToast('AI SUGGEST Runtime 검사 실패: ' + (error.message || error), true);
+        return null; // Keep classification unchanged on failed inference.
       }
     };
   }
@@ -3300,6 +3365,7 @@
     const request = buildSimulationRequest();
     if (request.mode === 'blue') throw new Error('AI SUGGEST는 Green Tool 검사입니다. Green 또는 Integrated 모드로 Runtime File Load를 먼저 실행하세요.');
     if (!request.positions?.length) throw new Error('AI SUGGEST에 사용할 활성 Position이 없습니다.');
+    request.mode = 'green'; // AI Suggest analyzes the selected image directly, without Blue cropping.
     request.green = cloneSimulation(request.green || {});
     request.green.heatmapImageSave = true;
     request.imageBase64 = String(inlineData.data || '');
@@ -3312,6 +3378,9 @@
   function legacySuggestionFromRuntimeRecord(record, position) {
     const tools = Object.values(record?.tools || record?.Tools || {});
     const ngTools = tools.filter((tool) => String(tool?.result ?? tool?.Result ?? '').toUpperCase() === 'NG');
+    const total = String(record?.totalResult ?? record?.TotalResult ?? '').toUpperCase();
+    if (!['OK','NG'].includes(total) || !tools.length || tools.some(tool => !['OK','NG'].includes(String(tool?.result ?? tool?.Result ?? '').toUpperCase())))
+      throw new Error('검사 결과가 불완전합니다. ERROR를 OK로 분류하지 않습니다.');
     const status = runtimeLegacyStatus(record?.judgement ?? record?.Judgement, ngTools);
     const scores = ngTools.map((tool) => Number(tool?.score ?? tool?.Score)).filter(Number.isFinite);
     const confidence = scores.length ? Math.max(...scores) : (String(record?.totalResult ?? record?.TotalResult ?? '').toUpperCase() === 'OK' ? 1 : 0);
@@ -4080,6 +4149,7 @@
 
   function prepareLiveSimulationData(request) {
     if (!request || request.mode === 'blue') return;
+    state.dashboardDate = '';
     state.resultInputs = {};
     request.positions.forEach(p => {
       const position = normalizePosition(p.displayName);
@@ -4110,6 +4180,7 @@
       state.resultInputs[position].rows.push({
         sourceFileName:String(record.FileName ?? record.fileName ?? 'LIVE'),
         sourceRowNumber:state.simulationLiveRows + offset + 1,
+        captureTimestamp:String(record.CaptureTimestamp ?? record.captureTimestamp ?? ''),
         fullPath:String(record.FullPath ?? record.fullPath ?? ''),
         processedPath:String(record.ProcessingPath ?? record.processingPath ?? record.ProcessedPath ?? record.processedPath ?? ''),
         cellId, position,
@@ -4409,7 +4480,7 @@
     const streams = workspaceStreams(info);
     const selected = streamName ? streams.filter(s => String(s.name) === String(streamName)) : streams;
     const tools = selected.flatMap(s => Array.isArray(s.tools) ? s.tools : []);
-    return tools.filter(t => !typePrefix || String(t.type || '').toLowerCase().startsWith(typePrefix.toLowerCase()));
+    return tools.filter(t => !typePrefix || String(t.type || '').toLowerCase().startsWith(typePrefix.toLowerCase()) || (typePrefix === 'Green' && String(t.type || '').toLowerCase().startsWith('red')));
   }
 
   function workspaceSelectHtml(positionKey, kind, field, value, typePrefix = '') {
@@ -4733,16 +4804,16 @@
   }
 
   function greenRuntimeOptions(integrated=false) {
-    const originalProcess = ensureSimulationForm().green.originalProcess;
     return `<section class="vq43-sim-option-section"><h3>Green Runtime / HeatMap</h3><div class="vq43-sim-option-grid">
       ${simulationCheck('green','useGpu','GPU 사용')}${simulationText('green','gpuDevices','GPU Devices','0')}
-      ${!integrated?`${simulationCheck('green','originalProcess','원본 방식 · 독립 Green 검사 (권장)')}${simulationCheck('green','detailedDiagnostics','상세 진단 로그 (서버 내부 저장)')}${originalProcess?'<p class="vq43-sim-option-note">원본 생성자 · 새 프로세스 · Workspace 설정 유지<br>기존 VisionQC 실행 방식은 위 체크를 해제하여 비교할 수 있습니다.</p>':`${simulationCheck('green','disableTensorRt','TensorRT 해제 (호환 검사)')}${simulationCheck('green','freshRuntime','새 Runtime으로 검사 (진단)')}${simulationCheck('green','disableOptimizedGpuMemory','GPU 메모리 선할당 해제 (Green 호환)')}`}`:''}
       ${simulationNumber('green','jpegQuality','JPEG Quality',1,100)}${simulationNumber('green','printEvery','Progress Update',1,1000000)}
       ${simulationCheck('green','keepSubfolders','하위 폴더 구조 유지')}${!integrated?simulationCheck('green','heatmapImageSave','NG 원본 위 Heatmap Overlay 저장'):''}
       ${!integrated?`${simulationCheck('green','forceJet','Gray HeatMap → Jet 변환')}${simulationNumber('green','heatmapAlpha','HeatMap Alpha %',0,100)}`:''}
       ${!integrated?simulationNumber('green','heatmapAlphaCut','Alpha Cut',0,255):''}
-    </div>${!integrated?'<p class="vq43-sim-option-note">독립 Green 검사는 기본 ON입니다. 검사마다 새 Runtime을 사용하며 종료 후 Runtime File Load를 다시 누르세요. 원본 Workspace 파일은 변경하지 않습니다. 상세 로그에는 로컬 경로가 포함됩니다.</p>':''}<p class="vq43-sim-option-note">Progress Update 수만큼 상세 결과를 Agent가 메모리에 모아서 Web 분석 모델로 한 번에 전송합니다.</p></section>`;
+    </div>${!integrated?'<p class="vq43-sim-option-note">Green 검사는 독립 프로세스에서 실행됩니다. 검사마다 새 Runtime을 사용하며 종료 후 Runtime File Load를 다시 누르세요. 원본 Workspace 파일은 변경하지 않습니다. 상세 로그에는 로컬 경로가 포함됩니다.</p>':''}<p class="vq43-sim-option-note">Progress Update 수만큼 상세 결과를 Agent가 메모리에 모아서 Web 분석 모델로 한 번에 전송합니다.</p></section>`;
   }
+
+
 
   function detectedGreenToolNames() {
     const form = ensureSimulationForm();
@@ -4969,9 +5040,11 @@
   function namingRuleField(label, key, rule, options = {}) {
     const isCell = key === 'cellId';
     const isDateTime = key === 'dateTime';
-    const modeOptions = `<option value="auto" ${rule.mode === 'auto' ? 'selected' : ''}>조건 자동 찾기</option><option value="token" ${rule.mode === 'token' ? 'selected' : ''}>구분자 기준 위치 지정</option>${isDateTime ? `<option value="legacy" ${rule.mode === 'legacy' ? 'selected' : ''}>이전 날짜/시간 규칙 유지</option>` : ''}`;
-    return `<fieldset class="vq43-naming-rule"><legend>${escapeHtml(label)}</legend><label><span>추출 방식</span><select data-naming-field="${key}" data-naming-key="mode">${modeOptions}</select></label><label><span>구분자 기준 토큰 번호${isDateTime ? ' (분리형은 날짜 위치)' : ''}</span><input type="number" min="1" max="999" value="${escapeHtml(rule.tokenIndex)}" data-naming-field="${key}" data-naming-key="tokenIndex"></label>${isCell ? `<label><span>후보 전체 길이</span><input type="number" min="1" max="256" value="${escapeHtml(rule.candidateLength)}" data-naming-field="cellId" data-naming-key="candidateLength"></label><label><span>앞에서 추출할 길이</span><input type="number" min="1" max="256" value="${escapeHtml(rule.extractLength)}" data-naming-field="cellId" data-naming-key="extractLength"></label><label class="vq43-naming-check"><input type="checkbox" ${rule.requireLetter ? 'checked' : ''} data-naming-field="cellId" data-naming-key="requireLetter"><span>영문 포함 필수</span></label>` : `<div class="vq43-naming-hint">${options.hint || ''}</div>`}</fieldset>`;
+    const modeOptions = isDateTime ? '<option value="compact" '+(rule.mode==='compact'?'selected':'')+'>YYYYMMDDHHMMSS</option><option value="split" '+(rule.mode==='split'?'selected':'')+'>YYYYMMDD_HHMMSS</option><option value="token" '+(rule.mode==='token'?'selected':'')+'>구분자 기준 위치 지정</option>'+(rule.mode==='legacy'?'<option value="legacy" selected>이전 분리 위치 규칙 (유지 중)</option>':'') : `<option value="auto" ${rule.mode === 'auto' ? 'selected' : ''}>조건 자동 찾기</option><option value="token" ${rule.mode === 'token' ? 'selected' : ''}>구분자 기준 위치 지정</option>${isDateTime ? `<option value="legacy" ${rule.mode === 'legacy' ? 'selected' : ''}>이전 날짜/시간 규칙 유지</option>` : ''}`;
+    return `<fieldset class="vq43-naming-rule"><legend>${escapeHtml(label)}</legend><label><span>추출 방식</span><select data-naming-field="${key}" data-naming-key="mode">${modeOptions}</select></label><label><span>구분자 기준 토큰 번호${isDateTime ? ' (분리형은 날짜 위치)' : ''}</span><input type="number" min="1" max="999" ${rule.mode === 'token' ? '' : 'disabled'} value="${escapeHtml(rule.tokenIndex)}" data-naming-field="${key}" data-naming-key="tokenIndex"></label>${isCell ? `<label><span>후보 전체 길이</span><input type="number" min="1" max="256" value="${escapeHtml(rule.candidateLength)}" data-naming-field="cellId" data-naming-key="candidateLength"></label><label><span>앞에서 추출할 길이</span><input type="number" min="1" max="256" value="${escapeHtml(rule.extractLength)}" data-naming-field="cellId" data-naming-key="extractLength"></label><label class="vq43-naming-check"><input type="checkbox" ${rule.requireLetter ? 'checked' : ''} data-naming-field="cellId" data-naming-key="requireLetter"><span>영문 포함 필수</span></label>` : `<div class="vq43-naming-hint">${options.hint || ''}</div>`}</fieldset>`;
   }
+
+
 
   function namingPreviewHtml() {
     if (state.namingPreviewError) return `<div class="vq43-warning"><strong>규칙 미리보기 실패</strong><div>${escapeHtml(state.namingPreviewError)}</div></div>`;
@@ -4983,8 +5056,10 @@
 
   function namingProfileCardHtml() {
     const profile = state.namingProfile;
-    return `<section class="vq43-settings-card vq43-naming-card"><div class="vq43-settings-title"><span class="vq43-settings-icon cyan">${railIconSvg('settings')}</span><div><h3>0. 파일명 규칙</h3><p>공정별 이미지 이름에서 Cell ID와 촬영 날짜·시간을 추출합니다. 14자리 통합형과 기존 날짜_시간 분리형을 지원합니다. 토큰 번호는 사람이 읽는 1부터 시작합니다.</p></div></div><div class="vq43-naming-profile-head"><label><span>규칙 이름</span><input id="vq43-naming-name" value="${escapeHtml(profile.name)}" maxlength="80"></label><label><span>구분자</span><input id="vq43-naming-delimiter" value="${escapeHtml(profile.delimiter)}" maxlength="8"></label><label><span>규칙 버전</span><input id="vq43-naming-version" type="number" min="1" max="9999" value="${escapeHtml(profile.version)}"></label></div><div class="vq43-naming-rule-grid">${namingRuleField('Cell ID', 'cellId', profile.cellId)}${namingRuleField('날짜·시간', 'dateTime', profile.dateTime, { hint:'YYYYMMDDHHMMSS 한 토큰 또는 기존 YYYYMMDD_HHMMSS를 읽습니다. 예: 20260807074705 → 2026-08-07 07:47:05' })}</div><details class="vq43-naming-legacy"><summary>이전 분리형 위치 규칙 (기존 설정 유지용)</summary><p>날짜·시간 추출 방식을 ‘이전 날짜/시간 규칙 유지’로 선택할 때 적용합니다.</p><div class="vq43-naming-rule-grid">${namingRuleField('날짜 (이전 규칙)', 'date', profile.date)}${namingRuleField('시간 (이전 규칙)', 'time', profile.time)}</div></details><div class="vq43-naming-example">예: <code>TAB_J1037G87P611903999_20260807074705_CRACK AN(TOP)_BLUTOL.jpg</code> → 날짜·시간 2026-08-07 07:47:05 · Cell ID는 설정한 추출 길이를 따릅니다.</div><label class="vq43-naming-samples"><span>검증할 파일명 (줄마다 하나)</span><textarea id="vq43-naming-samples" rows="4" placeholder="TAB_J1037G87P611903999_20260807074705_CRACK AN(TOP)_BLUTOL.jpg"></textarea></label><div class="vq43-naming-actions"><button class="vq43-btn" data-vq-action="naming-profile-save">규칙 저장</button><button class="vq43-btn vq43-btn-blue" data-vq-action="naming-profile-preview">Agent로 미리보기</button></div>${namingPreviewHtml()}</section>`;
+    return `<section class="vq43-settings-card vq43-naming-card"><div class="vq43-settings-title"><span class="vq43-settings-icon cyan">${railIconSvg('settings')}</span><div><h3>0. 파일명 규칙</h3><p>공정별 이미지 이름에서 Cell ID와 촬영 날짜·시간을 추출합니다. YYYYMMDDHHMMSS 한 토큰 또는 기존 YYYYMMDD_HHMMSS 형식을 선택합니다. 날짜를 찾을 수 없으면 미인식으로 표시합니다. 토큰 번호는 사람이 읽는 1부터 시작합니다.</p></div></div><div class="vq43-naming-profile-head"><label><span>규칙 이름</span><input id="vq43-naming-name" value="${escapeHtml(profile.name)}" maxlength="80"></label><label><span>구분자</span><input id="vq43-naming-delimiter" value="${escapeHtml(profile.delimiter)}" maxlength="8"></label><label><span>규칙 버전</span><input id="vq43-naming-version" type="number" min="1" max="9999" value="${escapeHtml(profile.version)}"></label></div><div class="vq43-naming-rule-grid">${namingRuleField('Cell ID', 'cellId', profile.cellId)}${namingRuleField('날짜·시간', 'dateTime', profile.dateTime, { hint:'선택한 형식만 읽습니다. 위치 지정은 날짜·시간 한 토큰 또는 연속된 날짜와 시간 토큰을 사용합니다. 예: 20260807074705 → 2026-08-07 07:47:05' })}</div><details class="vq43-naming-legacy"><summary>이전 분리형 위치 규칙 (기존 설정 유지용)</summary><p>날짜·시간 추출 방식을 ‘이전 날짜/시간 규칙 유지’로 선택할 때 적용합니다.</p><div class="vq43-naming-rule-grid">${namingRuleField('날짜 (이전 규칙)', 'date', profile.date)}${namingRuleField('시간 (이전 규칙)', 'time', profile.time)}</div></details><div class="vq43-naming-example">예: <code>TAB_J1037G87P611903999_20260807074705_CRACK AN(TOP)_BLUTOL.jpg</code> → 날짜·시간 2026-08-07 07:47:05 · Cell ID는 설정한 추출 길이를 따릅니다.</div><label class="vq43-naming-samples"><span>검증할 파일명 (줄마다 하나)</span><textarea id="vq43-naming-samples" rows="4" placeholder="TAB_J1037G87P611903999_20260807074705_CRACK AN(TOP)_BLUTOL.jpg"></textarea></label><div class="vq43-naming-actions"><select id="vq43-naming-saved" aria-label="저장된 규칙">${savedNamingProfiles().map((item,index)=>'<option value="'+index+'">'+escapeHtml(item.name)+' · v'+item.version+'</option>').join('')}</select><button class="vq43-btn" data-vq-action="naming-profile-load">규칙 불러오기</button><button class="vq43-btn" data-vq-action="naming-profile-save">규칙 저장</button><button class="vq43-btn vq43-btn-blue" data-vq-action="naming-profile-preview">Agent로 미리보기</button></div>${namingPreviewHtml()}</section>`;
   }
+
+
 
   function readNamingProfileFromSettings() {
     const current = state.namingProfile;
@@ -4992,7 +5067,7 @@
     const field = (name) => {
       const prior = current[name];
       return {
-        mode:name === 'dateTime' && $(`[data-naming-field="${name}"][data-naming-key="mode"]`)?.value === 'legacy' ? 'legacy' : asRuleMode($(`[data-naming-field="${name}"][data-naming-key="mode"]`)?.value),
+        mode:name === 'dateTime' ? $(`[data-naming-field="${name}"][data-naming-key="mode"]`)?.value : asRuleMode($(`[data-naming-field="${name}"][data-naming-key="mode"]`)?.value),
         tokenIndex:read(`[data-naming-field="${name}"][data-naming-key="tokenIndex"]`, prior.tokenIndex),
         candidateLength:name === 'cellId' ? read('[data-naming-field="cellId"][data-naming-key="candidateLength"]', prior.candidateLength) : undefined,
         extractLength:name === 'cellId' ? read('[data-naming-field="cellId"][data-naming-key="extractLength"]', prior.extractLength) : undefined,
@@ -5003,8 +5078,29 @@
     return sanitizeNamingProfile({ id:current.id, name:read('#vq43-naming-name', current.name), delimiter:read('#vq43-naming-delimiter', current.delimiter), version:read('#vq43-naming-version', current.version), cellId:field('cellId'), dateTime:field('dateTime'), date:field('date'), time:field('time') });
   }
 
+  function savedNamingProfiles() {
+    const items = safeJsonParse(safeStorageGet('visionqc-v4725-naming-profiles'), []);
+    return Array.isArray(items) && items.length ? items.map(sanitizeNamingProfile) : [state.namingProfile];
+  }
+
+  function loadNamingProfileFromSettings() {
+    const profile = savedNamingProfiles()[Number($('#vq43-naming-saved')?.value || 0)];
+    if (!profile) return showToast('저장된 규칙을 선택하세요.', true);
+    state.namingProfile = sanitizeNamingProfile(profile);
+    safeStorageSet(NAMING_PROFILE_KEY, JSON.stringify(state.namingProfile));
+    state.namingPreview = null; state.namingPreviewError = ''; state.dashboardDate = '';
+    rebuildModel(false); renderSettings(); bindPageControls();
+    showToast('파일명 규칙을 불러왔습니다: ' + state.namingProfile.name);
+  }
+
   function saveNamingProfileFromSettings({ silent = false } = {}) {
+    const profiles = savedNamingProfiles();
     state.namingProfile = readNamingProfileFromSettings();
+    safeStorageSet('visionqc-v4725-naming-profiles', JSON.stringify([
+      ...profiles.filter(profile => profile.name !== state.namingProfile.name), state.namingProfile
+    ]));
+    state.dashboardDate = '';
+    rebuildModel(false);
     state.namingPreview = null;
     state.namingPreviewError = '';
     safeStorageSet(NAMING_PROFILE_KEY, JSON.stringify(state.namingProfile));
@@ -5017,6 +5113,7 @@
     const raw = $('#vq43-naming-samples')?.value || '';
     const fileNames = raw.split(/\r?\n/).map((value) => value.trim()).filter(Boolean).slice(0, 200);
     state.namingProfile = profile;
+    state.dashboardDate = ''; rebuildModel(false);
     safeStorageSet(NAMING_PROFILE_KEY, JSON.stringify(profile));
     state.namingPreview = null;
     state.namingPreviewError = '';
@@ -5220,7 +5317,7 @@
   }
 
   function openMissModal(key) {
-    const miss = state.model?.misses.find((item) => item.key === key);
+    const miss = (state.page === 'main' ? state.dashboardModel : state.model)?.misses.find((item) => item.key === key);
     if (!miss) return;
     state.modalMissKey = key;
     state.modalItem = { ...miss, overlayImages:overlayImagesForRecord(miss.record), label: 'Missed Actual NG' };
@@ -5701,6 +5798,12 @@
   function installDebugApi() {
     if (!new URLSearchParams(location.search).has('vqDebug') && !window.__VQ_DEBUG_REQUESTED__) return;
     window.__VISIONQC_DEBUG__ = {
+      seedRows(rows) {
+        state.resultInputs = Object.fromEntries(positionNames().map(position => [position,{rows:rows.filter(r=>r.position===position),fileName:'debug.csv',warnings:[]} ]));
+        state.ngImages=[]; state.dashboardDate=''; state.initialized=true; rebuildModel(false); setPage('main');
+      },
+      async seedCsv(text) { const parsed=await parsePositionFile(new File([text],'test.csv',{type:'text/csv'}),'AN(TOP)'); this.seedRows(parsed.rows); return parsed.warnings; },
+      dateSnapshot() { return { selected:state.dashboardDate, total:state.dashboardModel.records.length, ng:state.dashboardModel.ngCellCount, days:currentAnalysisDashboardData().daily, keys:state.dashboardModel.records.map(r=>r.key) }; },
       seedAnalysis() {
         const tools = (crackResult, crackScore) => ({ Crack:{tool:'Crack',result:crackResult,score:crackScore}, Edge:{tool:'Edge',result:'NG',score:0.72}, FoilDamage:{tool:'FoilDamage',result:'OK',score:0.84}, Trimming:{tool:'Trimming',result:'NG',score:0.68}, Welding:{tool:'Welding',result:'OK',score:0.91} });
         const rows = [
@@ -5734,7 +5837,7 @@
             const tools = position === 'AN(TOP)' ? ['Crack','Edge','FoilDamage','Trimming','Welding'] : position.includes('BOT') ? ['Crack','FoilDamage','Welding'] : ['Crack','FoilDamage','Trimming','Welding'];
             const toolData = {};
             tools.forEach((tool, toolIndex) => { toolData[tool] = { tool, result:'OK', score:0.72 + ((index + toolIndex) % 25) / 100 }; });
-            rows.push({ sourceFileName:`20260203_debug_${position}.csv`, sourceRowNumber:index+1, cellId, position, totalResult:'OK', tools:toolData });
+            rows.push({ sourceFileName:`20260203_debug_${position}.csv`, captureTimestamp:'2026-02-'+String(3+(index%3)).padStart(2,'0')+'T08:00:00', sourceRowNumber:index+1, cellId, position, totalResult:'OK', tools:toolData });
             const svg = new File([`<svg xmlns="http://www.w3.org/2000/svg" width="400" height="240"><rect width="100%" height="100%" fill="#111827"/><text x="50%" y="50%" fill="white" text-anchor="middle">${position} ${cellId}</text></svg>`], `${cellId}.svg`, {type:'image/svg+xml'});
             ngImages.push({position,cellId,file:svg,relativePath:`NG/${position}/${cellId}.svg`});
           }

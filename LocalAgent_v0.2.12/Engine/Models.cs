@@ -174,6 +174,7 @@ namespace VpdlGreenHeatmapOverlay
 
     internal class LiveAnalysisRecord
     {
+        public string CaptureTimestamp { get; set; }
         public string FileName { get; set; }
         // FullPath는 사용자가 선택한 원본 이미지 경로이다. 통합 시뮬레이션의 Green 입력은
         // ProcessingPath(Blue Crop 결과)로 분리해 Viewer가 원본을 우선 표시할 수 있게 한다.

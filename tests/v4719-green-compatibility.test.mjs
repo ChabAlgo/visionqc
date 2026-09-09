@@ -9,7 +9,7 @@ test('Green compatibility settings default off and reach the server separately',
   assert.match(web,/disableTensorRt:false, freshRuntime:false/);
   for(const name of ['disableTensorRt','freshRuntime']){
     assert.match(read('LocalAgent_v0.2.12/AgentDtos.cs'),new RegExp('public bool '+name));
-    assert.ok(web.includes("simulationCheck('green','"+name+"'"));
+    assert.ok(!web.includes("simulationCheck('green','"+name+"'"));
   }
   assert.match(web,/state.simulationAgent.version !== EXPECTED_AGENT_VERSION/);
 });

@@ -201,7 +201,7 @@ namespace VisionQC.LocalAgent
         public bool originalProcess { get; set; } = true;
         public bool disableTensorRt { get; set; }
         public bool freshRuntime { get; set; }
-        public bool detailedDiagnostics { get; set; } = true;
+        public bool detailedDiagnostics { get; set; } = false;
         public bool disableOptimizedGpuMemory { get; set; }
         public string cellIdCsvPath { get; set; }
         public bool keywordMode { get; set; }

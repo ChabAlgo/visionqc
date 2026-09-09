@@ -64,10 +64,7 @@ foreach ($installation in $installations) {
     if ($LASTEXITCODE -ne 0) { throw "VPDL $($installation.ProductVersion) Worker 빌드 실패" }
     & $msbuild (Join-Path $agentRoot 'GreenRunner\VisionQC.GreenRunner.csproj') /m /t:Rebuild /p:Configuration=Release /p:Platform=x64 ("/p:CognexDir=$($installation.Studio)") ("/p:OutDir=$output")
     if ($LASTEXITCODE -ne 0 -or -not (Test-Path -LiteralPath (Join-Path $output 'VisionQC.GreenRunner.exe'))) { throw "VPDL $($installation.ProductVersion) Green Runner 빌드 실패" }
-    foreach ($diagnosticProject in @('GreenBaseline', 'GreenCompare')) {
-        & $msbuild (Join-Path $agentRoot ($diagnosticProject + '\VisionQC.' + $diagnosticProject + '.csproj')) /m /t:Rebuild /p:Configuration=Release /p:Platform=x64 ("/p:CognexDir=$($installation.Studio)") ("/p:OutDir=$output")
-        if ($LASTEXITCODE -ne 0) { throw "$diagnosticProject 빌드 실패" }
-    }
+    # Comparison harness sources remain for regression only; do not ship diagnostic EXEs.
     if (-not $universalSource) { $universalSource = $output }
     $manifest += [pscustomobject]@{
         productVersion = $installation.ProductVersion

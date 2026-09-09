@@ -5,7 +5,7 @@ test('filename settings use one timestamp field and retain old profile rules', a
   const card=page.locator('.vq43-naming-card');
   await expect(card).toBeVisible();
   await expect(card.locator(':scope > .vq43-naming-rule-grid > fieldset')).toHaveCount(2);
-  await expect(card.locator('[data-naming-field="dateTime"][data-naming-key="mode"]')).toHaveValue('auto');
+  await expect(card.locator('[data-naming-field="dateTime"][data-naming-key="mode"]')).toHaveValue('compact');
   await expect(card.locator('.vq43-naming-example')).toContainText('2026-08-07 07:47:05');
   await card.locator('[data-naming-field="dateTime"][data-naming-key="mode"]').selectOption('token');
   await card.locator('[data-naming-field="dateTime"][data-naming-key="tokenIndex"]').fill('3');

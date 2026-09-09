@@ -322,6 +322,18 @@ namespace VisionQC.LocalAgent
 
             LocalRuntime.Control control = null;
             string signature = BuildRuntimePreloadSignature(req);
+            bool needsPreload;
+            lock (_vpdlSync) {
+                if (_vpdlReservedForSimulation)
+                    return new { ok = false, busy = true, error = "다른 VPDL 작업이 실행 중입니다. 완료 후 AI Suggest를 실행하세요." };
+                needsPreload = !HasCompatiblePreloadedRuntime(req, signature);
+            }
+            // Explicit AI Suggest authorizes this one-image inspection, including loading its runtime.
+            // Independent Green simulation releases its Control; do not leave AI Suggest unusable afterward.
+            if (needsPreload) {
+                var preload = PreloadRuntime(_json.Serialize(req));
+                if (!preload.ok) return new { ok = false, error = preload.error };
+            }
             lock (_vpdlSync)
             {
                 if (_vpdlReservedForSimulation)

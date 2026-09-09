@@ -11,7 +11,7 @@ namespace VisionQC.LocalAgent
 {
     internal static class Program
     {
-        internal const string AgentVersion = "1.3.14";
+        internal const string AgentVersion = "1.3.15";
         internal static VpdlRuntimeCatalog.Installation ActiveVpdlInstallation { get; private set; }
         private static int _requestedExitCode;
         internal static string OriginalProcessPath { get; private set; }
@@ -162,9 +162,17 @@ namespace VisionQC.LocalAgent
                 // present after another Cognex version in the machine PATH.
                 if (!string.IsNullOrWhiteSpace(prefix))
                     Environment.SetEnvironmentVariable("PATH", prefix + ";" + currentPath, EnvironmentVariableTarget.Process);
-                if (Directory.Exists(nativeBin)) SetDllDirectory(nativeBin);
+                // Shared by preload, AI Suggest and Blue/Red/Green/Integrated inference.
+                // SDK dependencies stay on PATH, AFTER System32. Never shadow the driver.
+                if (!SetDllDirectory(null))
+                    throw new System.ComponentModel.Win32Exception(Marshal.GetLastWin32Error(), "DLL search reset failed");
+                AgentDiagnostics.Write("NATIVE_SEARCH", "System-first | Selected SDK PATH=" + prefix);
             }
-            catch { }
+            catch (Exception ex)
+            {
+                AgentDiagnostics.Write("NATIVE_SEARCH_ERROR", ex.ToString());
+                throw;
+            }
         }
     }
 }

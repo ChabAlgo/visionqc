@@ -1,14 +1,14 @@
-# VisionQC v4.7.24 / Local Agent v1.3.14
+# VisionQC v4.7.25 / Local Agent v1.3.15
 
 ## 현재 릴리스 안내
 
-- 설치 파일: [VisionQC Agent 1.3.14](downloads/VisionQC_Agent_Installer_v1.3.14.exe)
-- 오프라인 패키지: [VisionQC Offline 4.7.24](downloads/VisionQC_Offline_v4.7.24.zip)
+- 설치 파일: [VisionQC Agent 1.3.15](downloads/VisionQC_Agent_Installer_v1.3.15.exe)
+- 오프라인 패키지: [VisionQC Offline 4.7.25](downloads/VisionQC_Offline_v4.7.25.zip)
 - SQLite 이력, 대용량 CSV 직접 적재, 파일명 Position 기반 AI Green 검사, 원본/Heatmap Viewer를 제공합니다.
-- 최신 변경·검증·보안 서버 확인: [v4.7.24 릴리스 노트](RELEASE_NOTES_v4.7.24_KR.md). 기존 설계는 `ARCHITECTURE_V4.7.0_KR.md` 참고.
-- 소스 폴더 `LocalAgent_v0.2.12`는 유지된 경로명입니다. 실제 배포 Agent 버전은 1.3.14이며 `RELEASE_MANIFEST.json`과 EXE 파일 버전으로 확인합니다.
+- 최신 변경·검증·보안 서버 확인: [v4.7.25 릴리스 노트](RELEASE_NOTES_v4.7.25_KR.md). 기존 설계는 `ARCHITECTURE_V4.7.0_KR.md` 참고.
+- 소스 폴더 `LocalAgent_v0.2.12`는 유지된 경로명입니다. 실제 배포 Agent 버전은 1.3.15이며 `RELEASE_MANIFEST.json`과 EXE 파일 버전으로 확인합니다.
 
-- 이번 배포: 보안 서버 비교에서 성공한 C의 DLL 검색 방식을 일반 독립 Green 검사에 적용. VPDL 설치본/API 선택과 기존 기능 유지. 비교진단은 실제 NVIDIA DLL 경로·버전을 표시하며 PASS의 중간 예외를 최종 실패와 구분합니다. H100 서버 최종 해결은 새 버전 현장 확인이 필요합니다.
+- 이번 배포: 성공한 DLL 검색 정책을 공통 Worker에도 적용하고 로컬 AI SUGGEST, Red 결과 처리, 엄격한 촬영 날짜 추출, 규칙 저장/불러오기, 날짜별 대시보드 필터를 제공합니다. 비교진단 배포물·실험 옵션은 정리하고 기존 데이터는 유지합니다. Red 실모델과 H100 변경 범위는 현장 확인이 필요합니다.
 
 # 이전 변경 이력
 

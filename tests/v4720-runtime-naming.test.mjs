@@ -5,12 +5,12 @@ const read=p=>readFileSync(new URL('../'+p,import.meta.url),'utf8');
 const web=read('visionqc-extension.js'), server=read('LocalAgent_v0.2.12/AgentServer.cs');
 const helpers=new Function(web.slice(web.indexOf('const defaultNamingProfile'),web.indexOf('const initialNamingProfile'))+';return {defaultNamingProfile,sanitizeNamingProfile};')();
 test('combined timestamp defaults and legacy position migration',()=>{
-  assert.equal(helpers.defaultNamingProfile().dateTime.mode,'auto');
+  assert.equal(helpers.defaultNamingProfile().dateTime.mode,'compact');
   assert.equal(helpers.defaultNamingProfile().dateTime.tokenIndex,3);
   const old=helpers.defaultNamingProfile(); delete old.dateTime; old.date.mode='token'; old.time.mode='token'; old.time.tokenIndex=6;
   const migrated=helpers.sanitizeNamingProfile(old);
   assert.equal(migrated.dateTime.mode,'legacy'); assert.equal(migrated.time.tokenIndex,6);
-  assert.equal(helpers.sanitizeNamingProfile({...old,dateTime:{mode:'auto'}}).dateTime.mode,'auto');
+  assert.equal(helpers.sanitizeNamingProfile({...old,dateTime:{mode:'auto'}}).dateTime.mode,'compact');
   assert.equal(helpers.sanitizeNamingProfile({...old,dateTime:{mode:'token',tokenIndex:3}}).dateTime.tokenIndex,3);
 });
 test('startup and repeated status checks never initialize a GPU control',()=>{
