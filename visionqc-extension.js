@@ -1,7 +1,7 @@
 (() => {
   'use strict';
 
-  const VERSION = '4.7.29';
+  const VERSION = '4.7.30';
   const DEFAULT_POSITION_DEFS = [
     { key:'CA_TOP', name:'CA(TOP)' },
     { key:'AN_TOP', name:'AN(TOP)' },
@@ -29,7 +29,7 @@
   const LOCAL_AGENT_URL = 'http://127.0.0.1:17891';
   const EXPECTED_AGENT_VERSION = '1.3.19';
   const AGENT_INSTALLER_URL = './downloads/VisionQC_Agent_Installer_v1.3.19.exe';
-  const OFFLINE_PACKAGE_URL = './downloads/VisionQC_Offline_v4.7.29.zip';
+  const OFFLINE_PACKAGE_URL = './downloads/VisionQC_Offline_v4.7.30.zip';
   // SQLite에는 사용자가 명시적으로 남기려는 두 종류의 결과만 표시한다.
   // 이전 버전의 단발 검사(single-inspection) 이력은 보존하되 화면 집계에서는 제외한다.
   const PERSISTED_HISTORY_SOURCE_TYPES = ['simulation', 'csv-import', 'csv-file-stream'];
@@ -2604,7 +2604,15 @@
     }).join('')}</div>`;
   }
 
-  // 날짜별 NG율은 건수 높이가 아니라 0~100% 축의 선 그래프로 표시해 즉시 비교할 수 있게 합니다.
+  function historyNgAxisMax(rows) {
+    const peakPercent = Math.max(0, ...rows.map((row) => {
+      const rate = Number(row.ngRate || 0);
+      return (Number.isFinite(rate) ? Math.max(0, Math.min(1, rate)) : 0) * 100;
+    }));
+    return Math.min(100, Math.max(3, Math.ceil(peakPercent + 3))) / 100;
+  }
+
+  // 날짜별 최고 NG율보다 3%p 높은 범위만 표시해 낮은 NG율의 변화도 선명하게 비교합니다.
   function historyDateBars(daily) {
     const rows = (Array.isArray(daily) ? daily : []).slice(-90);
     if (!rows.length) return '<div class="vq43-history-empty">표시할 날짜별 이력이 없습니다.</div>';
@@ -2613,10 +2621,13 @@
     const width = Math.max(520, Math.round(availableWidth * height / renderedHeight), rows.length * 58);
     const left = 28, right = 6, top = 26, bottom = 42;
     const plotW = width - left - right, plotH = height - top - bottom;
+    const axisMax = historyNgAxisMax(rows);
     const x = (index) => left + (rows.length <= 1 ? plotW / 2 : plotW * index / (rows.length - 1));
-    const y = (rate) => top + plotH * (1 - Math.max(0, Math.min(1, Number(rate || 0))));
-    const grid = [0, .2, .4, .6, .8, 1].map((rate) =>
-      '<line x1="' + left + '" x2="' + (width-right) + '" y1="' + y(rate) + '" y2="' + y(rate) + '"/><text x="' + (left-9) + '" y="' + (y(rate)+4) + '" text-anchor="end">' + Math.round(rate*100) + '%</text>').join('');
+    const y = (rate) => top + plotH * (1 - Math.max(0, Math.min(axisMax, Number(rate || 0))) / axisMax);
+    const grid = [0, .25, .5, .75, 1].map((ratio) => {
+      const rate = axisMax * ratio;
+      return '<line x1="' + left + '" x2="' + (width-right) + '" y1="' + y(rate) + '" y2="' + y(rate) + '"/><text x="' + (left-9) + '" y="' + (y(rate)+4) + '" text-anchor="end">' + Number((rate*100).toFixed(2)) + '%</text>';
+    }).join('');
     const points = rows.length === 1
       ? left + ',' + y(rows[0].ngRate) + ' ' + (width-right) + ',' + y(rows[0].ngRate)
       : rows.map((row, index) => x(index) + ',' + y(row.ngRate)).join(' ');
@@ -2694,7 +2705,7 @@
     const historyBusy = state.historyLoading || state.historyFileImport?.running;
     const top = '<div class="vq43-topline"><div><div class="vq43-eyebrow">Persistent Inspection History</div><h1 class="vq43-title">검사 이력 · 날짜별 NG율</h1><p class="vq43-subtitle">Cell ID를 최대 10,000개까지 한 번에 조회하고, DB에 저장된 Position·Tool·Workspace 조건으로 결과를 구분합니다. Simulation 통합 results CSV는 Position·Workspace·Tool 정보를 포함해 대용량 CSV 직접 저장에 그대로 사용할 수 있습니다.</p></div><div class="vq43-top-actions"><button class="vq43-btn vq43-btn-blue" data-vq-action="history-refresh" ' + (state.historyLoading ? 'disabled' : '') + '>' + (state.historyLoading ? '조회 중...' : '조회') + '</button><button class="vq43-btn vq43-btn-green" data-vq-action="history-import-file" ' + (state.historyFileImport?.running ? 'disabled' : '') + '>대용량 CSV 직접 저장</button><button class="vq43-btn vq43-btn-red" data-vq-action="history-delete-all" ' + (historyBusy ? 'disabled' : '') + '>DB 전체 삭제</button></div></div>';
     const kpis = '<section class="vq43-history-kpis"><div><span>검사 Cell·Position</span><strong>' + numberText(data.totalCount) + '</strong></div><div class="ng"><span>NG Cell·Position</span><strong>' + numberText(data.ngCount) + '</strong></div><div><span>고유 Cell·Position</span><strong>' + numberText(data.uniqueCellCount) + '</strong></div><div class="ng"><span>NG율</span><strong>' + rateText(data.totalCount ? data.ngCount / data.totalCount : 0) + '</strong></div></section>';
-    const chart = '<section class="vq43-section vq43-history-chart"><div class="vq43-section-title"><div><h3>날짜별 NG율</h3><p>촬영 시각이 없으면 검사 시각을 사용하며, 각 점에 NG율을 직접 표시합니다.</p></div></div>' + historyDateBars(data.daily) + '</section>';
+    const chart = '<section class="vq43-section vq43-history-chart"><div class="vq43-section-title"><div><h3>날짜별 NG율</h3><p>촬영 시각이 없으면 검사 시각을 사용합니다. 세로축은 최고 NG율에 3%p 여유를 더해 자동 확대되며, 각 점에 NG율을 직접 표시합니다.</p></div></div>' + historyDateBars(data.daily) + '</section>';
     const records = '<section class="vq43-section vq43-history-records"><div class="vq43-section-title"><div><h3>Cell 이미지 탐색</h3><p>원본 FullPath와 검사 때 저장된 Green Tool Heatmap Overlay를 같은 Viewer에서 전환합니다.</p></div><span>' + numberText(data.totalCount) + '건 · ' + page + ' / ' + totalPages + ' 페이지</span></div>' + historyRecordRows(data.items) + '<div class="vq43-history-pagination"><button class="vq43-btn" data-vq-action="history-page" data-vq-history-page="' + (page-1) + '" ' + (page <= 1 ? 'disabled' : '') + '>이전</button><span>' + page + ' / ' + totalPages + '</span><button class="vq43-btn" data-vq-action="history-page" data-vq-history-page="' + (page+1) + '" ' + (page >= totalPages ? 'disabled' : '') + '>다음</button></div></section>';
     const cellDialog = state.historyCellDialogOpen
       ? '<div class="vq43-history-cell-modal"><div class="vq43-history-cell-card"><header><div><strong>Cell ID 다중 검색</strong><small>줄바꿈·쉼표·공백으로 구분 · 최대 10,000개</small></div><button data-vq-action="history-cell-ids-cancel">×</button></header><textarea id="vq43-history-cell-id-draft" placeholder="P163GG23M2100004&#10;P163GG23M2100005">' + escapeHtml(state.historyCellIdDraft) + '</textarea><footer><button class="vq43-btn" data-vq-action="history-cell-ids-clear">초기화</button><button class="vq43-btn vq43-btn-blue" data-vq-action="history-cell-ids-apply">적용</button></footer></div></div>'

@@ -41,7 +41,7 @@ test('download controls point to the versioned single-exe and offline package', 
   assert.match(web, /simulation-agent-download/);
   assert.match(web, /simulation-offline-download/);
   assert.match(web, /VisionQC_Agent_Installer_v1\.3\.19\.exe/);
-  assert.match(web, /VisionQC_Offline_v4\.7\.29\.zip/);
+  assert.match(web, /VisionQC_Offline_v4\.7\.30\.zip/);
   assert.match(web, /function downloadAgentInstaller/);
   assert.match(web, /function downloadOfflinePackage/);
 });

@@ -12,6 +12,9 @@ test('main dashboard is compact and daily NG rate is a direct percentage line ch
   assert.match(js, /applyMainDashboardLayout\(\)/);
   assert.match(js, /vq43-main-dashboard/);
   assert.match(js, /function historyDateBars\(daily\)/);
+  assert.match(js, /function historyNgAxisMax\(rows\)/);
+  assert.match(js, /Math\.ceil\(peakPercent \+ 3\)/);
+  assert.match(js, /Math\.max\(0, Math\.min\(axisMax, Number\(rate \|\| 0\)\)\) \/ axisMax/);
   assert.match(js, /rateText\(rate\)/);
   assert.match(css, /grid-template-columns:minmax\(520px,.92fr\)/);
   assert.match(css, /\.vq43-history-line polyline/);

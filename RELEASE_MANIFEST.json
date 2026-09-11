@@ -1,19 +1,19 @@
 {
-  "releaseTag": "visionqc-v4.7.29-agent-v1.3.19",
-  "webVersion": "4.7.29",
+  "releaseTag": "visionqc-v4.7.30-agent-v1.3.19",
+  "webVersion": "4.7.30",
   "agentVersion": "1.3.19",
   "minimumAgentVersion": "1.3.19",
   "compatibility": {
-    "web": "4.7.29",
+    "web": "4.7.30",
     "agent": "1.3.19"
   },
   "artifacts": {
     "agentInstaller": "downloads/VisionQC_Agent_Installer_v1.3.19.exe",
-    "offlinePackage": "downloads/VisionQC_Offline_v4.7.29.zip",
+    "offlinePackage": "downloads/VisionQC_Offline_v4.7.30.zip",
     "sha256": {
-      "agentInstaller": "8E7D44E057022D4050B22F7DEE3BF1C45E20C966B3A51DA533F10593AD750D28",
-      "offlinePackage": "7789CDF1392079A67D0E0AEFAEE2B255E40629E5DB7B6D29478FCA38E2B94AF4"
+      "agentInstaller": "7AD6EBE5A95DC49FEDE15D8F0FE2A82736E948055D257338DFC4A555CF1CBEE7",
+      "offlinePackage": "6C2F898DBC23046C0C9432AA0EB034C6E832A195D0F8849878D42E84A17ED962"
     }
   },
-  "notes": "Simulation 통합 results CSV에 Position, Workspace, Tool 결과와 원본/처리 경로를 기록하여 SQLite 대용량 직접 저장에 그대로 사용. 확인 토큰과 실행 상태 보호가 적용된 DB 전체 삭제 추가. 기존 CSV 가져오기 호환성과 검사 판정은 유지."
+  "notes": "날짜별 NG율 그래프의 세로축을 최고 NG율보다 3%p 높은 범위로 자동 확대. 최고값 5%에서는 0~8%를 표시하며 기존 집계, 필터, 날짜 선택 동작은 유지."
 }

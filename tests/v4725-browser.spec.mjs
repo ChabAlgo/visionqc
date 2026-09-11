@@ -80,3 +80,14 @@ test('history DB delete requires confirmation and refreshes the empty database',
  page.once('dialog',dialog=>dialog.accept());await button.click();await expect.poll(()=>deleteCalls).toBe(1);
  await expect(page.locator('#vq43-toast')).toContainText('10건을 삭제');
 });
+
+test('daily NG chart expands a five percent peak to a zero-to-eight-percent axis',async({page})=>{
+ await page.goto('/index.html?vqDebug=1&browserRegression=1',{waitUntil:'domcontentloaded'});
+ await page.waitForFunction(()=>window.__VISIONQC_DEBUG__);
+ await page.evaluate(()=>{
+   const rows=Array.from({length:20},(_,index)=>({sourceFileName:'dynamic-axis.csv',sourceRowNumber:index+2,captureTimestamp:'2026-09-10T08:00:00',cellId:`AXIS${String(index).padStart(12,'0')}`,position:'AN(TOP)',totalResult:index===0?'NG':'OK',tools:{}}));
+   window.__VISIONQC_DEBUG__.seedRows(rows);
+ });
+ const labels=await page.locator('.vq43-main-history-dashboard .vq43-history-line > text').allTextContents();
+ expect(labels).toEqual(['0%','2%','4%','6%','8%']);
+});

@@ -249,7 +249,7 @@ body:not(.vq43-theme-light) #vq43-shell input[type="date"]::-webkit-calendar-pic
 body.vq43-theme-light #vq43-shell input[type="date"]{color-scheme:light}
 body.vq43-theme-light #vq43-shell input[type="date"]::-webkit-calendar-picker-indicator{filter:none;opacity:.9;cursor:pointer}
 
-/* v4.7.29: native selects must follow the active theme and remain readable. */
+/* v4.7.30: native selects must follow the active theme and remain readable. */
 #vq43-shell .vq43-naming-actions select{min-width:190px;min-height:42px;border:1px solid #36517a;border-radius:9px;background:#0d1a2d;color:#e5eefb;padding:8px 34px 8px 11px;font:800 14px Inter,Arial,sans-serif;color-scheme:dark}
 #vq43-shell .vq43-naming-actions select option{background:#0d1a2d;color:#e5eefb}
 body.vq43-theme-light #vq43-shell .vq43-naming-actions select{background:#fff!important;color:#172f46!important;border-color:#aac8df!important;color-scheme:light}

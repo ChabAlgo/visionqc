@@ -112,6 +112,7 @@ test('analysis uses the requested left-right order and readable compact light te
 });
 
 test('running Simulation progress remains fixed while moving between menus', async ({ page }) => {
+  await page.route('**/api/status', route => route.fulfill({ status:200, contentType:'application/json', body:JSON.stringify({ ok:true, agentVersion:'1.3.19', vpdlAvailable:true }) }));
   await open(page);
   await page.evaluate(() => window.__VISIONQC_DEBUG__.seedRunningProgress());
   const progress = page.locator('#vq43-global-sim-progress');
