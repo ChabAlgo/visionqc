@@ -1,19 +1,19 @@
 {
-  "releaseTag": "visionqc-v4.7.28-agent-v1.3.18",
-  "webVersion": "4.7.28",
-  "agentVersion": "1.3.18",
-  "minimumAgentVersion": "1.3.18",
+  "releaseTag": "visionqc-v4.7.29-agent-v1.3.19",
+  "webVersion": "4.7.29",
+  "agentVersion": "1.3.19",
+  "minimumAgentVersion": "1.3.19",
   "compatibility": {
-    "web": "4.7.28",
-    "agent": "1.3.18"
+    "web": "4.7.29",
+    "agent": "1.3.19"
   },
   "artifacts": {
-    "agentInstaller": "downloads/VisionQC_Agent_Installer_v1.3.18.exe",
-    "offlinePackage": "downloads/VisionQC_Offline_v4.7.28.zip",
+    "agentInstaller": "downloads/VisionQC_Agent_Installer_v1.3.19.exe",
+    "offlinePackage": "downloads/VisionQC_Offline_v4.7.29.zip",
     "sha256": {
-      "agentInstaller": "1E9D524A5DB3345226061365A13366730AA1E085C26437EB399A62E2ED4C71DB",
-      "offlinePackage": "823154B5821BFC3473C4ECC8C4022B962B0617BAC53E84CDA90078C55054AA63"
+      "agentInstaller": "8E7D44E057022D4050B22F7DEE3BF1C45E20C966B3A51DA533F10593AD750D28",
+      "offlinePackage": "7789CDF1392079A67D0E0AEFAEE2B255E40629E5DB7B6D29478FCA38E2B94AF4"
     }
   },
-  "notes": "Simulation Options 여백과 파일명 규칙 드롭다운 테마 보정. Green Simulation과 AI SUGGEST는 호환되는 사전 로드 Runtime/Workspace를 재사용하며 AI SUGGEST는 자동 재로드하지 않음. 검사 판정/Workspace 파일/CSV/SQLite/이미지 경로 로직은 유지."
+  "notes": "Simulation 통합 results CSV에 Position, Workspace, Tool 결과와 원본/처리 경로를 기록하여 SQLite 대용량 직접 저장에 그대로 사용. 확인 토큰과 실행 상태 보호가 적용된 DB 전체 삭제 추가. 기존 CSV 가져오기 호환성과 검사 판정은 유지."
 }

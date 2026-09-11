@@ -65,11 +65,15 @@ namespace VisionQC.LocalAgent.Services
                             sourceFileName = Path.GetFileName(filePath),
                             sourceRowNumber = sourceRowNumber,
                             fullPath = columns.Value(values, columns.FullPath),
+                            processedPath = columns.Value(values, columns.ProcessedPath),
                             cellId = columns.Value(values, columns.CellId),
                             position = FirstNonEmpty(columns.Value(values, columns.Position), request.defaultPosition),
+                            workspaceType = columns.Value(values, columns.WorkspaceType),
+                            workspaceName = columns.Value(values, columns.WorkspaceName),
+                            workspaceKey = columns.Value(values, columns.WorkspaceKey),
                             totalResult = columns.Value(values, columns.TotalResult),
                             judgement = columns.Value(values, columns.Judgement),
-                            captureTimestamp = CaptureTimestamp(columns.Value(values, columns.Date), columns.Value(values, columns.Time)),
+                            captureTimestamp = FirstNonEmpty(columns.Value(values, columns.CaptureTimestamp), CaptureTimestamp(columns.Value(values, columns.Date), columns.Value(values, columns.Time))),
                             tools = columns.ReadTools(values)
                         };
                         _store.AppendImportedRecord(session, record);
@@ -133,7 +137,7 @@ namespace VisionQC.LocalAgent.Services
 
         private sealed class CsvColumnMap
         {
-            internal int CellId = -1, FullPath = -1, Position = -1, TotalResult = -1, Judgement = -1, Date = -1, Time = -1;
+            internal int CellId = -1, FullPath = -1, ProcessedPath = -1, Position = -1, WorkspaceType = -1, WorkspaceName = -1, WorkspaceKey = -1, TotalResult = -1, Judgement = -1, CaptureTimestamp = -1, Date = -1, Time = -1;
             internal readonly List<ToolColumn> Tools = new List<ToolColumn>();
 
             internal static CsvColumnMap Create(List<string> headers)
@@ -146,9 +150,14 @@ namespace VisionQC.LocalAgent.Services
                     string key = Normalize(header);
                     if (map.CellId < 0 && (key == "cellid" || key == "cell" || key == "id")) { map.CellId = index; continue; }
                     if (map.FullPath < 0 && (key == "fullpath" || key == "imagepath" || key == "filepath" || key == "sourceimagepath" || key == "sourcefilepath")) { map.FullPath = index; continue; }
+                    if (map.ProcessedPath < 0 && (key == "processedpath" || key == "processingpath" || key == "croppath")) { map.ProcessedPath = index; continue; }
                     if (map.Position < 0 && (key == "position" || key == "positionkey")) { map.Position = index; continue; }
+                    if (map.WorkspaceType < 0 && (key == "workspacetype" || key == "inspectionmode" || key == "mode")) { map.WorkspaceType = index; continue; }
+                    if (map.WorkspaceName < 0 && key == "workspacename") { map.WorkspaceName = index; continue; }
+                    if (map.WorkspaceKey < 0 && key == "workspacekey") { map.WorkspaceKey = index; continue; }
                     if (map.TotalResult < 0 && (key == "totalresult" || key == "result" || key == "total")) { map.TotalResult = index; continue; }
                     if (map.Judgement < 0 && (key == "judgement" || key == "judgment")) { map.Judgement = index; continue; }
+                    if (map.CaptureTimestamp < 0 && (key == "capturetimestamp" || key == "capturedatetime")) { map.CaptureTimestamp = index; continue; }
                     if (map.Date < 0 && (key == "date" || key == "capturedate")) { map.Date = index; continue; }
                     if (map.Time < 0 && (key == "time" || key == "capturetime")) { map.Time = index; continue; }
 

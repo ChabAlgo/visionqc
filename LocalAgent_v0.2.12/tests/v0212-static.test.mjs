@@ -15,11 +15,11 @@ const coreServer = read('CoreWorker/CoreAgentServer.cs');
 const coreProject = read('CoreWorker/VisionQC.CoreWorker.csproj');
 const workerBuild = read('BUILD_VPDL_WORKERS.ps1');
 
-test('Agent v1.3.18 version is consistent', () => {
-  assert.match(program, /AgentVersion = "1\.3\.18"/);
-  assert.match(read('CoreWorker/Program.cs'), /AgentVersion = "1\.3\.18"/);
-  assert.match(read('Properties/AssemblyInfo.cs'), /AssemblyVersion\("1\.3\.18\.0"\)/);
-  assert.match(read('BUILD_RELEASE_x64.cmd'), /v1\.3\.18/);
+test('Agent v1.3.19 version is consistent', () => {
+  assert.match(program, /AgentVersion = "1\.3\.19"/);
+  assert.match(read('CoreWorker/Program.cs'), /AgentVersion = "1\.3\.19"/);
+  assert.match(read('Properties/AssemblyInfo.cs'), /AssemblyVersion\("1\.3\.19\.0"\)/);
+  assert.match(read('BUILD_RELEASE_x64.cmd'), /v1\.3\.19/);
 });
 
 test('HTTP server delegates picker lifecycle to the isolated picker service', () => {
@@ -208,6 +208,8 @@ test('large CSV history import and server-side history search stay outside Agent
   assert.match(server, /case "\/api\/history\/search"/);
   assert.match(server, /case "\/api\/history\/import-file\/start"/);
   assert.match(server, /case "\/api\/history\/import-file\/status"/);
+  assert.match(server, /case "\/api\/history\/delete"/);
+  assert.match(read('CoreWorker/CoreAgentServer.cs'), /case "\/api\/history\/delete"/);
   assert.match(server, /new HistoryService\(_historyStore, _json\)/);
   assert.match(server, /VISIONQC_HISTORY_DB_PATH/);
   assert.match(read('VisionQC.LocalAgent.csproj'), /Services\\HistoryService\.cs/);
@@ -219,6 +221,10 @@ test('large CSV history import and server-side history search stay outside Agent
   assert.match(importer, /StreamReader/);
   assert.match(importer, /ReadLine\(\)/);
   assert.match(importer, /CaptureTimestamp/);
+  for (const column of ['ProcessedPath', 'WorkspaceType', 'WorkspaceName', 'WorkspaceKey']) assert.match(importer, new RegExp(column));
+  assert.match(history, /DELETE_ALL_HISTORY/);
+  assert.match(store, /AgentHistoryDeleteResponse DeleteAll/);
+  assert.match(store, /DELETE FROM tool_results;[\s\S]*DELETE FROM images;[\s\S]*DELETE FROM runs;/);
   assert.match(store, /AgentHistorySearchResponse Search/);
   assert.match(store, /BuildSearchWhere/);
   assert.match(store, /BuildDeduplicatedHistoryCte/);

@@ -133,6 +133,7 @@ namespace VisionQC.LocalAgent
                     case "/api/history/search": result = _history.Search(request.Body); break;
                     case "/api/history/import-file/start": result = _history.StartFileImport(request.Body); break;
                     case "/api/history/import-file/status": result = _history.FileImportStatus(request.Body); break;
+                    case "/api/history/delete": result = _history.DeleteAll(request.Body); break;
                     case "/api/agent/unregister":
                         Program.UnregisterProtocol();
                         result = new { ok = true, unregistered = true };

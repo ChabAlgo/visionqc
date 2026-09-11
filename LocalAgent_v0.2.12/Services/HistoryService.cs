@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.IO;
+using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
 using System.Web.Script.Serialization;
@@ -87,6 +88,23 @@ namespace VisionQC.LocalAgent.Services
             catch (Exception ex)
             {
                 return new AgentHistorySearchResponse { ok = false, error = "SQLite 이력 조회 실패: " + ex.Message, databasePath = _store.DatabasePath };
+            }
+        }
+
+        internal AgentHistoryDeleteResponse DeleteAll(string body)
+        {
+            AgentHistoryDeleteRequest request;
+            try { request = _json.Deserialize<AgentHistoryDeleteRequest>(body ?? "{}") ?? new AgentHistoryDeleteRequest(); }
+            catch (Exception ex) { return new AgentHistoryDeleteResponse { ok = false, error = "SQLite 삭제 요청 JSON 오류: " + ex.Message, databasePath = _store.DatabasePath }; }
+            if (!string.Equals((request.confirm ?? "").Trim(), "DELETE_ALL_HISTORY", StringComparison.Ordinal))
+                return new AgentHistoryDeleteResponse { ok = false, error = "검사 이력 전체 삭제 확인 값이 올바르지 않습니다.", databasePath = _store.DatabasePath };
+
+            lock (_sync)
+            {
+                if (_browserImports.Count > 0 || _fileImports.Values.Any(job => job.Running))
+                    return new AgentHistoryDeleteResponse { ok = false, busy = true, error = "CSV 이력 저장이 진행 중입니다. 완료 후 다시 삭제하세요.", databasePath = _store.DatabasePath };
+                try { return _store.DeleteAll(); }
+                catch (Exception ex) { return new AgentHistoryDeleteResponse { ok = false, error = "SQLite 검사 이력 삭제 실패: " + ex.Message, databasePath = _store.DatabasePath }; }
             }
         }
 

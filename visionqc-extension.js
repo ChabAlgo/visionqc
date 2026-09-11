@@ -1,7 +1,7 @@
 (() => {
   'use strict';
 
-  const VERSION = '4.7.28';
+  const VERSION = '4.7.29';
   const DEFAULT_POSITION_DEFS = [
     { key:'CA_TOP', name:'CA(TOP)' },
     { key:'AN_TOP', name:'AN(TOP)' },
@@ -27,9 +27,9 @@
   const NG_POSITION_PREFIX = 'ng-position:';
   const IMG_RE = /\.(png|jpe?g|bmp|gif|webp|tif?f)$/i;
   const LOCAL_AGENT_URL = 'http://127.0.0.1:17891';
-  const EXPECTED_AGENT_VERSION = '1.3.18';
-  const AGENT_INSTALLER_URL = './downloads/VisionQC_Agent_Installer_v1.3.18.exe';
-  const OFFLINE_PACKAGE_URL = './downloads/VisionQC_Offline_v4.7.28.zip';
+  const EXPECTED_AGENT_VERSION = '1.3.19';
+  const AGENT_INSTALLER_URL = './downloads/VisionQC_Agent_Installer_v1.3.19.exe';
+  const OFFLINE_PACKAGE_URL = './downloads/VisionQC_Offline_v4.7.29.zip';
   // SQLite에는 사용자가 명시적으로 남기려는 두 종류의 결과만 표시한다.
   // 이전 버전의 단발 검사(single-inspection) 이력은 보존하되 화면 집계에서는 제외한다.
   const PERSISTED_HISTORY_SOURCE_TYPES = ['simulation', 'csv-import', 'csv-file-stream'];
@@ -729,6 +729,7 @@
     else if (action === 'history-page') changeHistoryPage(Number(control.dataset.vqHistoryPage));
     else if (action === 'history-open-image') openHistoryImage(Number(control.dataset.vqHistoryImageId));
     else if (action === 'history-import-file') chooseHistoryCsvImport();
+    else if (action === 'history-delete-all') deleteHistoryDatabase();
     else if (action === 'history-cell-ids-open') openHistoryCellIdDialog();
     else if (action === 'history-cell-ids-clear') clearHistoryCellIds();
     else if (action === 'history-cell-ids-cancel') closeHistoryCellIdDialog();
@@ -2690,7 +2691,8 @@
       + '<label>Tool 결과<select data-history-field="toolResult">' + historyResultOptions(f.toolResult) + '</select></label>'
       + '<label>Position 결과<select data-history-field="totalResult">' + historyResultOptions(f.totalResult) + '</select></label>'
       + '</section>';
-    const top = '<div class="vq43-topline"><div><div class="vq43-eyebrow">Persistent Inspection History</div><h1 class="vq43-title">검사 이력 · 날짜별 NG율</h1><p class="vq43-subtitle">Cell ID를 최대 10,000개까지 한 번에 조회하고, DB에 저장된 Position·Tool·Workspace 조건으로 결과를 구분합니다.</p></div><div class="vq43-top-actions"><button class="vq43-btn vq43-btn-blue" data-vq-action="history-refresh" ' + (state.historyLoading ? 'disabled' : '') + '>' + (state.historyLoading ? '조회 중...' : '조회') + '</button><button class="vq43-btn vq43-btn-green" data-vq-action="history-import-file" ' + (state.historyFileImport?.running ? 'disabled' : '') + '>대용량 CSV 직접 저장</button></div></div>';
+    const historyBusy = state.historyLoading || state.historyFileImport?.running;
+    const top = '<div class="vq43-topline"><div><div class="vq43-eyebrow">Persistent Inspection History</div><h1 class="vq43-title">검사 이력 · 날짜별 NG율</h1><p class="vq43-subtitle">Cell ID를 최대 10,000개까지 한 번에 조회하고, DB에 저장된 Position·Tool·Workspace 조건으로 결과를 구분합니다. Simulation 통합 results CSV는 Position·Workspace·Tool 정보를 포함해 대용량 CSV 직접 저장에 그대로 사용할 수 있습니다.</p></div><div class="vq43-top-actions"><button class="vq43-btn vq43-btn-blue" data-vq-action="history-refresh" ' + (state.historyLoading ? 'disabled' : '') + '>' + (state.historyLoading ? '조회 중...' : '조회') + '</button><button class="vq43-btn vq43-btn-green" data-vq-action="history-import-file" ' + (state.historyFileImport?.running ? 'disabled' : '') + '>대용량 CSV 직접 저장</button><button class="vq43-btn vq43-btn-red" data-vq-action="history-delete-all" ' + (historyBusy ? 'disabled' : '') + '>DB 전체 삭제</button></div></div>';
     const kpis = '<section class="vq43-history-kpis"><div><span>검사 Cell·Position</span><strong>' + numberText(data.totalCount) + '</strong></div><div class="ng"><span>NG Cell·Position</span><strong>' + numberText(data.ngCount) + '</strong></div><div><span>고유 Cell·Position</span><strong>' + numberText(data.uniqueCellCount) + '</strong></div><div class="ng"><span>NG율</span><strong>' + rateText(data.totalCount ? data.ngCount / data.totalCount : 0) + '</strong></div></section>';
     const chart = '<section class="vq43-section vq43-history-chart"><div class="vq43-section-title"><div><h3>날짜별 NG율</h3><p>촬영 시각이 없으면 검사 시각을 사용하며, 각 점에 NG율을 직접 표시합니다.</p></div></div>' + historyDateBars(data.daily) + '</section>';
     const records = '<section class="vq43-section vq43-history-records"><div class="vq43-section-title"><div><h3>Cell 이미지 탐색</h3><p>원본 FullPath와 검사 때 저장된 Green Tool Heatmap Overlay를 같은 Viewer에서 전환합니다.</p></div><span>' + numberText(data.totalCount) + '건 · ' + page + ' / ' + totalPages + ' 페이지</span></div>' + historyRecordRows(data.items) + '<div class="vq43-history-pagination"><button class="vq43-btn" data-vq-action="history-page" data-vq-history-page="' + (page-1) + '" ' + (page <= 1 ? 'disabled' : '') + '>이전</button><span>' + page + ' / ' + totalPages + '</span><button class="vq43-btn" data-vq-action="history-page" data-vq-history-page="' + (page+1) + '" ' + (page >= totalPages ? 'disabled' : '') + '>다음</button></div></section>';
@@ -2763,6 +2765,21 @@
         }
       } catch (error) { showToast(`대용량 CSV 상태 확인 실패: ${error.message || error}`, true); return; }
     }
+  }
+
+  async function deleteHistoryDatabase() {
+    if (state.simulationAgent.status !== 'connected') return showToast('DB 삭제에는 실행 중인 Local Agent가 필요합니다.', true);
+    if (state.historyFileImport?.running) return showToast('대용량 CSV 저장이 끝난 뒤 삭제하세요.', true);
+    if (!window.confirm('SQLite 검사 이력을 모두 삭제할까요?\n\nSimulation 및 CSV에서 저장한 모든 검사·Tool 결과가 삭제되며 되돌릴 수 없습니다. 원본 이미지와 CSV 파일은 삭제하지 않습니다.')) return;
+    try {
+      const result = await agentFetch('/api/history/delete', { method:'POST', timeout:30000, body:{ confirm:'DELETE_ALL_HISTORY' } });
+      if (!result.ok) throw new Error(result.error || 'SQLite 검사 이력 삭제 실패');
+      state.historyData = null;
+      state.historyLoaded = false;
+      state.historyAttempted = false;
+      showToast(`SQLite 검사 이력 ${numberText(result.deletedImages)}건을 삭제했습니다.`);
+      await refreshHistory(true);
+    } catch (error) { showToast(`SQLite 검사 이력 삭제 실패: ${error.message || error}`, true); }
   }
 
   function openHistoryImage(imageId) {

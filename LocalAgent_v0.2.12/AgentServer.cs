@@ -221,6 +221,9 @@ namespace VisionQC.LocalAgent
                     case "/api/history/import-file/status":
                         result = _history.FileImportStatus(request.Body);
                         break;
+                    case "/api/history/delete":
+                        result = DeleteHistory(request.Body);
+                        break;
                     case "/api/classification/inspect":
                         result = InspectSingleGreenImage(request.Body);
                         break;
@@ -300,6 +303,17 @@ namespace VisionQC.LocalAgent
         private object ImportHistory(string body)
         {
             return _history.ImportBrowserRows(body);
+        }
+
+        private object DeleteHistory(string body)
+        {
+            lock (_sync)
+                if (_simulationTask != null && !_simulationTask.IsCompleted)
+                    return new AgentHistoryDeleteResponse { ok = false, busy = true, error = "Simulation 실행 중에는 검사 이력을 삭제할 수 없습니다.", databasePath = _historyStore.DatabasePath };
+            lock (_historyWriteSync)
+                if (_simulationHistorySession != null)
+                    return new AgentHistoryDeleteResponse { ok = false, busy = true, error = "Simulation 이력 저장이 끝난 뒤 다시 삭제하세요.", databasePath = _historyStore.DatabasePath };
+            return _history.DeleteAll(body);
         }
 
         private object InspectSingleGreenImage(string body)
@@ -1660,6 +1674,8 @@ namespace VisionQC.LocalAgent
             AgentIntegratedOptions iopt = GetIntegratedOptions(req);
             var judgementList = BuildJudgements(opt);
             var tools = BuildTools(opt);
+            string workspaceType = (req.mode ?? (integrated ? "integrated" : "green")).Trim().ToLowerInvariant();
+            var historyWorkspaces = BuildHistoryWorkspaceMap(req);
             var enabledKeysForTools = EnabledPositions(req).Select(p => p.key).Where(x => !string.IsNullOrWhiteSpace(x)).Distinct(StringComparer.OrdinalIgnoreCase).ToList();
             foreach (var tool in tools)
             {
@@ -1668,6 +1684,7 @@ namespace VisionQC.LocalAgent
             }
             var cfg = new AppConfig
             {
+                WorkspaceType = workspaceType,
                 OutputRoot = outputRoot,
                 CellIdCsvPath = integrated ? (iopt.cellIdCsvPath ?? "") : (opt.cellIdCsvPath ?? ""),
                 KeywordMode = integrated ? false : opt.keywordMode,
@@ -1688,24 +1705,31 @@ namespace VisionQC.LocalAgent
                 Tools = tools,
                 Judgements = judgementList
             };
-            cfg.WorkspaceSlots = EnabledPositions(req).Select(p => new WorkspaceSlotConfig
+            cfg.WorkspaceSlots = EnabledPositions(req).Select(p =>
             {
-                Key = p.key,
-                DisplayName = p.displayName,
-                Enabled = true,
-                WorkspacePath = FirstNonEmpty(p.greenWorkspacePath, p.workspacePath),
-                InputRoots = integrated
-                    ? NormalizeImageRoots(null, Path.Combine(cropRoot, p.displayName))
-                    : (opt.keywordMode ? GetGreenKeywordImageRoots(opt) : GetGreenImageRoots(p)),
-                InputRoot = integrated
-                    ? Path.Combine(cropRoot, p.displayName)
-                    : (opt.keywordMode ? FirstNonEmpty(GetGreenKeywordImageRoots(opt).ToArray()) : FirstNonEmpty(GetGreenImageRoots(p).ToArray())),
-                StreamName = FirstNonEmpty(p.greenStreamName, p.streamName, "기본값"),
-                // Keyword가 비어 있으면 공통 입력 Root의 모든 이미지를 이 Position으로 검사한다.
-                // Keyword를 입력한 Position만 해당 문자열이 포함된 파일로 범위를 좁힌다.
-                Keyword = integrated ? "" : FirstNonEmpty(p.greenKeyword, p.keyword),
-                Electrode = p.key != null && p.key.StartsWith("CA", StringComparison.OrdinalIgnoreCase) ? "CA" : "AN",
-                Side = p.key != null && p.key.EndsWith("TOP", StringComparison.OrdinalIgnoreCase) ? "TOP" : "BOT"
+                SqliteRunStore.HistoryWorkspaceValue historyWorkspace = null;
+                historyWorkspaces.TryGetValue(FirstNonEmpty(p.displayName, p.key), out historyWorkspace);
+                return new WorkspaceSlotConfig
+                {
+                    Key = p.key,
+                    DisplayName = p.displayName,
+                    Enabled = true,
+                    WorkspacePath = FirstNonEmpty(p.greenWorkspacePath, p.workspacePath),
+                    HistoryWorkspaceName = historyWorkspace == null ? "" : historyWorkspace.Name,
+                    HistoryWorkspaceKey = historyWorkspace == null ? "" : historyWorkspace.Key,
+                    InputRoots = integrated
+                        ? NormalizeImageRoots(null, Path.Combine(cropRoot, p.displayName))
+                        : (opt.keywordMode ? GetGreenKeywordImageRoots(opt) : GetGreenImageRoots(p)),
+                    InputRoot = integrated
+                        ? Path.Combine(cropRoot, p.displayName)
+                        : (opt.keywordMode ? FirstNonEmpty(GetGreenKeywordImageRoots(opt).ToArray()) : FirstNonEmpty(GetGreenImageRoots(p).ToArray())),
+                    StreamName = FirstNonEmpty(p.greenStreamName, p.streamName, "기본값"),
+                    // Keyword가 비어 있으면 공통 입력 Root의 모든 이미지를 이 Position으로 검사한다.
+                    // Keyword를 입력한 Position만 해당 문자열이 포함된 파일로 범위를 좁힌다.
+                    Keyword = integrated ? "" : FirstNonEmpty(p.greenKeyword, p.keyword),
+                    Electrode = p.key != null && p.key.StartsWith("CA", StringComparison.OrdinalIgnoreCase) ? "CA" : "AN",
+                    Side = p.key != null && p.key.EndsWith("TOP", StringComparison.OrdinalIgnoreCase) ? "TOP" : "BOT"
+                };
             }).ToList();
             return cfg;
         }

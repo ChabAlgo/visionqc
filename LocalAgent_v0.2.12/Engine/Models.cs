@@ -47,6 +47,7 @@ namespace VpdlGreenHeatmapOverlay
 
     internal class AppConfig
     {
+        public string WorkspaceType { get; set; }
         public bool OriginalExecution { get; set; }
         public bool DisableTensorRt { get; set; }
         public bool DetailedDiagnostics { get; set; }
@@ -78,6 +79,8 @@ namespace VpdlGreenHeatmapOverlay
         public string DisplayName { get; set; }
         public bool Enabled { get; set; }
         public string WorkspacePath { get; set; }
+        public string HistoryWorkspaceName { get; set; }
+        public string HistoryWorkspaceKey { get; set; }
         public string InputRoot { get; set; }
         public List<string> InputRoots { get; set; } = new List<string>();
         public string StreamName { get; set; }

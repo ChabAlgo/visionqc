@@ -142,6 +142,47 @@ VALUES (@run_id, @source_type, @mode, @source_name, @started_at_utc, 'running', 
             }
         }
 
+        internal AgentHistoryDeleteResponse DeleteAll()
+        {
+            EnsureSchema();
+            lock (_schemaSync)
+            using (var connection = new SQLiteConnection("Data Source=" + _databasePath + ";Version=3;Foreign Keys=True;"))
+            {
+                connection.Open();
+                long runCount = CountRows(connection, "runs");
+                long imageCount = CountRows(connection, "images");
+                long toolCount = CountRows(connection, "tool_results");
+                using (var transaction = connection.BeginTransaction())
+                using (var command = connection.CreateCommand())
+                {
+                    command.Transaction = transaction;
+                    command.CommandText = @"DELETE FROM tool_results;
+DELETE FROM images;
+DELETE FROM runs;
+DELETE FROM sqlite_sequence WHERE name IN ('images','tool_results');";
+                    command.ExecuteNonQuery();
+                    transaction.Commit();
+                }
+                return new AgentHistoryDeleteResponse
+                {
+                    ok = true,
+                    databasePath = _databasePath,
+                    deletedRuns = runCount,
+                    deletedImages = imageCount,
+                    deletedToolResults = toolCount
+                };
+            }
+        }
+
+        private static long CountRows(SQLiteConnection connection, string tableName)
+        {
+            using (var command = connection.CreateCommand())
+            {
+                command.CommandText = "SELECT COUNT(*) FROM " + tableName + ";";
+                return Convert.ToInt64(command.ExecuteScalar(), CultureInfo.InvariantCulture);
+            }
+        }
+
         private void Append(RunStoreSession session, HistoryRecordValue record)
         {
             if (session == null || session.Closed) throw new InvalidOperationException("닫힌 SQLite 기록 세션입니다.");

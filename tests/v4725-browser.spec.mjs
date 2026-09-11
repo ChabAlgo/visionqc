@@ -66,3 +66,17 @@ test('AI SUGGEST button calls local runtime without API key and keeps labels on 
  await expect(page.locator('#vq43-toast')).toContainText('실패');
  expect(external).toEqual([]);
 });
+
+test('history DB delete requires confirmation and refreshes the empty database',async({page})=>{
+ let deleteCalls=0;
+ await page.addInitScript(()=>localStorage.setItem('visionqc-v43-active-page','history'));
+ await page.route('**/api/status',route=>route.fulfill({status:200,contentType:'application/json',body:JSON.stringify({ok:true,agentVersion:'1.3.19',vpdlAvailable:true,running:false})}));
+ await page.route('**/api/history/search',route=>route.fulfill({status:200,contentType:'application/json',body:JSON.stringify({ok:true,totalCount:0,ngCount:0,uniqueCellCount:0,page:1,pageSize:50,daily:[],items:[],filterOptions:{positions:[],tools:[],workspaceTypes:[],workspaces:[]},databasePath:'C:/Temp/test.sqlite'})}));
+ await page.route('**/api/history/delete',async route=>{deleteCalls++;expect(route.request().postDataJSON()).toEqual({confirm:'DELETE_ALL_HISTORY'});await route.fulfill({status:200,contentType:'application/json',body:JSON.stringify({ok:true,deletedRuns:2,deletedImages:10,deletedToolResults:40,databasePath:'C:/Temp/test.sqlite'})});});
+ await page.goto('/index.html?vqDebug=1&browserRegression=1',{waitUntil:'domcontentloaded'});
+ const button=page.getByRole('button',{name:'DB 전체 삭제'});
+ await expect(button).toBeVisible();
+ page.once('dialog',dialog=>dialog.dismiss());await button.click();expect(deleteCalls).toBe(0);
+ page.once('dialog',dialog=>dialog.accept());await button.click();await expect.poll(()=>deleteCalls).toBe(1);
+ await expect(page.locator('#vq43-toast')).toContainText('10건을 삭제');
+});

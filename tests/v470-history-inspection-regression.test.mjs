@@ -13,14 +13,14 @@ const cleanCss = read('visionqc-v4433-clean.css');
 const html = read('index.html');
 const server = read('LocalAgent_v0.2.12/AgentServer.cs');
 
-test('v4.7.28 Web cache and Agent download targets are declared', () => {
-  assert.match(read('VERSION.txt'), /v4\.7\.28/);
-  assert.match(html, /visionqc-extension\.js\?v=4\.7\.28/);
+test('v4.7.29 Web cache and Agent download targets are declared', () => {
+  assert.match(read('VERSION.txt'), /v4\.7\.29/);
+  assert.match(html, /visionqc-extension\.js\?v=4\.7\.29/);
   assert.match(html, /visionqc-v470\.css\?v=4\.7\.9/);
-  assert.match(js, /const VERSION = '4\.7\.28'/);
-  assert.match(js, /const EXPECTED_AGENT_VERSION = '1\.3\.18'/);
-  assert.match(js, /VisionQC_Agent_Installer_v1\.3\.18\.exe/);
-  assert.match(js, /VisionQC_Offline_v4\.7\.28\.zip/);
+  assert.match(js, /const VERSION = '4\.7\.29'/);
+  assert.match(js, /const EXPECTED_AGENT_VERSION = '1\.3\.19'/);
+  assert.match(js, /VisionQC_Agent_Installer_v1\.3\.19\.exe/);
+  assert.match(js, /VisionQC_Offline_v4\.7\.29\.zip/);
 });
 
 test('persistent History page has filters, server-side pagination, daily NG chart and image viewer', () => {
@@ -62,6 +62,20 @@ test('Simulation Options padding and naming select colors are explicit in both t
   assert.match(cleanCss, /\.vq43-sim-options-scroll\{[^}]*padding:14px 16px 18px!important/);
   assert.match(cleanCss, /\.vq43-naming-actions select\{[^}]*background:#0d1a2d;[^}]*color:#e5eefb/);
   assert.match(cleanCss, /vq43-theme-light[^\n]*\.vq43-naming-actions select\{[^}]*background:#fff!important;[^}]*color:#172f46!important/);
+});
+
+test('Simulation results CSV is directly importable with Workspace metadata and history can be cleared explicitly', () => {
+  const green = read('LocalAgent_v0.2.12/Engine/GreenOverlayProcessor.cs');
+  const importer = read('LocalAgent_v0.2.12/Services/CsvHistoryFileImporter.cs');
+  assert.match(green, /"CaptureTimestamp"[\s\S]*"ProcessedPath"[\s\S]*"WorkspaceType"[\s\S]*"WorkspaceName"[\s\S]*"WorkspaceKey"/);
+  assert.match(green, /integratedToolNames[\s\S]*WriteIntegratedSummaryHeader\(integratedToolNames/);
+  assert.match(green, /WriteIntegratedSummaryRow\(List<string> toolNames[\s\S]*WriteRow\(toolNames, csv, result\)/);
+  assert.match(importer, /workspaceType = columns\.Value\(values, columns\.WorkspaceType\)/);
+  assert.match(importer, /workspaceName = columns\.Value\(values, columns\.WorkspaceName\)/);
+  assert.match(importer, /workspaceKey = columns\.Value\(values, columns\.WorkspaceKey\)/);
+  assert.match(js, /data-vq-action="history-delete-all"/);
+  assert.match(js, /\/api\/history\/delete/);
+  assert.match(js, /confirm:'DELETE_ALL_HISTORY'/);
 });
 
 test('settings uses an SVG cog icon rather than an emoji glyph', () => {

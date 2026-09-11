@@ -61,6 +61,9 @@ namespace VpdlGreenHeatmapOverlay
             public string ProcessingPath { get; set; }
             public string CellId { get; set; }
             public string Position { get; set; }
+            public string WorkspaceType { get; set; }
+            public string WorkspaceName { get; set; }
+            public string WorkspaceKey { get; set; }
             public Dictionary<string, ToolResult> ToolResults { get; set; } = new Dictionary<string, ToolResult>(StringComparer.OrdinalIgnoreCase);
         }
 
@@ -137,6 +140,7 @@ namespace VpdlGreenHeatmapOverlay
                     kv => kv.Key,
                     kv => GetDistinctToolNames(kv.Value.Tools),
                     StringComparer.OrdinalIgnoreCase);
+                var integratedToolNames = GetDistinctToolNames(contexts.Values.SelectMany(value => value.Tools));
 
                 var slotWriters = new Dictionary<string, StreamWriter>(StringComparer.OrdinalIgnoreCase);
                 try
@@ -152,7 +156,7 @@ namespace VpdlGreenHeatmapOverlay
 
                     using (var integratedCsv = new StreamWriter(integratedCsvPath, false, new System.Text.UTF8Encoding(true)))
                     {
-                        WriteIntegratedSummaryHeader(integratedCsv);
+                        WriteIntegratedSummaryHeader(integratedToolNames, integratedCsv);
                         int idx = 0;
                         foreach (var job in imageJobs)
                         {
@@ -174,7 +178,7 @@ namespace VpdlGreenHeatmapOverlay
                                 LiveRecord = ToLiveRecord(one)
                             });
 
-                            WriteIntegratedSummaryRow(integratedCsv, one);
+                            WriteIntegratedSummaryRow(integratedToolNames, integratedCsv, one);
                             UpdateCellPositionSummary(cellPositionSummary, cellPositionOrder, one);
                             StreamWriter slotWriter;
                             if (slotWriters.TryGetValue(job.WorkspaceKey, out slotWriter))
@@ -294,7 +298,7 @@ namespace VpdlGreenHeatmapOverlay
 
         private static void WriteHeader(List<string> toolNames, StreamWriter csv)
         {
-            var header = new List<string> { "Date", "Time", "FileName", "FullPath", "Cell ID", "Position" };
+            var header = new List<string> { "Date", "Time", "CaptureTimestamp", "FileName", "FullPath", "ProcessedPath", "Cell ID", "Position", "WorkspaceType", "WorkspaceName", "WorkspaceKey" };
             foreach (var toolName in toolNames)
             {
                 header.Add(toolName + "_result");
@@ -307,7 +311,7 @@ namespace VpdlGreenHeatmapOverlay
 
         private static void WriteRow(List<string> toolNames, StreamWriter csv, ProcessOneResult result)
         {
-            var row = new List<string> { result.DateText, result.TimeText, result.FileName, result.FullPath, result.CellId, result.Position };
+            var row = new List<string> { result.DateText, result.TimeText, result.CaptureTimestamp, result.FileName, result.FullPath, result.ProcessingPath, result.CellId, result.Position, result.WorkspaceType, result.WorkspaceName, result.WorkspaceKey };
             foreach (var toolName in toolNames)
             {
                 ToolResult tr;
@@ -315,6 +319,11 @@ namespace VpdlGreenHeatmapOverlay
                 {
                     row.Add(tr.Decision);
                     row.Add(double.IsNaN(tr.Score) ? "" : tr.Score.ToString("0.######"));
+                }
+                else
+                {
+                    row.Add("");
+                    row.Add("");
                 }
             }
             row.Add(result.IsTotalOk ? "OK" : "NG");
@@ -392,30 +401,14 @@ namespace VpdlGreenHeatmapOverlay
             }
         }
 
-        private static void WriteIntegratedSummaryHeader(StreamWriter csv)
+        private static void WriteIntegratedSummaryHeader(List<string> toolNames, StreamWriter csv)
         {
-            var header = new List<string>
-            {
-                "Date", "Time", "FileName", "FullPath", "ProcessedPath", "Cell ID", "Position", "total_result", "Judgement"
-            };
-            csv.WriteLine(string.Join(",", header.Select(EscapeCsv)));
+            WriteHeader(toolNames, csv);
         }
 
-        private static void WriteIntegratedSummaryRow(StreamWriter csv, ProcessOneResult result)
+        private static void WriteIntegratedSummaryRow(List<string> toolNames, StreamWriter csv, ProcessOneResult result)
         {
-            var row = new List<string>
-            {
-                result.DateText,
-                result.TimeText,
-                result.FileName,
-                result.FullPath,
-                result.ProcessingPath,
-                result.CellId,
-                result.Position,
-                result.IsTotalOk ? "OK" : "NG",
-                result.Judgement
-            };
-            csv.WriteLine(string.Join(",", row.Select(EscapeCsv)));
+            WriteRow(toolNames, csv, result);
         }
 
         private static void UpdateCellPositionSummary(Dictionary<string, Dictionary<string, string>> summary, List<string> order, ProcessOneResult result)
@@ -586,7 +579,10 @@ namespace VpdlGreenHeatmapOverlay
                 FullPath = sourceFullPath,
                 ProcessingPath = job.ImagePath,
                 CellId = cellId,
-                Position = context.Slot.DisplayName
+                Position = context.Slot.DisplayName,
+                WorkspaceType = config.WorkspaceType,
+                WorkspaceName = context.Slot.HistoryWorkspaceName,
+                WorkspaceKey = context.Slot.HistoryWorkspaceKey
             };
 
             AgentDiagnostics.Operation("Green image load | Position=" + context.Slot.DisplayName + " | Image=" + job.ImagePath);
@@ -786,6 +782,7 @@ namespace VpdlGreenHeatmapOverlay
             private readonly bool _ownsControl;
             private readonly Dictionary<string, WorkspaceContext> _contexts;
             private readonly Dictionary<string, List<string>> _activeSlotToolNames;
+            private readonly List<string> _integratedToolNames;
             private readonly Dictionary<string, StreamWriter> _slotWriters = new Dictionary<string, StreamWriter>(StringComparer.OrdinalIgnoreCase);
             private readonly Dictionary<string, string> _slotCsvPaths = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
             private readonly StreamWriter _integratedCsv;
@@ -852,6 +849,7 @@ namespace VpdlGreenHeatmapOverlay
                     kv => kv.Key,
                     kv => GetDistinctToolNames(kv.Value.Tools),
                     StringComparer.OrdinalIgnoreCase);
+                _integratedToolNames = GetDistinctToolNames(_contexts.Values.SelectMany(value => value.Tools));
 
                 _judgementPriority = _config.Judgements
                     .GroupBy(j => j.Name, StringComparer.OrdinalIgnoreCase)
@@ -879,7 +877,7 @@ namespace VpdlGreenHeatmapOverlay
                 }
 
                 _integratedCsv = new StreamWriter(Path.Combine(_config.OutputRoot, string.Format("results_{0}.csv", _runStamp)), false, new System.Text.UTF8Encoding(true));
-                WriteIntegratedSummaryHeader(_integratedCsv);
+                WriteIntegratedSummaryHeader(_integratedToolNames, _integratedCsv);
             }
 
             internal bool ProcessImage(string slotKey, string imagePath, string sourceFullPath, string inputRoot, CancellationToken token)
@@ -917,7 +915,7 @@ namespace VpdlGreenHeatmapOverlay
                 if (!_countByJudgement.ContainsKey(one.Judgement)) _countByJudgement[one.Judgement] = 0;
                 _countByJudgement[one.Judgement]++;
 
-                WriteIntegratedSummaryRow(_integratedCsv, one);
+                WriteIntegratedSummaryRow(_integratedToolNames, _integratedCsv, one);
                 UpdateCellPositionSummary(_cellPositionSummary, _cellPositionOrder, one);
                 StreamWriter slotWriter;
                 if (_slotWriters.TryGetValue(slotKey, out slotWriter))

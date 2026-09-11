@@ -1,5 +1,15 @@
 # VisionQC 변경 이력
 
+## v4.7.29 / Agent 1.3.19
+
+- 통합 `results_*.csv`를 SQLite 대용량 직접 저장용 표준 CSV로 확장.
+- 각 행에 CaptureTimestamp, ProcessedPath, 검사 모드, Workspace 이름·키를 기록.
+- Position별로 서로 다른 Tool을 사용해도 통합 CSV에 전체 Tool 결과·Score 열을 보존.
+- 대용량 CSV 가져오기가 Workspace와 처리 이미지 경로를 읽어 DB 필터에 그대로 저장.
+- 검사 이력 화면에 이중 확인이 적용된 `DB 전체 삭제` 기능 추가.
+- Simulation 또는 CSV 저장 중에는 DB 삭제를 거부하고 원본 이미지·CSV는 삭제하지 않음.
+- 상세 검증·한계: RELEASE_NOTES_v4.7.29_KR.md.
+
 ## v4.7.28 / Agent 1.3.18
 
 - Simulation Options 헤더와 본문의 안쪽 여백을 복구.

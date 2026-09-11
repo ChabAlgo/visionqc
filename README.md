@@ -1,14 +1,14 @@
-# VisionQC v4.7.28 / Local Agent v1.3.18
+# VisionQC v4.7.29 / Local Agent v1.3.19
 
 ## 현재 릴리스 안내
 
-- 설치 파일: [VisionQC Agent 1.3.18](downloads/VisionQC_Agent_Installer_v1.3.18.exe)
-- 오프라인 패키지: [VisionQC Offline 4.7.28](downloads/VisionQC_Offline_v4.7.28.zip)
+- 설치 파일: [VisionQC Agent 1.3.19](downloads/VisionQC_Agent_Installer_v1.3.19.exe)
+- 오프라인 패키지: [VisionQC Offline 4.7.29](downloads/VisionQC_Offline_v4.7.29.zip)
 - SQLite 이력, 대용량 CSV 직접 적재, 파일명 Position 기반 AI Green 검사, 원본/Heatmap Viewer를 제공합니다.
-- 최신 변경·검증: [v4.7.28 릴리스 노트](RELEASE_NOTES_v4.7.28_KR.md). 기존 설계는 `ARCHITECTURE_V4.7.0_KR.md` 참고.
-- 소스 폴더 `LocalAgent_v0.2.12`는 유지된 경로명입니다. 실제 배포 Agent 버전은 1.3.18이며 `RELEASE_MANIFEST.json`과 EXE 파일 버전으로 확인합니다.
+- 최신 변경·검증: [v4.7.29 릴리스 노트](RELEASE_NOTES_v4.7.29_KR.md). 기존 설계는 `ARCHITECTURE_V4.7.0_KR.md` 참고.
+- 소스 폴더 `LocalAgent_v0.2.12`는 유지된 경로명입니다. 실제 배포 Agent 버전은 1.3.19이며 `RELEASE_MANIFEST.json`과 EXE 파일 버전으로 확인합니다.
 
-- 이번 배포: Simulation Options 여백과 규칙 드롭다운 테마를 보정했습니다. Green Simulation과 AI SUGGEST는 Runtime File Load로 준비한 Workspace를 재사용하며 자동으로 다시 로드하지 않습니다.
+- 이번 배포: Simulation 통합 CSV를 Position·Workspace·Tool 정보가 포함된 SQLite 직접 저장 형식으로 확장했습니다. 검사 이력 화면에서 DB 전체 삭제도 할 수 있습니다.
 
 # 이전 변경 이력
 

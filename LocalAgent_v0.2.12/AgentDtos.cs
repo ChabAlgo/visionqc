@@ -116,6 +116,22 @@ namespace VisionQC.LocalAgent
         public int pageSize { get; set; } = 50;
     }
 
+    public sealed class AgentHistoryDeleteRequest
+    {
+        public string confirm { get; set; }
+    }
+
+    public sealed class AgentHistoryDeleteResponse
+    {
+        public bool ok { get; set; }
+        public bool busy { get; set; }
+        public string error { get; set; }
+        public string databasePath { get; set; }
+        public long deletedRuns { get; set; }
+        public long deletedImages { get; set; }
+        public long deletedToolResults { get; set; }
+    }
+
     public sealed class AgentHistorySearchResponse
     {
         public bool ok { get; set; }
