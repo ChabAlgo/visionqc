@@ -1,19 +1,19 @@
 {
-  "releaseTag": "visionqc-v4.7.25-agent-v1.3.15",
-  "webVersion": "4.7.25",
-  "agentVersion": "1.3.15",
-  "minimumAgentVersion": "1.3.15",
+  "releaseTag": "visionqc-v4.7.26-agent-v1.3.16",
+  "webVersion": "4.7.26",
+  "agentVersion": "1.3.16",
+  "minimumAgentVersion": "1.3.16",
   "compatibility": {
-    "web": "4.7.25",
-    "agent": "1.3.15"
+    "web": "4.7.26",
+    "agent": "1.3.16"
   },
   "artifacts": {
-    "agentInstaller": "downloads/VisionQC_Agent_Installer_v1.3.15.exe",
-    "offlinePackage": "downloads/VisionQC_Offline_v4.7.25.zip",
+    "agentInstaller": "downloads/VisionQC_Agent_Installer_v1.3.16.exe",
+    "offlinePackage": "downloads/VisionQC_Offline_v4.7.26.zip",
     "sha256": {
-      "agentInstaller": "95ABB39F4D2A136703ABB7618A69FA71B79FF2E5E215696C2BD30343879A1FEA",
-      "offlinePackage": "4651C7597EE75F5B20ED7D13EA2F0EED3DA719EE13692AF4096531A7A8AC7757"
+      "agentInstaller": "F29F2D4210881E6BE889ADD0EE803D4D3609F4220AFAF4F28368E0E44760CC4E",
+      "offlinePackage": "B53777CD844239B7A913DC9D1528377A90ED43EB1A0EB0C1C6BEFB06498B0DB9"
     }
   },
-  "notes": "공통 DLL 검색 수정, 로컬 AI SUGGEST 자동 Runtime 준비, Red 결과 분리, 엄격한 촬영 날짜/규칙 불러오기/날짜별 대시보드. 비교진단 배포물과 실험 옵션 정리. 정적 125·브라우저 33·C#100 통과. 실제 4.0/4.2 Green·AI 및 4.0 Blue/통합/Universal 확인. 원본 판정 일치, 최초 Score 최대차 0.000898로 엄격 점수 기준은 미통과; 현장 Red/H100 재확인 필요."
+  "notes": "파일명 규칙 JSON 내보내기/가져오기. 전용 형식과 스키마 및 값 검증, 잘못된 파일은 현재 규칙과 저장 목록을 변경하지 않음. Agent 검사 엔진과 판정/Workspace/CSV/SQLite/이미지 경로 로직은 변경하지 않음."
 }

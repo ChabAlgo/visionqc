@@ -1,7 +1,7 @@
 (() => {
   'use strict';
 
-  const VERSION = '4.7.25';
+  const VERSION = '4.7.26';
   const DEFAULT_POSITION_DEFS = [
     { key:'CA_TOP', name:'CA(TOP)' },
     { key:'AN_TOP', name:'AN(TOP)' },
@@ -22,12 +22,14 @@
   const THEME_KEY = 'visionqc-v472-theme';
   const POSITION_CONFIG_KEY = 'visionqc-v4421-position-config';
   const NAMING_PROFILE_KEY = 'visionqc-v450-naming-profile';
+  const NAMING_PROFILE_FILE_FORMAT = 'visionqc-naming-profile';
+  const NAMING_PROFILE_FILE_SCHEMA_VERSION = 1;
   const NG_POSITION_PREFIX = 'ng-position:';
   const IMG_RE = /\.(png|jpe?g|bmp|gif|webp|tif?f)$/i;
   const LOCAL_AGENT_URL = 'http://127.0.0.1:17891';
-  const EXPECTED_AGENT_VERSION = '1.3.15';
-  const AGENT_INSTALLER_URL = './downloads/VisionQC_Agent_Installer_v1.3.15.exe';
-  const OFFLINE_PACKAGE_URL = './downloads/VisionQC_Offline_v4.7.25.zip';
+  const EXPECTED_AGENT_VERSION = '1.3.16';
+  const AGENT_INSTALLER_URL = './downloads/VisionQC_Agent_Installer_v1.3.16.exe';
+  const OFFLINE_PACKAGE_URL = './downloads/VisionQC_Offline_v4.7.26.zip';
   // SQLite에는 사용자가 명시적으로 남기려는 두 종류의 결과만 표시한다.
   // 이전 버전의 단발 검사(single-inspection) 이력은 보존하되 화면 집계에서는 제외한다.
   const PERSISTED_HISTORY_SOURCE_TYPES = ['simulation', 'csv-import', 'csv-file-stream'];
@@ -695,6 +697,8 @@
     else if (action === 'position-remove') removeCustomPosition(control.dataset.positionKey || '');
     else if (action === 'naming-profile-save') saveNamingProfileFromSettings();
     else if (action === 'naming-profile-load') loadNamingProfileFromSettings();
+    else if (action === 'naming-profile-export') exportNamingProfileFromSettings();
+    else if (action === 'naming-profile-import') $('#vq43-naming-import')?.click();
     else if (action === 'naming-profile-preview') previewNamingProfile();
     else if (action === 'choose-ng-position') chooseNgPositionFolder(control.closest('[data-vq-position]')?.dataset.vqPosition);
     else if (action === 'remove-ng-position') removeNgPositionFolder(control.closest('[data-vq-position]')?.dataset.vqPosition);
@@ -889,6 +893,8 @@
         if (input) input.disabled = select.value !== 'token';
       };
     });
+    const namingImport = $('#vq43-naming-import', shell);
+    if (namingImport) namingImport.onchange = () => importNamingProfileFile(namingImport);
     $$('.vq43-history-point', shell).forEach(point => {
       point.onkeydown = event => { if (event.key === 'Enter' || event.key === ' ') { event.preventDefault(); runAction(point); } };
     });
@@ -5056,7 +5062,7 @@
 
   function namingProfileCardHtml() {
     const profile = state.namingProfile;
-    return `<section class="vq43-settings-card vq43-naming-card"><div class="vq43-settings-title"><span class="vq43-settings-icon cyan">${railIconSvg('settings')}</span><div><h3>0. 파일명 규칙</h3><p>공정별 이미지 이름에서 Cell ID와 촬영 날짜·시간을 추출합니다. YYYYMMDDHHMMSS 한 토큰 또는 기존 YYYYMMDD_HHMMSS 형식을 선택합니다. 날짜를 찾을 수 없으면 미인식으로 표시합니다. 토큰 번호는 사람이 읽는 1부터 시작합니다.</p></div></div><div class="vq43-naming-profile-head"><label><span>규칙 이름</span><input id="vq43-naming-name" value="${escapeHtml(profile.name)}" maxlength="80"></label><label><span>구분자</span><input id="vq43-naming-delimiter" value="${escapeHtml(profile.delimiter)}" maxlength="8"></label><label><span>규칙 버전</span><input id="vq43-naming-version" type="number" min="1" max="9999" value="${escapeHtml(profile.version)}"></label></div><div class="vq43-naming-rule-grid">${namingRuleField('Cell ID', 'cellId', profile.cellId)}${namingRuleField('날짜·시간', 'dateTime', profile.dateTime, { hint:'선택한 형식만 읽습니다. 위치 지정은 날짜·시간 한 토큰 또는 연속된 날짜와 시간 토큰을 사용합니다. 예: 20260807074705 → 2026-08-07 07:47:05' })}</div><details class="vq43-naming-legacy"><summary>이전 분리형 위치 규칙 (기존 설정 유지용)</summary><p>날짜·시간 추출 방식을 ‘이전 날짜/시간 규칙 유지’로 선택할 때 적용합니다.</p><div class="vq43-naming-rule-grid">${namingRuleField('날짜 (이전 규칙)', 'date', profile.date)}${namingRuleField('시간 (이전 규칙)', 'time', profile.time)}</div></details><div class="vq43-naming-example">예: <code>TAB_J1037G87P611903999_20260807074705_CRACK AN(TOP)_BLUTOL.jpg</code> → 날짜·시간 2026-08-07 07:47:05 · Cell ID는 설정한 추출 길이를 따릅니다.</div><label class="vq43-naming-samples"><span>검증할 파일명 (줄마다 하나)</span><textarea id="vq43-naming-samples" rows="4" placeholder="TAB_J1037G87P611903999_20260807074705_CRACK AN(TOP)_BLUTOL.jpg"></textarea></label><div class="vq43-naming-actions"><select id="vq43-naming-saved" aria-label="저장된 규칙">${savedNamingProfiles().map((item,index)=>'<option value="'+index+'">'+escapeHtml(item.name)+' · v'+item.version+'</option>').join('')}</select><button class="vq43-btn" data-vq-action="naming-profile-load">규칙 불러오기</button><button class="vq43-btn" data-vq-action="naming-profile-save">규칙 저장</button><button class="vq43-btn vq43-btn-blue" data-vq-action="naming-profile-preview">Agent로 미리보기</button></div>${namingPreviewHtml()}</section>`;
+    return `<section class="vq43-settings-card vq43-naming-card"><div class="vq43-settings-title"><span class="vq43-settings-icon cyan">${railIconSvg('settings')}</span><div><h3>0. 파일명 규칙</h3><p>공정별 이미지 이름에서 Cell ID와 촬영 날짜·시간을 추출합니다. YYYYMMDDHHMMSS 한 토큰 또는 기존 YYYYMMDD_HHMMSS 형식을 선택합니다. 날짜를 찾을 수 없으면 미인식으로 표시합니다. 토큰 번호는 사람이 읽는 1부터 시작합니다.</p></div></div><div class="vq43-naming-profile-head"><label><span>규칙 이름</span><input id="vq43-naming-name" value="${escapeHtml(profile.name)}" maxlength="80"></label><label><span>구분자</span><input id="vq43-naming-delimiter" value="${escapeHtml(profile.delimiter)}" maxlength="8"></label><label><span>규칙 버전</span><input id="vq43-naming-version" type="number" min="1" max="9999" value="${escapeHtml(profile.version)}"></label></div><div class="vq43-naming-rule-grid">${namingRuleField('Cell ID', 'cellId', profile.cellId)}${namingRuleField('날짜·시간', 'dateTime', profile.dateTime, { hint:'선택한 형식만 읽습니다. 위치 지정은 날짜·시간 한 토큰 또는 연속된 날짜와 시간 토큰을 사용합니다. 예: 20260807074705 → 2026-08-07 07:47:05' })}</div><details class="vq43-naming-legacy"><summary>이전 분리형 위치 규칙 (기존 설정 유지용)</summary><p>날짜·시간 추출 방식을 ‘이전 날짜/시간 규칙 유지’로 선택할 때 적용합니다.</p><div class="vq43-naming-rule-grid">${namingRuleField('날짜 (이전 규칙)', 'date', profile.date)}${namingRuleField('시간 (이전 규칙)', 'time', profile.time)}</div></details><div class="vq43-naming-example">예: <code>TAB_J1037G87P611903999_20260807074705_CRACK AN(TOP)_BLUTOL.jpg</code> → 날짜·시간 2026-08-07 07:47:05 · Cell ID는 설정한 추출 길이를 따릅니다.</div><label class="vq43-naming-samples"><span>검증할 파일명 (줄마다 하나)</span><textarea id="vq43-naming-samples" rows="4" placeholder="TAB_J1037G87P611903999_20260807074705_CRACK AN(TOP)_BLUTOL.jpg"></textarea></label><div class="vq43-naming-actions"><select id="vq43-naming-saved" aria-label="저장된 규칙">${savedNamingProfiles().map((item,index)=>'<option value="'+index+'">'+escapeHtml(item.name)+' · v'+item.version+'</option>').join('')}</select><button class="vq43-btn" data-vq-action="naming-profile-load">규칙 불러오기</button><button class="vq43-btn" data-vq-action="naming-profile-save">규칙 저장</button><button class="vq43-btn" data-vq-action="naming-profile-export">JSON 내보내기</button><button class="vq43-btn" data-vq-action="naming-profile-import">JSON 가져오기</button><input id="vq43-naming-import" type="file" accept="application/json,.json" hidden><button class="vq43-btn vq43-btn-blue" data-vq-action="naming-profile-preview">Agent로 미리보기</button></div><p class="vq43-naming-transfer-note">가져온 규칙은 현재 규칙으로 적용됩니다. 이름별 목록에 보관하려면 규칙 저장을 누르세요.</p>${namingPreviewHtml()}</section>`;
   }
 
 
@@ -5106,6 +5112,78 @@
     safeStorageSet(NAMING_PROFILE_KEY, JSON.stringify(state.namingProfile));
     if (!silent) showToast('파일명 규칙을 이 브라우저에 저장했습니다.');
     renderSettings(); bindPageControls();
+  }
+
+  function namingProfileExportPayload(profile) {
+    return {
+      format:NAMING_PROFILE_FILE_FORMAT,
+      schemaVersion:NAMING_PROFILE_FILE_SCHEMA_VERSION,
+      exportedAt:new Date().toISOString(),
+      profile:sanitizeNamingProfile(profile)
+    };
+  }
+
+  function assertNamingProfileImport(value) {
+    if (!value || typeof value !== 'object' || Array.isArray(value)) throw new Error('JSON 최상위 형식이 올바르지 않습니다.');
+    if (value.format !== NAMING_PROFILE_FILE_FORMAT) throw new Error('VisionQC 파일명 규칙 JSON이 아닙니다.');
+    if (value.schemaVersion !== NAMING_PROFILE_FILE_SCHEMA_VERSION) throw new Error(`지원하지 않는 규칙 파일 버전입니다: ${value.schemaVersion ?? '-'}`);
+    const profile = value.profile;
+    if (!profile || typeof profile !== 'object' || Array.isArray(profile)) throw new Error('규칙 데이터가 없습니다.');
+    if (typeof profile.name !== 'string' || !profile.name.trim() || profile.name.length > 80) throw new Error('규칙 이름은 1~80자로 입력하세요.');
+    if (typeof profile.delimiter !== 'string' || !profile.delimiter || profile.delimiter.length > 8) throw new Error('구분자는 1~8자로 입력하세요.');
+    const integerInRange = (value, min, max) => Number.isInteger(value) && value >= min && value <= max;
+    if (!integerInRange(profile.version, 1, 9999)) throw new Error('규칙 버전은 1~9999의 정수여야 합니다.');
+    for (const key of ['cellId','dateTime','date','time']) {
+      if (!profile[key] || typeof profile[key] !== 'object' || Array.isArray(profile[key])) throw new Error(`${key} 규칙이 없습니다.`);
+    }
+    if (!['auto','token'].includes(profile.cellId.mode)) throw new Error('Cell ID 추출 방식이 올바르지 않습니다.');
+    if (!['compact','split','token','legacy'].includes(profile.dateTime.mode)) throw new Error('날짜·시간 추출 방식이 올바르지 않습니다.');
+    if (!['auto','token'].includes(profile.date.mode) || !['auto','token'].includes(profile.time.mode)) throw new Error('이전 날짜·시간 추출 방식이 올바르지 않습니다.');
+    for (const key of ['cellId','dateTime','date','time']) {
+      if (!integerInRange(profile[key].tokenIndex, 1, 999)) throw new Error(`${key} 토큰 번호는 1~999의 정수여야 합니다.`);
+    }
+    if (!integerInRange(profile.cellId.candidateLength, 1, 256) || !integerInRange(profile.cellId.extractLength, 1, 256)) throw new Error('Cell ID 길이는 1~256의 정수여야 합니다.');
+    if (profile.cellId.extractLength > profile.cellId.candidateLength) throw new Error('Cell ID 추출 길이는 후보 전체 길이보다 클 수 없습니다.');
+    if (typeof profile.cellId.requireLetter !== 'boolean') throw new Error('Cell ID 영문 포함 설정이 올바르지 않습니다.');
+    return sanitizeNamingProfile(profile);
+  }
+
+  function safeNamingProfileFileName(profile) {
+    const base = String(profile?.name || 'naming-profile').trim().replace(/[<>:"/\\|?*\u0000-\u001F]+/g, '_').replace(/[. ]+$/g, '').slice(0, 80) || 'naming-profile';
+    return `VisionQC_${base}_v${profile.version}.json`;
+  }
+
+  function exportNamingProfileFromSettings() {
+    const profile = readNamingProfileFromSettings();
+    const blob = new Blob([JSON.stringify(namingProfileExportPayload(profile), null, 2)], { type:'application/json;charset=utf-8' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = safeNamingProfileFileName(profile);
+    link.style.display = 'none';
+    document.body.appendChild(link);
+    link.click();
+    link.remove();
+    setTimeout(() => URL.revokeObjectURL(url), 3000);
+    showToast('현재 파일명 규칙 JSON 다운로드를 시작했습니다.');
+  }
+
+  async function importNamingProfileFile(input) {
+    const file = input?.files?.[0];
+    if (!file) return;
+    try {
+      if (file.size > 256 * 1024) throw new Error('규칙 JSON 파일은 256 KB 이하여야 합니다.');
+      const profile = assertNamingProfileImport(JSON.parse((await file.text()).replace(/^\uFEFF/, '')));
+      state.namingProfile = profile;
+      safeStorageSet(NAMING_PROFILE_KEY, JSON.stringify(profile));
+      state.namingPreview = null; state.namingPreviewError = ''; state.dashboardDate = '';
+      rebuildModel(false); renderSettings(); bindPageControls();
+      showToast(`파일명 규칙을 가져왔습니다: ${profile.name}`);
+    } catch (error) {
+      showToast('파일명 규칙을 가져오지 못했습니다: ' + (error?.message || error), true);
+    } finally {
+      if (input?.isConnected) input.value = '';
+    }
   }
 
   async function previewNamingProfile() {

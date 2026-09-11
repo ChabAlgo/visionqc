@@ -1,5 +1,13 @@
 # VisionQC 변경 이력
 
+## v4.7.26 / Agent 1.3.16
+
+- 설정의 현재 파일명 규칙을 버전이 명시된 UTF-8 JSON 파일로 내보내기.
+- VisionQC 형식·스키마·필수 필드·허용 범위를 검증한 뒤 규칙 가져오기.
+- 잘못된 JSON은 현재 규칙과 저장 목록을 변경하지 않으며, 정상 가져오기는 현재 규칙에만 적용.
+- Agent 검사 엔진·판정·Workspace·CSV/SQLite·Source/Crop/Overlay 처리 로직은 변경하지 않음.
+- 상세 검증·한계: RELEASE_NOTES_v4.7.26_KR.md.
+
 ## v4.7.25 / Agent 1.3.15
 
 - 공통 VPDL Worker도 시스템 DLL 우선 검색: AI SUGGEST·Blue·Red·통합 경로까지 적용.

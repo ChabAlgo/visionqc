@@ -15,6 +15,10 @@ test('파일명 규칙 설정은 Cell ID와 통합 날짜시간 및 이전 규�
   assert.match(js, /YYYYMMDDHHMMSS 한 토큰/);
   assert.match(js, /기존 YYYYMMDD_HHMMSS/);
   assert.match(js, /\/api\/naming\/preview/);
+  assert.match(js, /NAMING_PROFILE_FILE_FORMAT = 'visionqc-naming-profile'/);
+  assert.match(js, /data-vq-action="naming-profile-export"/);
+  assert.match(js, /data-vq-action="naming-profile-import"/);
+  assert.match(js, /function assertNamingProfileImport\(value\)/);
 });
 
 test('기본 Cell ID 규칙은 18글자 후보에서 앞 16글자를 사용한다', () => {

@@ -11,8 +11,8 @@ const agent = read('LocalAgent_v0.2.12/AgentServer.cs');
 const core = read('LocalAgent_v0.2.12/Engine/BlueCropCore.cs');
 const lightCss = read('visionqc-v4433-clean.css');
 
-test('v4.7.25 preserves Integrated Crop images for Viewer and makes light Simulation state identifiable', () => {
-  assert.match(web, /const VERSION = '4\.7\.25'/);
+test('v4.7.26 preserves Integrated Crop images for Viewer and makes light Simulation state identifiable', () => {
+  assert.match(web, /const VERSION = '4\.7\.26'/);
   assert.match(web, /keepCropImages:true/);
   assert.match(web, /viewerImageRetentionSchema/);
   assert.match(web, /결과 Crop 이미지 유지 \(Viewer용\)/);
