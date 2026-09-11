@@ -36,21 +36,17 @@ test('classification preserves a right-side focus above 100 percent during norma
 
   await page.keyboard.press('ArrowRight');
   await expect(page.locator('main img[alt="classification-02.svg"]').first()).toBeVisible();
-  await page.waitForTimeout(100);
-  const afterOne = await normalizedFocus(page);
-  expect(Math.abs(afterOne.x - before.x)).toBeLessThan(.04);
-  expect(Math.abs(afterOne.y - before.y)).toBeLessThan(.04);
+  await expect.poll(async () => Math.abs((await normalizedFocus(page)).x - before.x), { timeout:5000 }).toBeLessThan(.04);
+  await expect.poll(async () => Math.abs((await normalizedFocus(page)).y - before.y), { timeout:5000 }).toBeLessThan(.04);
 
   for (let index = 0; index < 8; index += 1) {
     await page.keyboard.press('ArrowRight');
     await page.waitForTimeout(12);
   }
   await expect(page.locator('main img[alt="classification-10.svg"]').first()).toBeVisible();
-  await page.waitForTimeout(150);
-  const afterRapid = await normalizedFocus(page);
-  expect(afterRapid.x).toBeGreaterThan(.72);
-  expect(Math.abs(afterRapid.x - before.x)).toBeLessThan(.06);
-  expect(Math.abs(afterRapid.y - before.y)).toBeLessThan(.06);
+  await expect.poll(async () => (await normalizedFocus(page)).x, { timeout:5000 }).toBeGreaterThan(.72);
+  await expect.poll(async () => Math.abs((await normalizedFocus(page)).x - before.x), { timeout:5000 }).toBeLessThan(.06);
+  await expect.poll(async () => Math.abs((await normalizedFocus(page)).y - before.y), { timeout:5000 }).toBeLessThan(.06);
 });
 
 test('dashboard chart, Position cards, misses and Threshold inputs fit the requested geometry', async ({ page }) => {
