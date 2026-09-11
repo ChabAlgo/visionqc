@@ -1,7 +1,7 @@
 (() => {
   'use strict';
 
-  const VERSION = '4.7.30';
+  const VERSION = '4.7.31';
   const DEFAULT_POSITION_DEFS = [
     { key:'CA_TOP', name:'CA(TOP)' },
     { key:'AN_TOP', name:'AN(TOP)' },
@@ -29,7 +29,7 @@
   const LOCAL_AGENT_URL = 'http://127.0.0.1:17891';
   const EXPECTED_AGENT_VERSION = '1.3.19';
   const AGENT_INSTALLER_URL = './downloads/VisionQC_Agent_Installer_v1.3.19.exe';
-  const OFFLINE_PACKAGE_URL = './downloads/VisionQC_Offline_v4.7.30.zip';
+  const OFFLINE_PACKAGE_URL = './downloads/VisionQC_Offline_v4.7.31.zip';
   // SQLite에는 사용자가 명시적으로 남기려는 두 종류의 결과만 표시한다.
   // 이전 버전의 단발 검사(single-inspection) 이력은 보존하되 화면 집계에서는 제외한다.
   const PERSISTED_HISTORY_SOURCE_TYPES = ['simulation', 'csv-import', 'csv-file-stream'];
@@ -2398,7 +2398,8 @@
     if (!model.tools.includes(state.analysisTool)) state.analysisTool = model.tools[0];
     const allowedScopes = ['TOOL_OK', 'TOOL_NG', 'ACTUAL_NG_TOOL_NG', 'ACTUAL_NG_TOOL_OK'];
     if (!allowedScopes.includes(state.analysisScope)) state.analysisScope = 'TOOL_NG';
-    const points = scorePoints(state.analysisTool, state.analysisScope, state.analysisPosition, analysisScorePointOptions());
+    // 그래프와 이미지 뷰어가 같은 낮은 Score -> 높은 Score 순서를 공유해야 한다.
+    const points = sortAnalysisScorePoints(scorePoints(state.analysisTool, state.analysisScope, state.analysisPosition, analysisScorePointOptions()));
     state.analysisPoints = points;
     state.analysisPointMap = new Map(points.map((point) => [point.key, point]));
     const values = points.map((point) => point.score);
@@ -2622,7 +2623,11 @@
     const left = 28, right = 6, top = 26, bottom = 42;
     const plotW = width - left - right, plotH = height - top - bottom;
     const axisMax = historyNgAxisMax(rows);
-    const x = (index) => left + (rows.length <= 1 ? plotW / 2 : plotW * index / (rows.length - 1));
+    const pointInset = rows.length <= 1 ? plotW / 2 : Math.min(36, Math.max(20, plotW * 0.035));
+    const pointSpan = Math.max(0, plotW - pointInset * 2);
+    const x = (index) => left + (rows.length <= 1 ? plotW / 2 : pointInset + pointSpan * index / (rows.length - 1));
+    const hitLeft = (index) => index === 0 ? left : (x(index - 1) + x(index)) / 2;
+    const hitRight = (index) => index === rows.length - 1 ? width - right : (x(index) + x(index + 1)) / 2;
     const y = (rate) => top + plotH * (1 - Math.max(0, Math.min(axisMax, Number(rate || 0))) / axisMax);
     const grid = [0, .25, .5, .75, 1].map((ratio) => {
       const rate = axisMax * ratio;
@@ -2637,7 +2642,7 @@
       const date = escapeHtml(row.date || '');
       const dateLabel = index % labelEvery === 0 || index === rows.length - 1
         ? '<text class="date" x="' + x(index) + '" y="' + (height-15) + '" text-anchor="middle">' + escapeHtml(String(row.date || '').slice(5)) + '</text>' : '';
-      return '<g class="vq43-history-point" data-vq-action="' + (mainCompact ? 'dashboard-day' : 'history-day') + '" data-vq-history-day="' + date + '" role="button" aria-label="' + date + ' 선택" aria-pressed="' + (mainCompact && state.dashboardDate === row.date) + '" tabindex="0"><title>' + date + ' · 전체 ' + numberText(total) + ' · NG ' + numberText(ng) + ' (' + rateText(rate) + ')</title><rect x="' + (index === 0 ? left : (x(index-1)+x(index))/2) + '" y="0" width="' + (rows.length === 1 ? plotW : (index === 0 || index === rows.length-1 ? plotW/(rows.length-1)/2 : plotW/(rows.length-1))) + '" height="' + height + '" fill="' + (mainCompact && state.dashboardDate === row.date ? 'rgba(59,130,246,.12)' : 'transparent') + '" pointer-events="all"/><circle cx="' + x(index) + '" cy="' + y(rate) + '" r="5"/><text class="rate" x="' + x(index) + '" y="' + Math.max(14,y(rate)-10) + '" text-anchor="middle">' + rateText(rate) + '</text>' + dateLabel + '</g>';
+      return '<g class="vq43-history-point" data-vq-action="' + (mainCompact ? 'dashboard-day' : 'history-day') + '" data-vq-history-day="' + date + '" role="button" aria-label="' + date + ' 선택" aria-pressed="' + (mainCompact && state.dashboardDate === row.date) + '" tabindex="0"><title>' + date + ' · 전체 ' + numberText(total) + ' · NG ' + numberText(ng) + ' (' + rateText(rate) + ')</title><rect x="' + hitLeft(index) + '" y="0" width="' + (hitRight(index) - hitLeft(index)) + '" height="' + height + '" fill="' + (mainCompact && state.dashboardDate === row.date ? 'rgba(59,130,246,.12)' : 'transparent') + '" pointer-events="all"/><circle cx="' + x(index) + '" cy="' + y(rate) + '" r="5"/><text class="rate" x="' + x(index) + '" y="' + Math.max(14,y(rate)-10) + '" text-anchor="middle">' + rateText(rate) + '</text>' + dateLabel + '</g>';
     }).join('');
     return '<div class="vq43-history-line-scroll"><svg class="vq43-history-line" viewBox="0 0 ' + width + ' ' + height + '" style="min-width:' + width + 'px">' + grid + '<polyline points="' + points + '"/>' + dots + '</svg></div>';
   }
@@ -4470,6 +4475,7 @@
         }
         setWorkspaceInspectStatus(item.positionKey, item.kind, info.path, 'success', '', false);
       });
+      const addedTools = syncDetectedGreenTools(ensureSimulationForm());
       syncSimulationFallbackRows(false, ensureSimulationForm());
       state.simulationWorkspaceLoadProgress = { completed:items.length, total:targets.length };
       state.simulationRuntimeToken = String(data.token || '');
@@ -4487,6 +4493,7 @@
       if (state.page === 'simulation') renderSimulationPreserveScroll();
       const elapsed = Number(data.elapsedMs || 0) / 1000;
       appendSimulationLog({level:'INFO', message:`Runtime File Load 완료 · ${items.length}개 Workspace가 실제 Simulation Runtime으로 준비됨 · ${elapsed.toFixed(1)}초`});
+      if (addedTools.length) appendSimulationLog({level:'INFO', message:`Runtime Tool 자동 반영 · ${addedTools.join(', ')}`});
       showToast(request.mode === 'green' && request.green.originalProcess
         ? '구성 확인 완료. 검사 시작 시 독립 Green 프로세스에서 원본 방식으로 다시 로드합니다.'
         : request.mode === 'green' && request.green.freshRuntime
@@ -4698,10 +4705,14 @@
           if (!blueTools.some(x => x.name === currentPosition.blueToolName)) currentPosition.blueToolName = blueTools.find(x => x.name === 'Locate')?.name || blueTools[0]?.name || currentPosition.blueToolName || 'Locate';
           syncSimulationFallbackRows(false, currentForm);
         }
+        const addedTools = kind === 'green' ? syncDetectedGreenTools(currentForm) : [];
         setWorkspaceInspectStatus(positionKey, kind, path, 'success', '', false);
         persistSimulationForm();
         appendSimulationLog({ level:'INFO', message:`Workspace 화면 반영 완료: ${data.workspaceName || path} · Method=${data.loadMethod || data.method || 'Agent'} · Stream ${data.streamCount ?? workspaceStreams(data).length} · Tool ${data.toolCount ?? 0}` });
-        if (state.page === 'simulation') refreshWorkspaceInspectionUi(positionKey, kind);
+        if (state.page === 'simulation') {
+          if (addedTools.length) renderSimulationPreserveScroll();
+          else refreshWorkspaceInspectionUi(positionKey, kind);
+        }
         return data;
       } catch (error) {
         if (!isCurrent()) return;
@@ -4863,6 +4874,27 @@
     return [...new Set(Object.values(form.positions || {}).flatMap(p =>
       workspaceTools(p.greenWorkspaceInfo, p.greenStreamName || '', 'Green').map(x => String(x.name || '').trim())
     ).filter(Boolean))];
+  }
+
+  function syncDetectedGreenTools(form = ensureSimulationForm()) {
+    const tools = Array.isArray(form?.green?.tools) ? form.green.tools : [];
+    const existing = new Set(tools.map(tool => String(tool?.toolName || '').trim().toLowerCase()).filter(Boolean));
+    const discovered = [...new Set(Object.values(form?.positions || {}).flatMap(position =>
+      workspaceTools(position.greenWorkspaceInfo, position.greenStreamName || '', 'Green')
+        .filter(tool => !String(tool.path || '').includes('/'))
+        .map(tool => String(tool.name || '').trim())
+    ).filter(Boolean))];
+    const judgementNames = (form?.green?.judgements || []).map(item => String(item?.name || '').trim()).filter(Boolean);
+    const defaultJudgement = judgementNames.find(name => name.toLowerCase() === 'scrap') || judgementNames.find(name => name.toUpperCase() !== 'ERROR') || 'Scrap';
+    const added = [];
+    discovered.forEach((toolName) => {
+      const key = toolName.toLowerCase();
+      if (existing.has(key)) return;
+      tools.push({ toolName, threshold:0.5, judgement:defaultJudgement, selected:false });
+      existing.add(key);
+      added.push(toolName);
+    });
+    return added;
   }
 
   function hasSuccessfulGreenInspection() {
@@ -5990,9 +6022,9 @@
       openScoreViewerRegression() {
         const svg = (label, color) => new File([`<svg xmlns="http://www.w3.org/2000/svg" width="1800" height="2600"><rect width="100%" height="100%" fill="${color}"/><text x="50%" y="50%" fill="white" font-size="72" text-anchor="middle">${label}</text></svg>`], `${label}.svg`, {type:'image/svg+xml'});
         const specs = [
+          { cellId:'P163GG23M2100003', score:.83, color:'#264653' },
           { cellId:'P163GG23M2100001', score:.61, color:'#14213d' },
-          { cellId:'P163GG23M2100002', score:.72, color:'#1d3557' },
-          { cellId:'P163GG23M2100003', score:.83, color:'#264653' }
+          { cellId:'P163GG23M2100002', score:.72, color:'#1d3557' }
         ];
         const rows = specs.map((spec, index) => {
           const name = `score-${index + 1}.svg`;
@@ -6030,6 +6062,21 @@
         const first = state.analysisPoints[0];
         if (first) openScorePointImage(first.key);
         return { points:state.analysisPoints.length, images:state.modalItem?.images?.length || 0 };
+      },
+      seedRuntimeToolSync() {
+        state.simulationForm = simulationDefaults();
+        const form = ensureSimulationForm();
+        form.green.tools = [{ toolName:'Separator', threshold:.5, judgement:'Scrap', selected:false }];
+        const first = form.positions[simulationPositionDefs()[0].key];
+        first.greenStreamName = 'Default';
+        first.greenWorkspaceInfo = { ok:true, streams:[{ name:'Default', tools:[
+          { name:'Separator', path:'Separator', type:'Green' },
+          { name:'Edge', path:'Edge', type:'Green' },
+          { name:'Nested', path:'Group/Nested', type:'Green' },
+          { name:'Locate', path:'Locate', type:'Blue' }
+        ] }] };
+        const added = syncDetectedGreenTools(form);
+        return { added, configured:form.green.tools.map(tool => tool.toolName), requested:buildSimulationRequest().green.tools.map(tool => tool.toolName) };
       },
       queueLiveUiRefresh() {
         queueLiveUiRender();

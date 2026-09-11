@@ -466,3 +466,9 @@
 - 파일명 Position 기반 Green Workspace 자동 선택 AI 검사와 Tool별 Green Heatmap Overlay 전환을 추가했습니다.
 - History Service/CSV Importer/SQLite Store 문서와 회귀 테스트를 추가했습니다.
 - 설정 아이콘을 SVG 톱니바퀴로 교체했습니다.
+# v4.7.31 (2026-09-11)
+
+- Cell별 Score 이미지 탐색 순서를 그래프의 낮은 Score → 높은 Score 순서와 통일하고 양끝 이동을 차단했습니다.
+- 날짜별 NG율 그래프 첫 점과 마지막 점에 좌우 여백을 추가했습니다.
+- Position별 Tool NG 구성의 실제 NG 최소와 Threshold를 줄바꿈해 좁은 카드의 겹침을 없앴습니다.
+- Runtime에서 발견한 최상위 Green/Red Tool을 기존 설정을 보존하면서 자동 추가해 Edge 같은 비기본 Tool도 검사·CSV·분석에 포함되게 했습니다.

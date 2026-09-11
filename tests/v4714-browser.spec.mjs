@@ -52,6 +52,9 @@ test('score viewer shows one merged source and follows graph order with heatmap 
   await expect(page.locator('.vq43-modal-head strong')).toContainText('P163GG23M2100001');
   await expect(page.locator('.vq43-modal-delete')).toBeVisible();
   await expect(page.locator('.vq43-modal-path b')).toHaveText('Score 1 / 3');
+  await expect(page.locator('[data-vq-action="modal-prev"]')).toBeDisabled();
+  await page.keyboard.press('ArrowLeft');
+  await expect(page.locator('.vq43-modal-path b')).toHaveText('Score 1 / 3');
 
   const fit = await page.locator('#vq43-modal-zoom-image').evaluate((image) => {
     const imageRect = image.getBoundingClientRect();
@@ -74,4 +77,10 @@ test('score viewer shows one merged source and follows graph order with heatmap 
   await expect(page.getByRole('button', { name:'Crack Heatmap' })).toHaveClass(/active/);
   await expect(page.locator('#vq43-modal-zoom-value')).toHaveText(zoomBefore);
   await expect(page.locator('.vq43-modal-path b')).toHaveText('Score 2 / 3');
+  await page.keyboard.press('ArrowRight');
+  await expect(page.locator('.vq43-modal-head strong')).toContainText('P163GG23M2100003');
+  await expect(page.locator('.vq43-modal-path b')).toHaveText('Score 3 / 3');
+  await expect(page.locator('[data-vq-action="modal-next"]')).toBeDisabled();
+  await page.keyboard.press('ArrowRight');
+  await expect(page.locator('.vq43-modal-path b')).toHaveText('Score 3 / 3');
 });

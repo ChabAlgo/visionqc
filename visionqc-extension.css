@@ -814,3 +814,12 @@ body.vq43-theme-light #vq43-shell .vq43-workspace-tool.red{color:#be123c!importa
 #vq43-modal .vq43-modal-card{width:calc(100vw - 24px)!important;height:calc(100vh - 24px)!important;max-width:none!important;max-height:none!important}
 #vq43-modal .vq43-modal-media-layer{position:absolute!important;inset:0!important;padding:0!important;display:block!important;overflow:hidden!important}
 #vq43-modal .vq43-modal-media-layer img{position:absolute!important;inset:0!important;width:100%!important;height:100%!important;max-width:none!important;max-height:none!important;object-fit:contain!important;object-position:center center!important}
+
+/* v4.7.31: keep Tool score labels readable when many cards share the dashboard. */
+@media(min-width:1280px){
+  .vq43-main-dashboard .vq43-tool-score-meta{overflow:visible!important;gap:6px!important;padding:7px 5px 0!important}
+  .vq43-main-dashboard .vq43-tool-score-meta>span{display:grid!important;grid-template-columns:1fr!important;justify-items:center!important;gap:2px!important;font-size:10px!important;line-height:1.25!important;text-align:center!important;white-space:normal!important}
+  .vq43-main-dashboard .vq43-tool-score-meta>span strong{font-size:11px!important}
+  .vq43-main-dashboard .vq43-tool-score-meta label{display:grid!important;grid-template-columns:1fr!important;justify-items:center!important;gap:4px!important;overflow:visible!important;font-size:10px!important;line-height:1.2!important;text-align:center!important;white-space:normal!important}
+  .vq43-main-dashboard .vq43-threshold-input{width:48px!important;min-width:48px!important;height:30px!important;font-size:10px!important}
+}

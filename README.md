@@ -1,11 +1,11 @@
-# VisionQC v4.7.30 / Local Agent v1.3.19
+# VisionQC v4.7.31 / Local Agent v1.3.19
 
 ## 현재 릴리스 안내
 
 - 설치 파일: [VisionQC Agent 1.3.19](downloads/VisionQC_Agent_Installer_v1.3.19.exe)
-- 오프라인 패키지: [VisionQC Offline 4.7.30](downloads/VisionQC_Offline_v4.7.30.zip)
+- 오프라인 패키지: [VisionQC Offline 4.7.31](downloads/VisionQC_Offline_v4.7.31.zip)
 - SQLite 이력, 대용량 CSV 직접 적재, 파일명 Position 기반 AI Green 검사, 원본/Heatmap Viewer를 제공합니다.
-- 최신 변경·검증: [v4.7.30 릴리스 노트](RELEASE_NOTES_v4.7.30_KR.md). 기존 설계는 `ARCHITECTURE_V4.7.0_KR.md` 참고.
+- 최신 변경·검증: [v4.7.31 릴리스 노트](RELEASE_NOTES_v4.7.31_KR.md). 기존 설계는 `ARCHITECTURE_V4.7.0_KR.md` 참고.
 - 소스 폴더 `LocalAgent_v0.2.12`는 유지된 경로명입니다. 실제 배포 Agent 버전은 1.3.19이며 `RELEASE_MANIFEST.json`과 EXE 파일 버전으로 확인합니다.
 
 - 이번 배포: 날짜별 NG율 그래프의 세로축을 `최고 NG율 + 3%p` 범위로 자동 확대해 낮은 NG율의 변화를 쉽게 구분합니다.

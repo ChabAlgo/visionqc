@@ -31,7 +31,8 @@ test('score viewer deduplicates source images and navigates in chart order', () 
   assert.match(js, /scorePointIndex:pointIndex/);
   assert.match(js, /function changeScorePointImage\(delta\)/);
   assert.match(js, /openScorePointImage\(point\.key, \{ preserveView:true \}\)/);
-  assert.match(js, /const points = sortAnalysisScorePoints\(scorePoints/);
+  const render = js.slice(js.indexOf('function renderAnalysis()'), js.indexOf('function histogramSvg'));
+  assert.match(render, /const points = sortAnalysisScorePoints\(scorePoints/);
 });
 
 test('score viewer uses the full viewport and contain fitting at 100 percent', () => {
