@@ -1,5 +1,14 @@
 # VisionQC 변경 이력
 
+## v4.7.28 / Agent 1.3.18
+
+- Simulation Options 헤더와 본문의 안쪽 여백을 복구.
+- 파일명 저장 규칙 드롭다운을 다크·라이트 테마에 맞게 표시.
+- Green Simulation이 `Runtime File Load`로 준비한 Runtime과 Workspace를 그대로 사용하고 검사 후에도 재사용.
+- AI SUGGEST는 호환되는 사전 로드 Runtime만 사용하며 자동 재로드하지 않음.
+- 사전 로드가 없거나 설정이 다르면 Runtime File Load를 먼저 실행하도록 안내.
+- 상세 검증·한계: RELEASE_NOTES_v4.7.28_KR.md.
+
 ## v4.7.27 / Agent 1.3.17
 
 - Agent 업데이트 시 실행 중인 기존 Launcher/Worker를 종료하고 기존 프로그램 파일을 제거한 뒤 새 버전을 설치.

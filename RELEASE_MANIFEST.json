@@ -1,19 +1,19 @@
 {
-  "releaseTag": "visionqc-v4.7.27-agent-v1.3.17",
-  "webVersion": "4.7.27",
-  "agentVersion": "1.3.17",
-  "minimumAgentVersion": "1.3.17",
+  "releaseTag": "visionqc-v4.7.28-agent-v1.3.18",
+  "webVersion": "4.7.28",
+  "agentVersion": "1.3.18",
+  "minimumAgentVersion": "1.3.18",
   "compatibility": {
-    "web": "4.7.27",
-    "agent": "1.3.17"
+    "web": "4.7.28",
+    "agent": "1.3.18"
   },
   "artifacts": {
-    "agentInstaller": "downloads/VisionQC_Agent_Installer_v1.3.17.exe",
-    "offlinePackage": "downloads/VisionQC_Offline_v4.7.27.zip",
+    "agentInstaller": "downloads/VisionQC_Agent_Installer_v1.3.18.exe",
+    "offlinePackage": "downloads/VisionQC_Offline_v4.7.28.zip",
     "sha256": {
-      "agentInstaller": "912C2CCE6091443B83A026E16EC85B3AE40C16F0CAD67C4C48D1C438D7137C14",
-      "offlinePackage": "40EA44471FC32015EB7D93B0C351ACA61E2F6DE32B33026F492331FADB299CA7"
+      "agentInstaller": "1E9D524A5DB3345226061365A13366730AA1E085C26437EB399A62E2ED4C71DB",
+      "offlinePackage": "823154B5821BFC3473C4ECC8C4022B962B0617BAC53E84CDA90078C55054AA63"
     }
   },
-  "notes": "구버전 Agent 프로세스 종료 및 기존 프로그램 파일 제거 후 새 버전 설치. data/logs/output/VPDL Worker 선택은 보존. 파일명 규칙 JSON 내보내기/가져오기 유지. Agent 검사 엔진과 판정/Workspace/CSV/SQLite/이미지 경로 로직은 변경하지 않음."
+  "notes": "Simulation Options 여백과 파일명 규칙 드롭다운 테마 보정. Green Simulation과 AI SUGGEST는 호환되는 사전 로드 Runtime/Workspace를 재사용하며 AI SUGGEST는 자동 재로드하지 않음. 검사 판정/Workspace 파일/CSV/SQLite/이미지 경로 로직은 유지."
 }

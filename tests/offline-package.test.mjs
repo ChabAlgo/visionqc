@@ -40,8 +40,8 @@ test('selected VPDL native path is prepended even if already present later in PA
 test('download controls point to the versioned single-exe and offline package', () => {
   assert.match(web, /simulation-agent-download/);
   assert.match(web, /simulation-offline-download/);
-  assert.match(web, /VisionQC_Agent_Installer_v1\.3\.17\.exe/);
-  assert.match(web, /VisionQC_Offline_v4\.7\.27\.zip/);
+  assert.match(web, /VisionQC_Agent_Installer_v1\.3\.18\.exe/);
+  assert.match(web, /VisionQC_Offline_v4\.7\.28\.zip/);
   assert.match(web, /function downloadAgentInstaller/);
   assert.match(web, /function downloadOfflinePackage/);
 });

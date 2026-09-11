@@ -11,15 +11,16 @@ const css = read('visionqc-extension.css');
 const dashboardCss = read('visionqc-v470.css');
 const cleanCss = read('visionqc-v4433-clean.css');
 const html = read('index.html');
+const server = read('LocalAgent_v0.2.12/AgentServer.cs');
 
-test('v4.7.27 Web cache and Agent download targets are declared', () => {
-  assert.match(read('VERSION.txt'), /v4\.7\.27/);
-  assert.match(html, /visionqc-extension\.js\?v=4\.7\.27/);
+test('v4.7.28 Web cache and Agent download targets are declared', () => {
+  assert.match(read('VERSION.txt'), /v4\.7\.28/);
+  assert.match(html, /visionqc-extension\.js\?v=4\.7\.28/);
   assert.match(html, /visionqc-v470\.css\?v=4\.7\.9/);
-  assert.match(js, /const VERSION = '4\.7\.27'/);
-  assert.match(js, /const EXPECTED_AGENT_VERSION = '1\.3\.17'/);
-  assert.match(js, /VisionQC_Agent_Installer_v1\.3\.17\.exe/);
-  assert.match(js, /VisionQC_Offline_v4\.7\.27\.zip/);
+  assert.match(js, /const VERSION = '4\.7\.28'/);
+  assert.match(js, /const EXPECTED_AGENT_VERSION = '1\.3\.18'/);
+  assert.match(js, /VisionQC_Agent_Installer_v1\.3\.18\.exe/);
+  assert.match(js, /VisionQC_Offline_v4\.7\.28\.zip/);
 });
 
 test('persistent History page has filters, server-side pagination, daily NG chart and image viewer', () => {
@@ -50,6 +51,17 @@ test('AI SUGGEST uses the loaded local Runtime and tool-score viewer has explici
   assert.match(js, /function actualNgMinimumScore/);
   assert.match(js, /data-vq-modal-overlay/);
   assert.match(dashboardCss, /\.vq43-modal-image-switcher/);
+  const single = server.slice(server.indexOf('private object InspectSingleGreenImage'), server.indexOf('private object InspectUploadedGreenImage'));
+  assert.match(single, /HasCompatiblePreloadedRuntime/);
+  assert.doesNotMatch(single, /PreloadRuntime\(/);
+  assert.match(single, /Runtime File Load\ub97c \uba3c\uc800 \uc2e4\ud589/);
+});
+
+test('Simulation Options padding and naming select colors are explicit in both themes', () => {
+  assert.match(cleanCss, /\.vq43-sim-options-head\{[^}]*margin:0!important;[^}]*padding:16px 18px!important/);
+  assert.match(cleanCss, /\.vq43-sim-options-scroll\{[^}]*padding:14px 16px 18px!important/);
+  assert.match(cleanCss, /\.vq43-naming-actions select\{[^}]*background:#0d1a2d;[^}]*color:#e5eefb/);
+  assert.match(cleanCss, /vq43-theme-light[^\n]*\.vq43-naming-actions select\{[^}]*background:#fff!important;[^}]*color:#172f46!important/);
 });
 
 test('settings uses an SVG cog icon rather than an emoji glyph', () => {

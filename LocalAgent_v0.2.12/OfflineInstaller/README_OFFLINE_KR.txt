@@ -1,6 +1,6 @@
-VisionQC 오프라인 패키지 v4.7.27 / Agent v1.3.17
+VisionQC 오프라인 패키지 v4.7.28 / Agent v1.3.18
 
-1. VisionQC_Agent_Installer_v1.3.17.exe를 실행합니다.
+1. VisionQC_Agent_Installer_v1.3.18.exe를 실행합니다.
 2. 설치 프로그램은 LocalAppData\VisionQC\LocalAgent에 Agent와 웹 UI를 설치하고,
    visionqc-agent:// 프로토콜을 등록한 뒤 오프라인 화면을 자동으로 엽니다.
    기존 Agent가 있으면 실행 중인 Launcher/Worker를 종료하고 기존 프로그램 파일을 제거한 뒤 새 버전을 설치합니다.

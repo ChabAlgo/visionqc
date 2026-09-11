@@ -3,12 +3,12 @@ import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 const read = path => readFileSync(new URL('../'+path,import.meta.url),'utf8');
 const agent='LocalAgent_v0.2.12/';
-test('original Green runs independently while legacy and integrated modes remain available',()=>{
+test('preloaded Green is the production default while the isolated fallback remains available',()=>{
   const server=read(agent+'AgentServer.cs'), ui=read('visionqc-extension.js');
   assert.match(server,/if \(greenOptions.originalProcess\)/);
   assert.match(server,/previewControl.Dispose\(\);[\s\S]*?GreenProcessHost.Run/);
   assert.match(server,/GreenOverlayProcessor.Run\(greenConfig, simulationControl, !greenOptions.freshRuntime/);
-  assert.match(ui,/originalProcess:true/);
+  assert.match(ui,/originalProcess:false/);
   assert.doesNotMatch(ui,/state.simulationConfig/);
   assert.match(ui,/field === 'originalProcess'\) refreshSimulationOptionsOnly/);
 });

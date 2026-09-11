@@ -33,7 +33,7 @@ body.vq43-menu-expanded[data-vq-page="classification"] #root>div>main{margin-lef
 .vq43-sim-maincol{width:100%!important;min-width:0!important;max-width:100%!important}
 .vq43-sim-options{position:sticky!important;top:10px!important;right:auto!important;align-self:start!important;display:grid!important;grid-template-rows:auto minmax(0,1fr)!important;width:100%!important;min-width:0!important;max-width:var(--vq-sim-options-w)!important;height:calc(100vh - 20px)!important;max-height:calc(100vh - 20px)!important;overflow:hidden!important;contain:none!important}
 .vq43-sim-options,.vq43-sim-options *{min-width:0!important;box-sizing:border-box!important}
-.vq43-sim-options-head{position:relative!important;top:auto!important;flex:0 0 auto!important;margin:-14px -14px 0!important}.vq43-sim-options-scroll{min-height:0!important;width:100%!important;max-width:100%!important;overflow-x:hidden!important;overflow-y:auto!important;overscroll-behavior:contain!important;scrollbar-gutter:stable!important;overflow-anchor:none!important;padding-top:2px!important}.vq43-sim-options-head,.vq43-sim-option-titlebar{max-width:100%!important;min-width:0!important;flex-wrap:wrap!important}
+.vq43-sim-options-head{position:relative!important;top:auto!important;flex:0 0 auto!important;margin:0!important;padding:16px 18px!important}.vq43-sim-options-scroll{min-height:0!important;width:100%!important;max-width:100%!important;overflow-x:hidden!important;overflow-y:auto!important;overscroll-behavior:contain!important;scrollbar-gutter:stable!important;overflow-anchor:none!important;padding:14px 16px 18px!important}.vq43-sim-options-head,.vq43-sim-option-titlebar{max-width:100%!important;min-width:0!important;flex-wrap:wrap!important}
 .vq43-sim-options-head>div,.vq43-sim-option-titlebar>div{min-width:0!important;max-width:100%!important;flex-wrap:wrap!important}
 .vq43-sim-option-section{width:100%!important;max-width:100%!important;overflow:hidden!important}
 .vq43-sim-option-grid{display:grid!important;grid-template-columns:repeat(2,minmax(0,1fr))!important;gap:9px!important;width:100%!important;max-width:100%!important}
@@ -248,6 +248,12 @@ body:not(.vq43-theme-light) #vq43-shell input[type="date"]{color-scheme:dark}
 body:not(.vq43-theme-light) #vq43-shell input[type="date"]::-webkit-calendar-picker-indicator{filter:invert(1) brightness(1.9);opacity:1;cursor:pointer}
 body.vq43-theme-light #vq43-shell input[type="date"]{color-scheme:light}
 body.vq43-theme-light #vq43-shell input[type="date"]::-webkit-calendar-picker-indicator{filter:none;opacity:.9;cursor:pointer}
+
+/* v4.7.28: native selects must follow the active theme and remain readable. */
+#vq43-shell .vq43-naming-actions select{min-width:190px;min-height:42px;border:1px solid #36517a;border-radius:9px;background:#0d1a2d;color:#e5eefb;padding:8px 34px 8px 11px;font:800 14px Inter,Arial,sans-serif;color-scheme:dark}
+#vq43-shell .vq43-naming-actions select option{background:#0d1a2d;color:#e5eefb}
+body.vq43-theme-light #vq43-shell .vq43-naming-actions select{background:#fff!important;color:#172f46!important;border-color:#aac8df!important;color-scheme:light}
+body.vq43-theme-light #vq43-shell .vq43-naming-actions select option{background:#fff;color:#172f46}
 
 /* v4.7.11 calendar contrast */
 body:not(.vq43-theme-light) #vq43-shell input[type="date"]::-webkit-calendar-picker-indicator{filter:brightness(0) invert(1)!important;opacity:1!important;cursor:pointer}

@@ -66,3 +66,22 @@ test('filename rules export and validated import without changing the saved prof
   await expect(page.locator('#vq43-toast')).toContainText('지원하지 않는 규칙 파일 버전');
   expect((await page.evaluate(()=>JSON.parse(localStorage.getItem('visionqc-v450-naming-profile')))).name).toBe('가져온 규칙');
 });
+
+test('Simulation Options has inner spacing and the saved-rule select follows dark theme', async ({page}) => {
+  await page.addInitScript(() => localStorage.setItem('visionqc-v43-active-page','settings'));
+  await page.goto('/index.html?vqDebug=1&browserRegression=1',{waitUntil:'domcontentloaded'});
+  const saved=page.locator('#vq43-naming-saved');
+  await expect(saved).toBeVisible();
+  const colors=await saved.evaluate(element=>{const style=getComputedStyle(element);return{background:style.backgroundColor,color:style.color,scheme:style.colorScheme};});
+  expect(colors.background).toBe('rgb(13, 26, 45)');
+  expect(colors.color).toBe('rgb(229, 238, 251)');
+  expect(colors.scheme).toBe('dark');
+  await page.locator('[data-vq-page="simulation"]').click();
+  const spacing=await page.locator('.vq43-sim-options').evaluate(panel=>{
+    const outer=panel.getBoundingClientRect(),head=panel.querySelector('.vq43-sim-options-head').getBoundingClientRect(),scroll=panel.querySelector('.vq43-sim-options-scroll').getBoundingClientRect();
+    return{headLeft:head.left-outer.left,headTop:head.top-outer.top,scrollLeft:scroll.left-outer.left};
+  });
+  expect(spacing.headLeft).toBeGreaterThanOrEqual(1);
+  expect(spacing.headTop).toBeGreaterThanOrEqual(1);
+  expect(spacing.scrollLeft).toBeGreaterThanOrEqual(1);
+});
