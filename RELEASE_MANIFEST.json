@@ -1,19 +1,19 @@
 {
-  "releaseTag": "visionqc-v4.7.26-agent-v1.3.16",
-  "webVersion": "4.7.26",
-  "agentVersion": "1.3.16",
-  "minimumAgentVersion": "1.3.16",
+  "releaseTag": "visionqc-v4.7.27-agent-v1.3.17",
+  "webVersion": "4.7.27",
+  "agentVersion": "1.3.17",
+  "minimumAgentVersion": "1.3.17",
   "compatibility": {
-    "web": "4.7.26",
-    "agent": "1.3.16"
+    "web": "4.7.27",
+    "agent": "1.3.17"
   },
   "artifacts": {
-    "agentInstaller": "downloads/VisionQC_Agent_Installer_v1.3.16.exe",
-    "offlinePackage": "downloads/VisionQC_Offline_v4.7.26.zip",
+    "agentInstaller": "downloads/VisionQC_Agent_Installer_v1.3.17.exe",
+    "offlinePackage": "downloads/VisionQC_Offline_v4.7.27.zip",
     "sha256": {
-      "agentInstaller": "F29F2D4210881E6BE889ADD0EE803D4D3609F4220AFAF4F28368E0E44760CC4E",
-      "offlinePackage": "B53777CD844239B7A913DC9D1528377A90ED43EB1A0EB0C1C6BEFB06498B0DB9"
+      "agentInstaller": "912C2CCE6091443B83A026E16EC85B3AE40C16F0CAD67C4C48D1C438D7137C14",
+      "offlinePackage": "40EA44471FC32015EB7D93B0C351ACA61E2F6DE32B33026F492331FADB299CA7"
     }
   },
-  "notes": "파일명 규칙 JSON 내보내기/가져오기. 전용 형식과 스키마 및 값 검증, 잘못된 파일은 현재 규칙과 저장 목록을 변경하지 않음. Agent 검사 엔진과 판정/Workspace/CSV/SQLite/이미지 경로 로직은 변경하지 않음."
+  "notes": "구버전 Agent 프로세스 종료 및 기존 프로그램 파일 제거 후 새 버전 설치. data/logs/output/VPDL Worker 선택은 보존. 파일명 규칙 JSON 내보내기/가져오기 유지. Agent 검사 엔진과 판정/Workspace/CSV/SQLite/이미지 경로 로직은 변경하지 않음."
 }

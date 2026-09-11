@@ -5,6 +5,6 @@ using System.Runtime.InteropServices;
 [assembly: AssemblyDescription("Version-independent Cognex VPDL Worker launcher")]
 [assembly: AssemblyCompany("VisionQC")]
 [assembly: AssemblyProduct("VisionQC Local Agent")]
-[assembly: AssemblyVersion("1.3.16.0")]
-[assembly: AssemblyFileVersion("1.3.16.0")]
+[assembly: AssemblyVersion("1.3.17.0")]
+[assembly: AssemblyFileVersion("1.3.17.0")]
 [assembly: ComVisible(false)]

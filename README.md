@@ -1,14 +1,14 @@
-# VisionQC v4.7.26 / Local Agent v1.3.16
+# VisionQC v4.7.27 / Local Agent v1.3.17
 
 ## 현재 릴리스 안내
 
-- 설치 파일: [VisionQC Agent 1.3.16](downloads/VisionQC_Agent_Installer_v1.3.16.exe)
-- 오프라인 패키지: [VisionQC Offline 4.7.26](downloads/VisionQC_Offline_v4.7.26.zip)
+- 설치 파일: [VisionQC Agent 1.3.17](downloads/VisionQC_Agent_Installer_v1.3.17.exe)
+- 오프라인 패키지: [VisionQC Offline 4.7.27](downloads/VisionQC_Offline_v4.7.27.zip)
 - SQLite 이력, 대용량 CSV 직접 적재, 파일명 Position 기반 AI Green 검사, 원본/Heatmap Viewer를 제공합니다.
-- 최신 변경·검증: [v4.7.26 릴리스 노트](RELEASE_NOTES_v4.7.26_KR.md). 기존 설계는 `ARCHITECTURE_V4.7.0_KR.md` 참고.
-- 소스 폴더 `LocalAgent_v0.2.12`는 유지된 경로명입니다. 실제 배포 Agent 버전은 1.3.16이며 `RELEASE_MANIFEST.json`과 EXE 파일 버전으로 확인합니다.
+- 최신 변경·검증: [v4.7.27 릴리스 노트](RELEASE_NOTES_v4.7.27_KR.md). 기존 설계는 `ARCHITECTURE_V4.7.0_KR.md` 참고.
+- 소스 폴더 `LocalAgent_v0.2.12`는 유지된 경로명입니다. 실제 배포 Agent 버전은 1.3.17이며 `RELEASE_MANIFEST.json`과 EXE 파일 버전으로 확인합니다.
 
-- 이번 배포: 현재 파일명 규칙을 JSON으로 내보내고 다른 PC에서 검증 후 가져올 수 있습니다. 기존 검사·판정·경로·저장 규칙은 변경하지 않습니다.
+- 이번 배포: 구버전 Agent를 종료·제거한 뒤 1.3.17을 설치하며, 사용자 이력·로그·결과·VPDL 선택은 보존합니다. 파일명 규칙 JSON 내보내기/가져오기와 기존 검사 동작은 유지됩니다.
 
 # 이전 변경 이력
 

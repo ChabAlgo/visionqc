@@ -7,5 +7,5 @@ using System.Runtime.InteropServices;
 [assembly: AssemblyProduct("VisionQC Core Worker")]
 [assembly: ComVisible(false)]
 [assembly: Guid("c13133bf-70ef-4afd-9d22-58f4f86d1370")]
-[assembly: AssemblyVersion("1.3.16.0")]
-[assembly: AssemblyFileVersion("1.3.16.0")]
+[assembly: AssemblyVersion("1.3.17.0")]
+[assembly: AssemblyFileVersion("1.3.17.0")]

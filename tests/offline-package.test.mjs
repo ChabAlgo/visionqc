@@ -40,8 +40,8 @@ test('selected VPDL native path is prepended even if already present later in PA
 test('download controls point to the versioned single-exe and offline package', () => {
   assert.match(web, /simulation-agent-download/);
   assert.match(web, /simulation-offline-download/);
-  assert.match(web, /VisionQC_Agent_Installer_v1\.3\.16\.exe/);
-  assert.match(web, /VisionQC_Offline_v4\.7\.26\.zip/);
+  assert.match(web, /VisionQC_Agent_Installer_v1\.3\.17\.exe/);
+  assert.match(web, /VisionQC_Offline_v4\.7\.27\.zip/);
   assert.match(web, /function downloadAgentInstaller/);
   assert.match(web, /function downloadOfflinePackage/);
 });
@@ -71,7 +71,11 @@ test('single installer embeds the launcher, all Worker APIs, local UI, and offli
   assert.match(installer, /RunAndWait\(agentPath, "--register"/);
   assert.match(installer, /Arguments = "--offline"/);
   assert.match(installer, /StopRunningAgent/);
-  assert.match(installer, /VisionQC\.VpdlWorker/);
+  assert.match(installer, /RemovePreviousInstallation\(installDir\)/);
+  assert.match(installer, /preservedDirectories = \{ "data", "logs", "output" \}/);
+  assert.match(installer, /preservedFiles = \{ "vpdl-worker\.version" \}/);
+  assert.match(installer, /TerminateInstalledProcesses/);
+  assert.match(installer, /Process\.GetProcesses\(\)/);
   assert.match(installerProject, /Payload\.Launcher\.VisionQC\.LocalAgent\.exe/);
   assert.match(installerProject, /Payload\.WorkerManifest\.vpdl-workers\.json/);
   assert.match(installerProject, /Payload\.WorkerBundle\.vpdl-workers\.zip/);
@@ -79,6 +83,12 @@ test('single installer embeds the launcher, all Worker APIs, local UI, and offli
   assert.match(installerProject, /Payload\.Web\.assets\.index-v4\.4\.33\.js/);
   assert.match(installerProject, /Payload\.Web\.visionqc-v470\.css/);
   assert.match(installerProject, /Payload\.Web\.assets\.fonts\.inter-latin-400-normal\.woff2/);
+});
+
+test('version mismatch routes Agent launch to the replacement installer', () => {
+  assert.match(web, /detectedVersion !== EXPECTED_AGENT_VERSION/);
+  assert.match(web, /\uc885\ub8cc\u00b7\uc81c\uac70/);
+  assert.match(web, /updateRequired\?'Agent \uc5c5\ub370\uc774\ud2b8':'Agent \uc2e4\ud589'/);
 });
 
 test('offline package always contains a VPDL-free Core Worker and uses Universal Worker when VPDL exists', () => {

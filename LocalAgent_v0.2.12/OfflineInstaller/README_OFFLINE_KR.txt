@@ -1,8 +1,10 @@
-VisionQC 오프라인 패키지 v4.7.26 / Agent v1.3.16
+VisionQC 오프라인 패키지 v4.7.27 / Agent v1.3.17
 
-1. VisionQC_Agent_Installer_v1.3.16.exe를 실행합니다.
+1. VisionQC_Agent_Installer_v1.3.17.exe를 실행합니다.
 2. 설치 프로그램은 LocalAppData\VisionQC\LocalAgent에 Agent와 웹 UI를 설치하고,
    visionqc-agent:// 프로토콜을 등록한 뒤 오프라인 화면을 자동으로 엽니다.
+   기존 Agent가 있으면 실행 중인 Launcher/Worker를 종료하고 기존 프로그램 파일을 제거한 뒤 새 버전을 설치합니다.
+   data, logs, output, VPDL Worker 선택값은 보존합니다.
 3. 이후에는 바탕화면의 "VisionQC 오프라인 실행" 바로가기를 사용하면 됩니다.
 4. 모든 검사 경로는 시스템 DLL 우선 검색을 사용합니다. 실험용 비교 옵션은 제거했습니다.
    Runtime File Load → Simulation Start로 검사합니다. AI SUGGEST도 로컬 Runtime을 사용합니다.

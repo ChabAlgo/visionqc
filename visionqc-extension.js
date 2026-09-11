@@ -1,7 +1,7 @@
 (() => {
   'use strict';
 
-  const VERSION = '4.7.26';
+  const VERSION = '4.7.27';
   const DEFAULT_POSITION_DEFS = [
     { key:'CA_TOP', name:'CA(TOP)' },
     { key:'AN_TOP', name:'AN(TOP)' },
@@ -27,9 +27,9 @@
   const NG_POSITION_PREFIX = 'ng-position:';
   const IMG_RE = /\.(png|jpe?g|bmp|gif|webp|tif?f)$/i;
   const LOCAL_AGENT_URL = 'http://127.0.0.1:17891';
-  const EXPECTED_AGENT_VERSION = '1.3.16';
-  const AGENT_INSTALLER_URL = './downloads/VisionQC_Agent_Installer_v1.3.16.exe';
-  const OFFLINE_PACKAGE_URL = './downloads/VisionQC_Offline_v4.7.26.zip';
+  const EXPECTED_AGENT_VERSION = '1.3.17';
+  const AGENT_INSTALLER_URL = './downloads/VisionQC_Agent_Installer_v1.3.17.exe';
+  const OFFLINE_PACKAGE_URL = './downloads/VisionQC_Offline_v4.7.27.zip';
   // SQLite에는 사용자가 명시적으로 남기려는 두 종류의 결과만 표시한다.
   // 이전 버전의 단발 검사(single-inspection) 이력은 보존하되 화면 집계에서는 제외한다.
   const PERSISTED_HISTORY_SOURCE_TYPES = ['simulation', 'csv-import', 'csv-file-stream'];
@@ -3467,7 +3467,7 @@
         runtimePreloadControlSignature:String(data.runtimePreloadControlSignature || ''),
         runtimePreloadGreenWorkspaceSignature:String(data.runtimePreloadGreenWorkspaceSignature || ''),
         message:versionMismatch
-          ? `Agent ${detectedVersion} 실행 중 · 현재 Web 권장 ${EXPECTED_AGENT_VERSION}. 새 Agent의 REGISTER_PROTOCOL.cmd를 다시 실행하세요.`
+          ? `Agent ${detectedVersion} 실행 중 · 현재 Web 권장 ${EXPECTED_AGENT_VERSION}. Agent 업데이트를 누르고 설치 파일을 실행하세요.`
           : `${data.runtimeMessage || '실시간 연결됨'} · Engine ${data.engineVersion || '-'}`
       };
       if (data.state) state.simulationProgress = { ...state.simulationProgress, ...data.state };
@@ -3539,6 +3539,15 @@
     }
   }
   function launchSimulationAgent() {
+    const detectedVersion = String(state.simulationAgent?.version || '');
+    if (state.simulationAgent?.status === 'connected' && detectedVersion && detectedVersion !== '-' && detectedVersion !== EXPECTED_AGENT_VERSION) {
+      downloadFile(
+        AGENT_INSTALLER_URL,
+        `Agent ${detectedVersion}를 종료·제거하고 ${EXPECTED_AGENT_VERSION}로 교체하는 설치 파일을 받습니다. 다운로드한 EXE를 실행하세요.`,
+        'Agent 업데이트 설치 파일'
+      );
+      return;
+    }
     // Chrome loopback-network 권한은 사용자 동작에서 요청해야 안내창이 안정적으로 표시됩니다.
     // Agent가 이미 실행 중인 경우에도 이 클릭으로 연결 권한을 다시 요청할 수 있습니다.
     pollSimulationAgentStatus();
@@ -4967,7 +4976,8 @@
 
   function simulationTopActionsHtml() {
     const connected = state.simulationAgent?.status === 'connected';
-    return `<button class="vq43-btn" data-vq-action="simulation-agent-launch">Agent 실행</button><button class="vq43-btn vq43-btn-red" data-vq-action="simulation-agent-stop" ${connected?'':'disabled'}>Agent 종료</button>${packageDownloadActionsHtml()}`;
+    const updateRequired = connected && state.simulationAgent?.version && state.simulationAgent.version !== '-' && state.simulationAgent.version !== EXPECTED_AGENT_VERSION;
+    return `<button class="vq43-btn" data-vq-action="simulation-agent-launch">${updateRequired?'Agent 업데이트':'Agent 실행'}</button><button class="vq43-btn vq43-btn-red" data-vq-action="simulation-agent-stop" ${connected?'':'disabled'}>Agent 종료</button>${packageDownloadActionsHtml()}`;
   }
 
   function downloadFile(url, message, label = '파일') {

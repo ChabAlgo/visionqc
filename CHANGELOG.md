@@ -1,12 +1,15 @@
 # VisionQC 변경 이력
 
-## v4.7.26 / Agent 1.3.16
+## v4.7.27 / Agent 1.3.17
 
+- Agent 업데이트 시 실행 중인 기존 Launcher/Worker를 종료하고 기존 프로그램 파일을 제거한 뒤 새 버전을 설치.
+- `data`, `logs`, `output`, VPDL Worker 선택값은 업데이트 중 보존.
+- Web이 구버전 Agent를 감지하면 `Agent 실행`을 `Agent 업데이트`로 바꾸고 현재 설치 파일을 받도록 안내.
 - 설정의 현재 파일명 규칙을 버전이 명시된 UTF-8 JSON 파일로 내보내기.
 - VisionQC 형식·스키마·필수 필드·허용 범위를 검증한 뒤 규칙 가져오기.
 - 잘못된 JSON은 현재 규칙과 저장 목록을 변경하지 않으며, 정상 가져오기는 현재 규칙에만 적용.
 - Agent 검사 엔진·판정·Workspace·CSV/SQLite·Source/Crop/Overlay 처리 로직은 변경하지 않음.
-- 상세 검증·한계: RELEASE_NOTES_v4.7.26_KR.md.
+- 상세 검증·한계: RELEASE_NOTES_v4.7.27_KR.md.
 
 ## v4.7.25 / Agent 1.3.15
 

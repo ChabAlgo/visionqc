@@ -15,11 +15,11 @@ const coreServer = read('CoreWorker/CoreAgentServer.cs');
 const coreProject = read('CoreWorker/VisionQC.CoreWorker.csproj');
 const workerBuild = read('BUILD_VPDL_WORKERS.ps1');
 
-test('Agent v1.3.16 version is consistent', () => {
-  assert.match(program, /AgentVersion = "1\.3\.16"/);
-  assert.match(read('CoreWorker/Program.cs'), /AgentVersion = "1\.3\.16"/);
-  assert.match(read('Properties/AssemblyInfo.cs'), /AssemblyVersion\("1\.3\.16\.0"\)/);
-  assert.match(read('BUILD_RELEASE_x64.cmd'), /v1\.3\.16/);
+test('Agent v1.3.17 version is consistent', () => {
+  assert.match(program, /AgentVersion = "1\.3\.17"/);
+  assert.match(read('CoreWorker/Program.cs'), /AgentVersion = "1\.3\.17"/);
+  assert.match(read('Properties/AssemblyInfo.cs'), /AssemblyVersion\("1\.3\.17\.0"\)/);
+  assert.match(read('BUILD_RELEASE_x64.cmd'), /v1\.3\.17/);
 });
 
 test('HTTP server delegates picker lifecycle to the isolated picker service', () => {
@@ -178,7 +178,11 @@ test('installer waits for the installed Agent process before replacing its execu
   const installer = read('OfflineInstaller/Program.cs');
   assert.match(installer, /StopRunningAgent\(Path\.Combine\(installDir, AgentExe\)\)/);
   assert.match(installer, /IsInstalledAgentRunning\(installedAgentPath\)/);
-  assert.match(installer, /Process\.GetProcessesByName/);
+  assert.match(installer, /Process\.GetProcesses\(\)/);
+  assert.match(installer, /TerminateInstalledProcesses/);
+  assert.match(installer, /RemovePreviousInstallation\(installDir\)/);
+  assert.match(installer, /"data", "logs", "output"/);
+  assert.match(installer, /"vpdl-worker\.version"/);
 });
 
 test('SQLite history and CSV FullPath preview stay in dedicated services', () => {

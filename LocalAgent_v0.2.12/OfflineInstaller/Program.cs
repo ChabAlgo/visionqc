@@ -16,7 +16,7 @@ namespace VisionQC.AgentInstaller
     internal static class Program
     {
         private const string AgentExe = "VisionQC.LocalAgent.exe";
-        private const string ProductVersion = "1.3.16";
+        private const string ProductVersion = "1.3.17";
         private static readonly PayloadFile[] Payload =
         {
             new PayloadFile("VisionQC.AgentInstaller.Payload.Launcher.VisionQC.LocalAgent.exe", AgentExe),
@@ -50,6 +50,7 @@ namespace VisionQC.AgentInstaller
             {
                 string installDir = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "VisionQC", "LocalAgent");
                 StopRunningAgent(Path.Combine(installDir, AgentExe));
+                RemovePreviousInstallation(installDir);
                 ExtractPayload(installDir);
                 string agentPath = Path.Combine(installDir, AgentExe);
                 RunAndWait(agentPath, "--register", 10000);
@@ -127,9 +128,14 @@ namespace VisionQC.AgentInstaller
             }
             catch { }
             // 포트가 먼저 닫혀도 Agent EXE는 종료 정리 중일 수 있습니다.
-            // 그 상태에서 덮어쓰면 파일 잠금으로 설치가 실패하므로 설치 대상 프로세스가
-            // 실제로 끝날 때까지 기다립니다.
             for (int attempt = 0; attempt < 60; attempt++)
+            {
+                if (!IsInstalledAgentRunning(installedAgentPath)) return;
+                Thread.Sleep(250);
+            }
+            // 정상 종료가 안 된 구버전 프로세스만 설치 경로를 확인한 뒤 종료합니다.
+            TerminateInstalledProcesses(Path.GetDirectoryName(Path.GetFullPath(installedAgentPath ?? "")) ?? "");
+            for (int attempt = 0; attempt < 20; attempt++)
             {
                 if (!IsInstalledAgentRunning(installedAgentPath)) return;
                 Thread.Sleep(250);
@@ -137,16 +143,57 @@ namespace VisionQC.AgentInstaller
             throw new InvalidOperationException("기존 VisionQC Agent가 종료되지 않아 설치를 계속할 수 없습니다. 실행 중인 Agent를 종료한 뒤 다시 시도해 주세요.");
         }
 
+        private static void TerminateInstalledProcesses(string installRoot)
+        {
+            string prefix = Path.GetFullPath(installRoot).TrimEnd(Path.DirectorySeparatorChar) + Path.DirectorySeparatorChar;
+            int currentId = Process.GetCurrentProcess().Id;
+            foreach (Process process in Process.GetProcesses())
+            {
+                try
+                {
+                    if (process.Id == currentId) continue;
+                    string processPath = process.MainModule == null ? "" : process.MainModule.FileName;
+                    string fullPath = string.IsNullOrWhiteSpace(processPath) ? "" : Path.GetFullPath(processPath);
+                    if (!fullPath.StartsWith(prefix, StringComparison.OrdinalIgnoreCase)) continue;
+                    process.Kill();
+                    process.WaitForExit(5000);
+                }
+                catch { }
+                finally { try { process.Dispose(); } catch { } }
+            }
+        }
+
+        private static void RemovePreviousInstallation(string installDir)
+        {
+            if (!Directory.Exists(installDir)) return;
+            string root = Path.GetFullPath(installDir);
+            string[] preservedDirectories = { "data", "logs", "output" };
+            string[] preservedFiles = { "vpdl-worker.version" };
+            foreach (string directory in Directory.GetDirectories(root))
+            {
+                string name = Path.GetFileName(directory);
+                if (preservedDirectories.Contains(name, StringComparer.OrdinalIgnoreCase)) continue;
+                Directory.Delete(directory, true);
+            }
+            foreach (string file in Directory.GetFiles(root))
+            {
+                string name = Path.GetFileName(file);
+                if (preservedFiles.Contains(name, StringComparer.OrdinalIgnoreCase)) continue;
+                File.Delete(file);
+            }
+        }
+
         private static bool IsInstalledAgentRunning(string installedAgentPath)
         {
             string expected = Path.GetFullPath(installedAgentPath ?? "");
             string installRoot = Path.GetDirectoryName(expected) ?? "";
             string installPrefix = installRoot.TrimEnd(Path.DirectorySeparatorChar) + Path.DirectorySeparatorChar;
-            foreach (string name in new[] { Path.GetFileNameWithoutExtension(AgentExe), "VisionQC.VpdlWorker" })
-            foreach (Process process in Process.GetProcessesByName(name))
+            int currentId = Process.GetCurrentProcess().Id;
+            foreach (Process process in Process.GetProcesses())
             {
                 try
                 {
+                    if (process.Id == currentId) continue;
                     string processPath = process.MainModule == null ? "" : process.MainModule.FileName;
                     string fullPath = string.IsNullOrWhiteSpace(processPath) ? "" : Path.GetFullPath(processPath);
                     if (string.Equals(fullPath, expected, StringComparison.OrdinalIgnoreCase) || fullPath.StartsWith(installPrefix, StringComparison.OrdinalIgnoreCase)) return true;
