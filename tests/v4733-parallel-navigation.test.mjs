@@ -62,8 +62,10 @@ test('completed Simulation reconciles dropped SSE rows from the exact SQLite run
   assert.match(store, /WHERE run_id=@run_id AND image_id>@after_image_id/);
   assert.doesNotMatch(store.match(/internal SimulationResultPage ReadSimulationResultPage[\s\S]*?return response;\s*\n        }/)?.[0] || '', /BuildDeduplicatedHistoryCte/);
   assert.match(web, /function reconcileSimulationResults/);
-  assert.match(web, /replaceSimulationAnalysisRecords\(records, runId\)/);
+  assert.match(web, /replaceSimulationAnalysisRecords\(records, runId, expectedTotal\)/);
   assert.match(web, /expectedTotal !== records\.length/);
+  assert.match(web, /processedTotal !== expectedTotal/);
+  assert.match(web, /accepted !== Number\(expectedTotal\)/);
 });
 
 test('running Simulation incrementally flushes and reads DB rows without mixing SSE duplicates', () => {
@@ -73,4 +75,6 @@ test('running Simulation incrementally flushes and reads DB rows without mixing 
   assert.match(web, /simulationDbLiveAfterImageId/);
   assert.match(web, /if \(!state\.simulationDbLiveEnabled\) appendSimulationAnalysisRecords\(records\)/);
   assert.match(web, /nowRunning && runId && state\.simulationDbLiveEnabled/);
+  assert.match(web, /appendRowsToLiveAnalysisAccumulator/);
+  assert.match(web, /liveAnalysisModel/);
 });

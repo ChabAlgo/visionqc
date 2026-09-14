@@ -1,19 +1,19 @@
 {
-  "releaseTag": "visionqc-v4.7.35-agent-v1.3.22",
-  "webVersion": "4.7.35",
-  "agentVersion": "1.3.22",
-  "minimumAgentVersion": "1.3.22",
+  "releaseTag": "visionqc-v4.7.36-agent-v1.3.23",
+  "webVersion": "4.7.36",
+  "agentVersion": "1.3.23",
+  "minimumAgentVersion": "1.3.23",
   "compatibility": {
-    "web": "4.7.35",
-    "agent": "1.3.22"
+    "web": "4.7.36",
+    "agent": "1.3.23"
   },
   "artifacts": {
-    "agentInstaller": "downloads/VisionQC_Agent_Installer_v1.3.22.exe",
-    "offlinePackage": "downloads/VisionQC_Offline_v4.7.35.zip",
+    "agentInstaller": "downloads/VisionQC_Agent_Installer_v1.3.23.exe",
+    "offlinePackage": "downloads/VisionQC_Offline_v4.7.36.zip",
     "sha256": {
-      "agentInstaller": "04F303E4FB721B01D85C7F4484CF3EDC9BA9AAA386C9FF8C8FC3834C10520D24",
-      "offlinePackage": "60B1B7F3B948EDF3E8071B2E3E50705A8AA34E72EAB84121C27C03FE859592E3"
+      "agentInstaller": "B5405B19E6BB9E38065320BDFE876BB77ADB2A423E9FC7DFD46A172379E977E6",
+      "offlinePackage": "6E744D36D56D96C619DBB9942007F0CFECEDC1BBCF1906B5892553DCE3516C37"
     }
   },
-  "notes": "Simulation 실행 중 약 2초마다 현재 실행의 새 SQLite 결과만 대시보드에 추가하고 완료 후 전체 건수를 재검증합니다."
+  "notes": "Simulation 실행 중 새 결과만 증분 집계하고 완료 후 SQLite 전체 저장·변환 건수를 재검증합니다."
 }

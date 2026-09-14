@@ -1,7 +1,7 @@
 (() => {
   'use strict';
 
-  const VERSION = '4.7.35';
+  const VERSION = '4.7.36';
   const DEFAULT_POSITION_DEFS = [
     { key:'CA_TOP', name:'CA(TOP)' },
     { key:'AN_TOP', name:'AN(TOP)' },
@@ -27,9 +27,9 @@
   const NG_POSITION_PREFIX = 'ng-position:';
   const IMG_RE = /\.(png|jpe?g|bmp|gif|webp|tif?f)$/i;
   const LOCAL_AGENT_URL = 'http://127.0.0.1:17891';
-  const EXPECTED_AGENT_VERSION = '1.3.22';
-  const AGENT_INSTALLER_URL = './downloads/VisionQC_Agent_Installer_v1.3.22.exe';
-  const OFFLINE_PACKAGE_URL = './downloads/VisionQC_Offline_v4.7.35.zip';
+  const EXPECTED_AGENT_VERSION = '1.3.23';
+  const AGENT_INSTALLER_URL = './downloads/VisionQC_Agent_Installer_v1.3.23.exe';
+  const OFFLINE_PACKAGE_URL = './downloads/VisionQC_Offline_v4.7.36.zip';
   // SQLite에는 사용자가 명시적으로 남기려는 두 종류의 결과만 표시한다.
   // 이전 버전의 단발 검사(single-inspection) 이력은 보존하되 화면 집계에서는 제외한다.
   const PERSISTED_HISTORY_SOURCE_TYPES = ['simulation', 'csv-import', 'csv-file-stream'];
@@ -177,6 +177,7 @@
     simulationDbLiveEnabled: false,
     simulationDbLiveAfterImageId: 0,
     simulationDbLiveSyncPromise: null,
+    simulationLiveAccumulator: null,
     simulationLogs: [],
     notifications: safeJsonParse(safeStorageGet(NOTIFICATION_KEY), []),
     notificationPanelOpen: false,
@@ -1900,22 +1901,225 @@
     };
   }
 
-  function rebuildModel(renderPage = true) {
+  function adjustLiveCount(map, key, delta) {
+    const next = Number(map.get(key) || 0) + delta;
+    if (next > 0) map.set(key, next);
+    else map.delete(key);
+    return next;
+  }
+
+  function livePositionStats(accumulator, position) {
+    if (!accumulator.positionStats.has(position)) {
+      accumulator.positionStats.set(position, {
+        total:0, ng:0, ok:0, toolRefs:new Map(), toolNg:new Map(),
+        matchedActual:new Set(), detectedActual:new Set(), misses:new Set()
+      });
+    }
+    return accumulator.positionStats.get(position);
+  }
+
+  function updateLiveCellStats(accumulator, cellId, isNg, delta) {
+    const previous = accumulator.cellStats.get(cellId) || { records:0, ng:0 };
+    const hadNg = previous.ng > 0;
+    const next = { records:previous.records + delta, ng:previous.ng + (isNg ? delta : 0) };
+    if (next.records > 0) accumulator.cellStats.set(cellId, next);
+    else accumulator.cellStats.delete(cellId);
+    const hasNg = next.records > 0 && next.ng > 0;
+    if (hadNg !== hasNg) accumulator.ngCellCount += hasNg ? 1 : -1;
+  }
+
+  function liveScoreBucket(accumulator, position, tool) {
+    const key = `${position}\u0000${tool}`;
+    if (!accumulator.actualScores.has(key)) {
+      accumulator.actualScores.set(key, {
+        eligible:new Map(), excluded:new Map(), eligibleMin:null,
+        eligibleCount:0, excludedCount:0
+      });
+    }
+    return accumulator.actualScores.get(key);
+  }
+
+  function adjustLiveScore(bucket, group, score, delta) {
+    if (!Number.isFinite(score)) return;
+    const values = bucket[group];
+    adjustLiveCount(values, score, delta);
+    const countKey = `${group}Count`;
+    bucket[countKey] = Math.max(0, Number(bucket[countKey] || 0) + delta);
+    if (group !== 'eligible') return;
+    if (delta > 0 && (!Number.isFinite(bucket.eligibleMin) || score < bucket.eligibleMin)) bucket.eligibleMin = score;
+    else if (delta < 0 && score === bucket.eligibleMin && !values.has(score)) {
+      bucket.eligibleMin = values.size ? Math.min(...values.keys()) : null;
+    }
+  }
+
+  function createLiveAnalysisAccumulator(ngImages = state.ngImages) {
+    const actualMap = new Map(), actualCountByPosition = new Map();
+    (ngImages || []).forEach((image) => {
+      const key = resultKey(image.position, image.cellId);
+      if (!actualMap.has(key)) {
+        actualMap.set(key, []);
+        adjustLiveCount(actualCountByPosition, image.position, 1);
+      }
+      actualMap.get(key).push(image);
+    });
+    return {
+      records:[], recordMap:new Map(), actualMap,
+      actualCountByPosition, positionStats:new Map(), globalToolRefs:new Map(),
+      cellStats:new Map(), ngCellCount:0, actualScores:new Map(),
+      matchedActual:new Set(), detectedActual:new Set(), missMap:new Map(),
+      duplicateMap:new Map(), resultCellIdSamples:[],
+      actualCellIdSamples:[...new Set((ngImages || []).map((image) => image.cellId))].slice(0, 3),
+      appendedRows:0
+    };
+  }
+
+  function updateLiveRecordContribution(accumulator, record, delta) {
+    const stats = livePositionStats(accumulator, record.position);
+    stats.total += delta;
+    if (record.totalResult === 'NG') stats.ng += delta;
+    if (record.totalResult === 'OK') stats.ok += delta;
+    updateLiveCellStats(accumulator, record.cellId, record.totalResult === 'NG', delta);
+
+    Object.values(record.tools).forEach((tool) => {
+      adjustLiveCount(accumulator.globalToolRefs, tool.tool, delta);
+      adjustLiveCount(stats.toolRefs, tool.tool, delta);
+      if (record.totalResult === 'NG' && tool.result === 'NG') adjustLiveCount(stats.toolNg, tool.tool, delta);
+    });
+
+    if (record.duplicateCount > 0) {
+      if (delta > 0) accumulator.duplicateMap.set(record.key, record);
+      else accumulator.duplicateMap.delete(record.key);
+    }
+
+    if (!accumulator.actualMap.has(record.key)) return;
+    if (delta > 0) {
+      accumulator.matchedActual.add(record.key);
+      stats.matchedActual.add(record.key);
+      if (record.totalResult === 'NG') {
+        accumulator.detectedActual.add(record.key);
+        stats.detectedActual.add(record.key);
+      } else if (record.totalResult === 'OK') {
+        const miss = { key:record.key, cellId:record.cellId, position:record.position, record, images:accumulator.actualMap.get(record.key) };
+        accumulator.missMap.set(record.key, miss);
+        stats.misses.add(record.key);
+      }
+    } else {
+      accumulator.matchedActual.delete(record.key);
+      accumulator.detectedActual.delete(record.key);
+      accumulator.missMap.delete(record.key);
+      stats.matchedActual.delete(record.key);
+      stats.detectedActual.delete(record.key);
+      stats.misses.delete(record.key);
+    }
+
+    Object.keys(record.tools).forEach((tool) => {
+      const scores = actualNgScoreCandidates([record], tool, state.actualNgOtherToolExclusionScore);
+      const bucket = liveScoreBucket(accumulator, record.position, tool);
+      scores.eligible.forEach((score) => adjustLiveScore(bucket, 'eligible', score, delta));
+      scores.excluded.forEach((score) => adjustLiveScore(bucket, 'excluded', score, delta));
+    });
+  }
+
+  function appendRowsToLiveAnalysisAccumulator(accumulator, rows) {
+    (rows || []).forEach((row) => {
+      const key = resultKey(row.position, row.cellId);
+      const previous = accumulator.recordMap.get(key);
+      if (previous) updateLiveRecordContribution(accumulator, previous, -1);
+      const record = aggregateRows(previous ? previous.sourceRows.concat(row) : [row])[0];
+      applyThresholdSimulation([record]);
+      if (previous) {
+        Object.defineProperty(record, '_liveIndex', { value:previous._liveIndex, enumerable:false });
+        accumulator.records[previous._liveIndex] = record;
+      }
+      else {
+        Object.defineProperty(record, '_liveIndex', { value:accumulator.records.length, enumerable:false });
+        accumulator.records.push(record);
+        if (accumulator.resultCellIdSamples.length < 3 && !accumulator.resultCellIdSamples.includes(record.cellId))
+          accumulator.resultCellIdSamples.push(record.cellId);
+      }
+      accumulator.recordMap.set(key, record);
+      updateLiveRecordContribution(accumulator, record, 1);
+      accumulator.appendedRows += 1;
+    });
+  }
+
+  function liveAnalysisModel(accumulator) {
     const positions = positionNames();
-    const rows = positions.flatMap(position => state.resultInputs[position]?.rows || []);
-    state.model = buildAnalysisModel(rows);
-    const selectedRows = state.dashboardDate ? rows.filter(row => dashboardDateForRow(row) === state.dashboardDate) : rows;
-    const selectedKeys = new Set(selectedRows.map(row => resultKey(row.position,row.cellId)));
-    const selectedNg = state.dashboardDate ? state.ngImages.filter(image => {
-      const date = filenameCaptureTimestamp(image.relativePath).slice(0,10);
-      return date ? date === state.dashboardDate : selectedKeys.has(resultKey(image.position,image.cellId));
-    }) : state.ngImages;
-    state.dashboardModel = state.dashboardDate ? buildAnalysisModel(selectedRows, selectedNg) : state.model;
+    const tools = [...accumulator.globalToolRefs.keys()].sort((a, b) => a.localeCompare(b, undefined, { numeric:true, sensitivity:'base' }));
+    const misses = [...accumulator.missMap.values()].sort((a, b) => positions.indexOf(a.position) - positions.indexOf(b.position) || a.cellId.localeCompare(b.cellId));
+    const positionSummaries = positions.map((position) => {
+      const stats = livePositionStats(accumulator, position);
+      const actualNg = Number(accumulator.actualCountByPosition.get(position) || 0);
+      return {
+        position, input:!!state.resultInputs[position], total:stats.total, ng:stats.ng, ok:stats.ok,
+        ngRate:stats.total ? stats.ng / stats.total : 0, actualNg,
+        detected:stats.detectedActual.size, misses:stats.misses.size,
+        unmatched:Math.max(0, actualNg - stats.matchedActual.size)
+      };
+    });
+    const positionToolSummaries = positions.map((position) => {
+      const stats = livePositionStats(accumulator, position);
+      const positionTools = [...stats.toolRefs.keys()].sort((a, b) => a.localeCompare(b, undefined, { numeric:true, sensitivity:'base' }));
+      return {
+        position, input:!!state.resultInputs[position], totalNg:stats.ng,
+        tools:positionTools.map((tool) => {
+          const bucket = liveScoreBucket(accumulator, position, tool);
+          const ng = Number(stats.toolNg.get(tool) || 0);
+          return {
+            tool, ng, denominator:stats.ng, rate:stats.ng ? ng / stats.ng : 0,
+            minNgScore:Number.isFinite(bucket.eligibleMin) ? bucket.eligibleMin : null,
+            excludedActualNgScoreCount:bucket.excludedCount,
+            actualNgExclusionThreshold:clampScore(state.actualNgOtherToolExclusionScore, 0.80),
+            threshold:getThreshold(position, tool)
+          };
+        })
+      };
+    });
+    const uniqueCellCount = accumulator.cellStats.size;
+    const ngCellCount = accumulator.ngCellCount;
+    return {
+      records:accumulator.records, recordMap:accumulator.recordMap, actualMap:accumulator.actualMap,
+      uniqueCellCount, ngCellCount, ngCellRate:uniqueCellCount ? ngCellCount / uniqueCellCount : 0,
+      misses, detectedActual:accumulator.detectedActual, tools, positionSummaries, positionToolSummaries,
+      actualUniqueCount:accumulator.actualMap.size, matchedActualCount:accumulator.matchedActual.size,
+      unmatchedActualCount:Math.max(0, accumulator.actualMap.size - accumulator.matchedActual.size),
+      resultCellIdSamples:accumulator.resultCellIdSamples, actualCellIdSamples:accumulator.actualCellIdSamples,
+      duplicates:[...accumulator.duplicateMap.values()]
+    };
+  }
+
+  function applyAnalysisModel(model, rows = null) {
+    state.model = model;
+    if (state.dashboardDate) {
+      const sourceRows = rows || Object.values(state.resultInputs).flatMap((input) => input.rows || []);
+      const selectedRows = sourceRows.filter(row => dashboardDateForRow(row) === state.dashboardDate);
+      const selectedKeys = new Set(selectedRows.map(row => resultKey(row.position,row.cellId)));
+      const selectedNg = state.ngImages.filter(image => {
+        const date = filenameCaptureTimestamp(image.relativePath).slice(0,10);
+        return date ? date === state.dashboardDate : selectedKeys.has(resultKey(image.position,image.cellId));
+      });
+      state.dashboardModel = buildAnalysisModel(selectedRows, selectedNg);
+    } else state.dashboardModel = state.model;
     const { misses, tools } = state.model;
+    const positions = positionNames();
     if (!positions.includes(state.selectedMissPosition)) state.selectedMissPosition = positions[0] || '';
     if (misses.length && !misses.some((item) => item.position === state.selectedMissPosition)) state.selectedMissPosition = misses[0].position;
     if (state.analysisPosition !== 'ALL' && !positions.includes(state.analysisPosition)) state.analysisPosition = 'ALL';
     if (!tools.includes(state.analysisTool)) state.analysisTool = tools[0] || '';
+  }
+
+  function rebuildModel(renderPage = true) {
+    const positions = positionNames();
+    const rows = positions.flatMap(position => state.resultInputs[position]?.rows || []);
+    if (state.simulationLiveActive) {
+      const accumulator = createLiveAnalysisAccumulator(state.ngImages);
+      appendRowsToLiveAnalysisAccumulator(accumulator, rows);
+      state.simulationLiveAccumulator = accumulator;
+      applyAnalysisModel(liveAnalysisModel(accumulator), rows);
+    } else {
+      state.simulationLiveAccumulator = null;
+      applyAnalysisModel(buildAnalysisModel(rows), rows);
+    }
     if (renderPage && state.page !== 'classification' && state.initialized) renderCurrentPage();
   }
 
@@ -4265,6 +4469,7 @@
     state.simulationDbLiveEnabled = false;
     state.simulationDbLiveAfterImageId = 0;
     state.simulationDbLiveSyncPromise = null;
+    state.simulationLiveAccumulator = null;
     rebuildModel(false);
   }
 
@@ -4292,7 +4497,7 @@
     };
   }
 
-  function replaceSimulationAnalysisRecords(records, runId) {
+  function replaceSimulationAnalysisRecords(records, runId, expectedTotal = null) {
     const nextInputs = {};
     let accepted = 0;
     (Array.isArray(records) ? records : []).forEach((record) => {
@@ -4302,10 +4507,13 @@
       nextInputs[row.position].rows.push(row);
       accepted += 1;
     });
+    if (expectedTotal !== null && expectedTotal !== undefined && Number.isFinite(Number(expectedTotal)) && accepted !== Number(expectedTotal))
+      throw new Error(`완료 결과 변환 수가 맞지 않습니다. 저장 ${numberText(expectedTotal)}건 / 반영 ${numberText(accepted)}건`);
     state.dashboardDate = '';
     state.resultInputs = nextInputs;
     state.simulationLiveRows = accepted;
     state.simulationSyncedRunId = String(runId || '');
+    state.simulationLiveAccumulator = null;
     rebuildModel(false);
     if (state.page === 'main' || state.page === 'analysis') queueLiveUiRender();
     updateSimulationStatusDom();
@@ -4314,16 +4522,21 @@
 
   function appendSimulationAnalysisRecords(records) {
     let accepted = 0;
+    const appendedRows = [];
     (Array.isArray(records) ? records : []).forEach((record) => {
       const row = simulationAnalysisRow(record, state.simulationLiveRows + 1);
       if (!row) return;
       if (!state.resultInputs[row.position]) state.resultInputs[row.position] = { position:row.position, fileName:'LIVE Simulation', fileSize:0, rows:[], warnings:[], updatedAt:Date.now() };
       state.resultInputs[row.position].rows.push(row);
+      appendedRows.push(row);
       state.simulationLiveRows += 1;
       accepted += 1;
     });
     if (accepted) {
-      rebuildModel(false);
+      if (state.simulationLiveActive && state.simulationLiveAccumulator) {
+        appendRowsToLiveAnalysisAccumulator(state.simulationLiveAccumulator, appendedRows);
+        applyAnalysisModel(liveAnalysisModel(state.simulationLiveAccumulator));
+      } else rebuildModel(false);
       if (state.page === 'main' || state.page === 'analysis') queueLiveUiRender();
     }
     return accepted;
@@ -4385,8 +4598,11 @@
         if (!page.hasMore) break;
       }
       if (expectedTotal !== records.length) throw new Error(`완료 결과 수가 맞지 않습니다. 저장 ${numberText(expectedTotal)}건 / 조회 ${numberText(records.length)}건`);
+      const processedTotal = Number(simulationState?.processed);
+      if (Number.isFinite(processedTotal) && processedTotal >= 0 && processedTotal !== expectedTotal)
+        throw new Error(`완료 처리 수와 DB 저장 수가 맞지 않습니다. 처리 ${numberText(processedTotal)}건 / 저장 ${numberText(expectedTotal)}건`);
       if (state.simulationLiveRunId !== runId) return;
-      const accepted = replaceSimulationAnalysisRecords(records, runId);
+      const accepted = replaceSimulationAnalysisRecords(records, runId, expectedTotal);
       state.simulationResultSyncRetryAt = 0;
       state.simulationResultSyncFailureNotifiedRunId = '';
       appendSimulationLog({ level:'INFO', message:`대시보드 완료 결과 재동기화 · ${numberText(accepted)}건` });
@@ -6197,6 +6413,76 @@
         appendSimulationAnalysisRecords([record(positions[0],2),record(positions[1],2)]);
         state.simulationDbLiveEnabled = false;
         return { afterIgnoredSse, liveRows:state.simulationLiveRows, dashboardTotal:state.dashboardModel.records.length, positionCounts:Object.values(state.resultInputs).map(input => input.rows.length) };
+      },
+      incrementalAggregationRegression() {
+        const positions = positionNames().slice(0, 2);
+        const raw = (position, id, total, crackResult, crackScore, weldResult = 'OK', weldScore = .2) => ({
+          FileName:`${position}-${id}.jpg`, CellId:id, Position:position, TotalResult:total,
+          Tools:{
+            Crack:{Tool:'Crack',Result:crackResult,Score:crackScore},
+            Welding:{Tool:'Welding',Result:weldResult,Score:weldScore}
+          }
+        });
+        const records = [
+          raw(positions[0], 'CELL-1', 'NG', 'NG', .72),
+          raw(positions[1], 'CELL-1', 'OK', 'OK', .91),
+          raw(positions[0], 'CELL-2', 'NG', 'NG', .62, 'NG', .86),
+          raw(positions[0], 'CELL-1', 'NG', 'NG', .81)
+        ];
+        state.ngImages = [
+          {position:positions[0],cellId:'CELL-1',relativePath:'NG/a.jpg'},
+          {position:positions[0],cellId:'CELL-2',relativePath:'NG/b.jpg'},
+          {position:positions[1],cellId:'MISSING',relativePath:'NG/c.jpg'}
+        ];
+        state.resultInputs = Object.fromEntries(positions.map((position) => [position,{position,fileName:'LIVE Simulation',rows:[],warnings:[]} ]));
+        state.dashboardDate = '';
+        state.simulationLiveActive = true;
+        state.simulationLiveRows = 0;
+        state.simulationLiveAccumulator = createLiveAnalysisAccumulator(state.ngImages);
+        applyAnalysisModel(liveAnalysisModel(state.simulationLiveAccumulator));
+        appendSimulationAnalysisRecords(records.slice(0, 2));
+        appendSimulationAnalysisRecords(records.slice(2));
+        const rows = Object.values(state.resultInputs).flatMap((input) => input.rows || []);
+        const expected = buildAnalysisModel(rows, state.ngImages);
+        const snapshot = (model) => ({
+          records:model.records.map((record) => ({key:record.key,totalResult:record.totalResult,duplicateCount:record.duplicateCount,tools:Object.fromEntries(Object.entries(record.tools).map(([tool,value]) => [tool,{result:value.result,representativeScore:value.representativeScore}]))})).sort((a, b) => a.key.localeCompare(b.key)),
+          uniqueCellCount:model.uniqueCellCount, ngCellCount:model.ngCellCount, ngCellRate:model.ngCellRate,
+          misses:model.misses.map((item) => item.key), detectedActual:[...model.detectedActual].sort(), tools:model.tools,
+          positionSummaries:model.positionSummaries,
+          positionToolSummaries:model.positionToolSummaries,
+          actualUniqueCount:model.actualUniqueCount, matchedActualCount:model.matchedActualCount,
+          unmatchedActualCount:model.unmatchedActualCount, duplicates:model.duplicates.map((record) => record.key).sort()
+        });
+        const incremental = snapshot(state.model), complete = snapshot(expected);
+        return { equal:JSON.stringify(incremental) === JSON.stringify(complete), appendedRows:state.simulationLiveAccumulator.appendedRows, incremental, complete };
+      },
+      incrementalPerformanceRegression(count = 200000, batchSize = 25) {
+        const positions = positionNames().slice(0, 4);
+        state.ngImages = [];
+        state.resultInputs = Object.fromEntries(positions.map((position) => [position,{position,fileName:'LIVE Simulation',rows:[],warnings:[]} ]));
+        state.dashboardDate = '';
+        state.simulationLiveActive = true;
+        state.simulationLiveRows = 0;
+        state.simulationLiveAccumulator = createLiveAnalysisAccumulator(state.ngImages);
+        applyAnalysisModel(liveAnalysisModel(state.simulationLiveAccumulator));
+        const started = performance.now();
+        for (let offset = 0; offset < count; offset += batchSize) {
+          const records = [];
+          for (let index = offset; index < Math.min(count, offset + batchSize); index += 1) {
+            const position = positions[index % positions.length];
+            records.push({
+              FileName:`${index}.jpg`, CellId:`CELL-${index}`, Position:position, TotalResult:index % 5 ? 'OK' : 'NG',
+              Tools:{
+                Crack:{Tool:'Crack',Result:index % 11 ? 'OK' : 'NG',Score:.71},
+                FoilDamage:{Tool:'FoilDamage',Result:'OK',Score:.82},
+                Trimming:{Tool:'Trimming',Result:index % 17 ? 'OK' : 'NG',Score:.63},
+                Welding:{Tool:'Welding',Result:'OK',Score:.91}
+              }
+            });
+          }
+          appendSimulationAnalysisRecords(records);
+        }
+        return { count, batchSize, elapsedMs:performance.now() - started, liveRows:state.simulationLiveRows, dashboardTotal:state.dashboardModel.records.length };
       },
       seedRows(rows) {
         state.resultInputs = Object.fromEntries(positionNames().map(position => [position,{rows:rows.filter(r=>r.position===position),fileName:'debug.csv',warnings:[]} ]));

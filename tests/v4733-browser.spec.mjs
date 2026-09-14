@@ -31,6 +31,14 @@ test('running DB synchronization adds only new rows and ignores duplicate SSE de
   expect(result).toEqual({ afterIgnoredSse:0, liveRows:4, dashboardTotal:4, positionCounts:[2,2] });
 });
 
+test('live aggregation matches a complete rebuild across batches and duplicate cells', async ({ page }) => {
+  await open(page);
+  const result = await page.evaluate(() => window.__VISIONQC_DEBUG__.incrementalAggregationRegression());
+  expect(result.appendedRows).toBe(4);
+  expect(result.incremental).toEqual(result.complete);
+  expect(result.equal).toBe(true);
+});
+
 for (const scenario of [
   { name:'Dashboard 미검 Cell ID', open:'openMissSequenceRegression', kind:'미검', cells:['MISS-CELL-001','MISS-CELL-002','MISS-CELL-003'] },
   { name:'검사 이력 Cell 이미지 탐색', open:'openHistorySequenceRegression', kind:'검사 이력', cells:['HISTORY-CELL-001','HISTORY-CELL-002','HISTORY-CELL-003'] }
