@@ -1,15 +1,15 @@
-# VisionQC v4.7.34 / Local Agent v1.3.21
+# VisionQC v4.7.35 / Local Agent v1.3.22
 
 ## 현재 릴리스 안내
 
-- 설치 파일: [VisionQC Agent 1.3.21](downloads/VisionQC_Agent_Installer_v1.3.21.exe)
-- 오프라인 패키지: [VisionQC Offline 4.7.34](downloads/VisionQC_Offline_v4.7.34.zip)
+- 설치 파일: [VisionQC Agent 1.3.22](downloads/VisionQC_Agent_Installer_v1.3.22.exe)
+- 오프라인 패키지: [VisionQC Offline 4.7.35](downloads/VisionQC_Offline_v4.7.35.zip)
 - SQLite 이력, 대용량 CSV 직접 적재, 파일명 Position 기반 AI Green 검사, 원본/Heatmap Viewer를 제공합니다.
-- 최신 변경·검증: [v4.7.34 릴리스 노트](RELEASE_NOTES_v4.7.34_KR.md). 기존 설계는 `ARCHITECTURE_V4.7.0_KR.md` 참고.
-- 소스 폴더 `LocalAgent_v0.2.12`는 유지된 경로명입니다. 실제 배포 Agent 버전은 1.3.21이며 `RELEASE_MANIFEST.json`과 EXE 파일 버전으로 확인합니다.
+- 최신 변경·검증: [v4.7.35 릴리스 노트](RELEASE_NOTES_v4.7.35_KR.md). 기존 설계는 `ARCHITECTURE_V4.7.0_KR.md` 참고.
+- 소스 폴더 `LocalAgent_v0.2.12`는 유지된 경로명입니다. 실제 배포 Agent 버전은 1.3.22이며 `RELEASE_MANIFEST.json`과 EXE 파일 버전으로 확인합니다.
 
-- 이번 배포: Simulation 완료 시 해당 실행의 SQLite 전체 결과를 다시 확인해, 실시간 연결에서 일부 행을 놓쳐도 대시보드 건수를 복구합니다.
-- 전체 저장 건수와 조회 건수가 일치한 경우에만 화면 데이터를 교체하며, 새 실행이 시작되면 이전 실행 결과가 화면을 덮지 않습니다.
+- 이번 배포: Simulation 실행 중 약 2초마다 해당 실행의 새 SQLite 결과만 읽어 대시보드 처리 건수를 따라갑니다.
+- 실시간 이벤트와 DB 결과를 중복 집계하지 않으며, 완료 후 전체 저장 건수를 다시 검증합니다.
 - 저장된 CSV/XLSX 결과를 다시 불러올 때 이전 날짜 선택을 해제해 새 데이터로 메인 대시보드를 즉시 다시 집계합니다.
 
 # 이전 변경 이력

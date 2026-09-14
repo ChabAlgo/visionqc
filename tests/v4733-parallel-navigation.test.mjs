@@ -65,3 +65,12 @@ test('completed Simulation reconciles dropped SSE rows from the exact SQLite run
   assert.match(web, /replaceSimulationAnalysisRecords\(records, runId\)/);
   assert.match(web, /expectedTotal !== records\.length/);
 });
+
+test('running Simulation incrementally flushes and reads DB rows without mixing SSE duplicates', () => {
+  assert.match(server, /_historyStore\.Flush\(_simulationHistorySession\)/);
+  assert.match(store, /internal void Flush\(RunStoreSession session\)/);
+  assert.match(web, /function syncSimulationLiveResults/);
+  assert.match(web, /simulationDbLiveAfterImageId/);
+  assert.match(web, /if \(!state\.simulationDbLiveEnabled\) appendSimulationAnalysisRecords\(records\)/);
+  assert.match(web, /nowRunning && runId && state\.simulationDbLiveEnabled/);
+});

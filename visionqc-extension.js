@@ -1,7 +1,7 @@
 (() => {
   'use strict';
 
-  const VERSION = '4.7.34';
+  const VERSION = '4.7.35';
   const DEFAULT_POSITION_DEFS = [
     { key:'CA_TOP', name:'CA(TOP)' },
     { key:'AN_TOP', name:'AN(TOP)' },
@@ -27,9 +27,9 @@
   const NG_POSITION_PREFIX = 'ng-position:';
   const IMG_RE = /\.(png|jpe?g|bmp|gif|webp|tif?f)$/i;
   const LOCAL_AGENT_URL = 'http://127.0.0.1:17891';
-  const EXPECTED_AGENT_VERSION = '1.3.21';
-  const AGENT_INSTALLER_URL = './downloads/VisionQC_Agent_Installer_v1.3.21.exe';
-  const OFFLINE_PACKAGE_URL = './downloads/VisionQC_Offline_v4.7.34.zip';
+  const EXPECTED_AGENT_VERSION = '1.3.22';
+  const AGENT_INSTALLER_URL = './downloads/VisionQC_Agent_Installer_v1.3.22.exe';
+  const OFFLINE_PACKAGE_URL = './downloads/VisionQC_Offline_v4.7.35.zip';
   // SQLite에는 사용자가 명시적으로 남기려는 두 종류의 결과만 표시한다.
   // 이전 버전의 단발 검사(single-inspection) 이력은 보존하되 화면 집계에서는 제외한다.
   const PERSISTED_HISTORY_SOURCE_TYPES = ['simulation', 'csv-import', 'csv-file-stream'];
@@ -174,6 +174,9 @@
     simulationResultSyncPromise: null,
     simulationResultSyncRetryAt: 0,
     simulationResultSyncFailureNotifiedRunId: '',
+    simulationDbLiveEnabled: false,
+    simulationDbLiveAfterImageId: 0,
+    simulationDbLiveSyncPromise: null,
     simulationLogs: [],
     notifications: safeJsonParse(safeStorageGet(NOTIFICATION_KEY), []),
     notificationPanelOpen: false,
@@ -3543,6 +3546,7 @@
       const nowRunning = !!data.state?.running;
       const runId = String(data.state?.simulationRunId || '');
       if (nowRunning && runId) state.simulationLiveRunId = runId;
+      if (nowRunning && runId && state.simulationDbLiveEnabled) syncSimulationLiveResults(data.state);
       if (!nowRunning && runId && state.simulationLiveRunId === runId && state.simulationSyncedRunId !== runId)
         reconcileSimulationResults(data.state);
       if (!nowRunning && data.runtimePreloaded && data.runtimePreloadToken) {
@@ -3685,7 +3689,10 @@
           state.simulationProgress = { ...state.simulationProgress, ...update };
           const runId = String(update?.simulationRunId || '');
           if (update?.running && runId) state.simulationLiveRunId = runId;
-          if (name === 'completed' || name === 'stopped' || name === 'error') state.simulationLiveActive = false;
+          if (name === 'completed' || name === 'stopped' || name === 'error') {
+            state.simulationLiveActive = false;
+            state.simulationDbLiveEnabled = false;
+          }
           if (name === 'error') clearSimulationRuntimeReadiness();
           if (name === 'completed' || name === 'stopped') {
             reconcileSimulationResults(update);
@@ -4255,6 +4262,9 @@
     state.simulationResultSyncPromise = null;
     state.simulationResultSyncRetryAt = 0;
     state.simulationResultSyncFailureNotifiedRunId = '';
+    state.simulationDbLiveEnabled = false;
+    state.simulationDbLiveAfterImageId = 0;
+    state.simulationDbLiveSyncPromise = null;
     rebuildModel(false);
   }
 
@@ -4302,9 +4312,58 @@
     return accepted;
   }
 
+  function appendSimulationAnalysisRecords(records) {
+    let accepted = 0;
+    (Array.isArray(records) ? records : []).forEach((record) => {
+      const row = simulationAnalysisRow(record, state.simulationLiveRows + 1);
+      if (!row) return;
+      if (!state.resultInputs[row.position]) state.resultInputs[row.position] = { position:row.position, fileName:'LIVE Simulation', fileSize:0, rows:[], warnings:[], updatedAt:Date.now() };
+      state.resultInputs[row.position].rows.push(row);
+      state.simulationLiveRows += 1;
+      accepted += 1;
+    });
+    if (accepted) {
+      rebuildModel(false);
+      if (state.page === 'main' || state.page === 'analysis') queueLiveUiRender();
+    }
+    return accepted;
+  }
+
+  async function syncSimulationLiveResults(simulationState) {
+    const runId = String(simulationState?.simulationRunId || state.simulationLiveRunId || '');
+    if (!state.simulationDbLiveEnabled || !runId || state.simulationLiveRunId !== runId) return;
+    if (state.simulationDbLiveSyncPromise) return state.simulationDbLiveSyncPromise;
+    const task = (async () => {
+      const records = [];
+      let afterImageId = Number(state.simulationDbLiveAfterImageId || 0);
+      while (true) {
+        const page = await agentFetch('/api/simulation/results', { method:'POST', body:{ runId, afterImageId, pageSize:1000 }, timeout:15000 });
+        if (!page?.ok) throw new Error(page?.error || '실시간 결과를 읽지 못했습니다.');
+        const batch = Array.isArray(page.records) ? page.records : [];
+        records.push(...batch);
+        const nextImageId = Number(page.nextImageId || afterImageId);
+        if (page.hasMore && (!batch.length || nextImageId <= afterImageId)) throw new Error('실시간 결과 페이지 순서가 올바르지 않습니다.');
+        afterImageId = nextImageId;
+        if (!page.hasMore) break;
+      }
+      if (!state.simulationDbLiveEnabled || state.simulationLiveRunId !== runId) return;
+      appendSimulationAnalysisRecords(records);
+      state.simulationDbLiveAfterImageId = afterImageId;
+      updateSimulationStatusDom();
+    })().catch((error) => {
+      if (state.simulationDbLiveEnabled && state.simulationLiveRunId === runId)
+        console.warn('VisionQC live DB sync error', error);
+    }).finally(() => {
+      if (state.simulationDbLiveSyncPromise === task) state.simulationDbLiveSyncPromise = null;
+    });
+    state.simulationDbLiveSyncPromise = task;
+    return task;
+  }
+
   async function reconcileSimulationResults(simulationState) {
     const runId = String(simulationState?.simulationRunId || state.simulationLiveRunId || '');
     if (!runId || state.simulationLiveRunId !== runId || state.simulationSyncedRunId === runId) return;
+    state.simulationDbLiveEnabled = false;
     if (Date.now() < Number(state.simulationResultSyncRetryAt || 0)) return;
     if (state.simulationResultSyncPromise) return state.simulationResultSyncPromise;
     const task = (async () => {
@@ -4348,18 +4407,9 @@
 
   function applySimulationAnalysisBatch(data) {
     const records = Array.isArray(data?.records) ? data.records : [];
-    if (!records.length) return;
-    records.forEach((record) => {
-      const row = simulationAnalysisRow(record, state.simulationLiveRows + 1);
-      if (!row) return;
-      if (!state.resultInputs[row.position]) state.resultInputs[row.position] = { position:row.position, fileName:'LIVE Simulation', fileSize:0, rows:[], warnings:[], updatedAt:Date.now() };
-      state.resultInputs[row.position].rows.push(row);
-      state.simulationLiveRows += 1;
-    });
     if (data?.state && typeof data.state === 'object') state.simulationProgress = { ...state.simulationProgress, ...data.state };
     else if (Number.isFinite(Number(data?.processed))) state.simulationProgress.processed = Number(data.processed);
-    rebuildModel(false);
-    if (state.page === 'main' || state.page === 'analysis') queueLiveUiRender();
+    if (!state.simulationDbLiveEnabled) appendSimulationAnalysisRecords(records);
     updateSimulationStatusDom();
   }
 
@@ -4407,6 +4457,14 @@
       if (!data.ok) throw new Error(data.error || 'Simulation 시작 실패');
       state.simulationProgress = { ...state.simulationProgress, ...(data.state || {}), running:true };
       state.simulationLiveRunId = String(data.state?.simulationRunId || '');
+      if (state.simulationLiveRunId) {
+        Object.values(state.resultInputs).forEach(input => { input.rows = []; });
+        state.simulationLiveRows = 0;
+        state.simulationDbLiveAfterImageId = 0;
+        state.simulationDbLiveEnabled = true;
+        rebuildModel(false);
+        syncSimulationLiveResults(data.state);
+      }
       updateSimulationStatusDom();
     } catch (error) {
       state.simulationLiveActive = false;
@@ -6125,6 +6183,20 @@
         const complete = positions.flatMap(position => [1,2,3].map(index => record(position,index)));
         const accepted = replaceSimulationAnalysisRecords(complete, 'debug-run');
         return { partial, accepted, dashboardTotal:state.dashboardModel.records.length, positionCounts:Object.values(state.resultInputs).map(input => input.rows.length), syncedRunId:state.simulationSyncedRunId };
+      },
+      liveDbIncrementalRegression() {
+        const positions = positionNames().slice(0, 2);
+        const record = (position, index) => ({ FileName:`${position}-${index}.jpg`, CellId:`LIVE-${position}-${index}`, Position:position, TotalResult:'NG', Tools:{ Crack:{ Tool:'Crack', Result:'NG', Score:.8 } } });
+        state.resultInputs = {};
+        state.simulationLiveRows = 0;
+        state.simulationLiveRunId = 'debug-live-run';
+        state.simulationDbLiveEnabled = true;
+        applySimulationAnalysisBatch({ records:[record(positions[0],1),record(positions[1],1)], processed:2 });
+        const afterIgnoredSse = state.simulationLiveRows;
+        appendSimulationAnalysisRecords([record(positions[0],1),record(positions[1],1)]);
+        appendSimulationAnalysisRecords([record(positions[0],2),record(positions[1],2)]);
+        state.simulationDbLiveEnabled = false;
+        return { afterIgnoredSse, liveRows:state.simulationLiveRows, dashboardTotal:state.dashboardModel.records.length, positionCounts:Object.values(state.resultInputs).map(input => input.rows.length) };
       },
       seedRows(rows) {
         state.resultInputs = Object.fromEntries(positionNames().map(position => [position,{rows:rows.filter(r=>r.position===position),fileName:'debug.csv',warnings:[]} ]));

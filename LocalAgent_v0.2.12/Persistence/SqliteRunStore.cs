@@ -479,6 +479,12 @@ ORDER BY image_id ASC LIMIT @limit;";
             return response;
         }
 
+        internal void Flush(RunStoreSession session)
+        {
+            if (session == null || session.Closed || session.PendingCount <= 0) return;
+            CommitAndContinue(session);
+        }
+
         // 원본 Run 이력은 추적 가능하도록 보존한다. 화면 조회/집계에서는 같은 Cell ID + Position + Workspace를
         // 하나의 검사 대상으로 보고 가장 마지막에 기록된 결과만 남긴다. Cell ID나 Position이 없는
         // 행은 서로 동일하다고 판단할 근거가 없으므로 중복 제거하지 않는다.

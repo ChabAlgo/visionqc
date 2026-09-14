@@ -2018,7 +2018,12 @@ namespace VisionQC.LocalAgent
             var data = DeserializeDictionary(body);
             string runId = GetString(data, "runId", "").Trim();
             string expected;
-            lock (_historyWriteSync) expected = _lastSimulationRunId;
+            lock (_historyWriteSync)
+            {
+                expected = _lastSimulationRunId;
+                if (_simulationHistorySession != null && string.Equals(_simulationHistorySession.RunId, runId, StringComparison.OrdinalIgnoreCase))
+                    _historyStore.Flush(_simulationHistorySession);
+            }
             if (string.IsNullOrWhiteSpace(runId) || !string.Equals(runId, expected, StringComparison.OrdinalIgnoreCase))
                 return new SqliteRunStore.SimulationResultPage { ok = false, runId = runId, error = "현재 Simulation 실행 ID가 아닙니다." };
             return _historyStore.ReadSimulationResultPage(runId, GetLong(data, "afterImageId", 0), GetInt(data, "pageSize", 500));
