@@ -1,7 +1,7 @@
 (() => {
   'use strict';
 
-  const VERSION = '4.7.31';
+  const VERSION = '4.7.32';
   const DEFAULT_POSITION_DEFS = [
     { key:'CA_TOP', name:'CA(TOP)' },
     { key:'AN_TOP', name:'AN(TOP)' },
@@ -29,7 +29,7 @@
   const LOCAL_AGENT_URL = 'http://127.0.0.1:17891';
   const EXPECTED_AGENT_VERSION = '1.3.19';
   const AGENT_INSTALLER_URL = './downloads/VisionQC_Agent_Installer_v1.3.19.exe';
-  const OFFLINE_PACKAGE_URL = './downloads/VisionQC_Offline_v4.7.31.zip';
+  const OFFLINE_PACKAGE_URL = './downloads/VisionQC_Offline_v4.7.32.zip';
   // SQLite에는 사용자가 명시적으로 남기려는 두 종류의 결과만 표시한다.
   // 이전 버전의 단발 검사(single-inspection) 이력은 보존하되 화면 집계에서는 제외한다.
   const PERSISTED_HISTORY_SOURCE_TYPES = ['simulation', 'csv-import', 'csv-file-stream'];
@@ -1460,6 +1460,7 @@
       renderSettings();
       state.resultInputs[position] = await parsePositionFile(file, position, handle);
       if (handle) await saveHandle(`${RESULT_PREFIX}${position}`, handle);
+      state.dashboardDate = '';
       rebuildModel();
       showToast(`${position} 결과 파일 ${numberText(state.resultInputs[position].rows.length)}행을 불러왔습니다.`);
     } catch (error) {
@@ -1485,6 +1486,7 @@
   async function removeResultInput(position) {
     delete state.resultInputs[position];
     try { await deleteHandle(`${RESULT_PREFIX}${position}`); } catch (error) { console.error(error); }
+    state.dashboardDate = '';
     rebuildModel();
     renderSettings();
   }
@@ -1741,6 +1743,7 @@
     if (!window.confirm('Position 결과 파일과 실제 NG 이미지 설정을 모두 초기화할까요?')) return;
     state.resultInputs = {}; state.ngRootName = ''; state.ngImages = []; state.ngFolderNames = {}; state.ngWarnings = []; state.restoreWarnings = [];
     try { await clearHandles(); } catch (error) { console.error(error); }
+    state.dashboardDate = '';
     rebuildModel(); renderSettings();
   }
 

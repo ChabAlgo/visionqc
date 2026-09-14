@@ -47,3 +47,37 @@ test('Tool card metadata wraps without overlap', async ({ page }) => {
   expect(result.inputInside).toBe(true);
   expect(result.inputWidth).toBeGreaterThanOrEqual(47);
 });
+
+test('loading a saved result clears a stale dashboard date and shows the new rows', async ({ page }) => {
+  await page.addInitScript(() => {
+    try { delete window.showOpenFilePicker; } catch {}
+    localStorage.clear();
+  });
+  await open(page);
+  await page.evaluate(() => {
+    const row = (cellId, captureTimestamp) => ({
+      cellId, position:'AN(TOP)', captureTimestamp, totalResult:'NG',
+      tools:{ Crack:{ tool:'Crack', result:'NG', score:0.9 } }
+    });
+    window.__VISIONQC_DEBUG__.seedRows([
+      row('OLD000000000001', '2026-08-24T08:00:00'),
+      row('OLD000000000002', '2026-09-03T09:00:00')
+    ]);
+  });
+  await page.locator('[data-vq-action="dashboard-day"]').first().click();
+  await page.locator('[data-vq-page="settings"]').click();
+
+  const chooser = page.waitForEvent('filechooser');
+  await page.locator('[data-vq-position="AN(TOP)"] [data-vq-action="choose-result"]').click();
+  await (await chooser).setFiles({
+    name:'saved-result.csv', mimeType:'text/csv',
+    buffer:Buffer.from('Cell ID,Position,Total_result,CaptureTimestamp,Crack_Result,Crack_Score\nP163GG23M2100001,AN(TOP),OK,2026-10-05T07:00:00,OK,0.8\n')
+  });
+  await expect(page.locator('.vq43-input-row[data-vq-position="AN(TOP)"]')).toContainText('saved-result.csv');
+  await page.locator('[data-vq-page="main"]').click();
+
+  const snapshot = await page.evaluate(() => window.__VISIONQC_DEBUG__.dateSnapshot());
+  expect(snapshot.selected).toBe('');
+  expect(snapshot.total).toBe(1);
+  expect(snapshot.keys).toEqual(['AN(TOP)|P163GG23M2100001']);
+});
