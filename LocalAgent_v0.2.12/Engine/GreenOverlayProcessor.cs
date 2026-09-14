@@ -84,7 +84,7 @@ namespace VpdlGreenHeatmapOverlay
             if (string.IsNullOrWhiteSpace(config.OutputRoot)) throw new DirectoryNotFoundException("출력 폴더가 지정되지 않았습니다.");
             Directory.CreateDirectory(config.OutputRoot);
 
-            string runStamp = DateTime.Now.ToString("yyyyMMdd_HHmmss");
+            string runStamp = DateTime.Now.ToString("yyyyMMdd_HHmmss") + SafeResultSuffix(config.ResultFileSuffix);
 
             Report(progress, "Cell ID 필터 로드 중...");
             HashSet<string> cellIdFilter = LoadCellIdFilter(config.CellIdCsvPath);
@@ -817,7 +817,7 @@ namespace VpdlGreenHeatmapOverlay
                 if (string.IsNullOrWhiteSpace(config.OutputRoot)) throw new DirectoryNotFoundException("출력 폴더가 지정되지 않았습니다.");
                 _config = config;
                 _progress = progress;
-                _runStamp = DateTime.Now.ToString("yyyyMMdd_HHmmss");
+                _runStamp = DateTime.Now.ToString("yyyyMMdd_HHmmss") + SafeResultSuffix(config.ResultFileSuffix);
                 Directory.CreateDirectory(_config.OutputRoot);
 
                 Report(progress, "Cell ID 필터 로드 중...");
@@ -1764,6 +1764,11 @@ namespace VpdlGreenHeatmapOverlay
         private static string GetSlotOutputDir(AppConfig config, WorkspaceSlotConfig slot)
         {
             return Path.Combine(config.OutputRoot, SafeFileName(slot.DisplayName));
+        }
+
+        private static string SafeResultSuffix(string value)
+        {
+            return string.IsNullOrWhiteSpace(value) ? "" : "_" + SafeFileName(value);
         }
 
         private static string SafeFileName(string value)

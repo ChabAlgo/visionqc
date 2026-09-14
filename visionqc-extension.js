@@ -1,7 +1,7 @@
 (() => {
   'use strict';
 
-  const VERSION = '4.7.32';
+  const VERSION = '4.7.33';
   const DEFAULT_POSITION_DEFS = [
     { key:'CA_TOP', name:'CA(TOP)' },
     { key:'AN_TOP', name:'AN(TOP)' },
@@ -27,9 +27,9 @@
   const NG_POSITION_PREFIX = 'ng-position:';
   const IMG_RE = /\.(png|jpe?g|bmp|gif|webp|tif?f)$/i;
   const LOCAL_AGENT_URL = 'http://127.0.0.1:17891';
-  const EXPECTED_AGENT_VERSION = '1.3.19';
-  const AGENT_INSTALLER_URL = './downloads/VisionQC_Agent_Installer_v1.3.19.exe';
-  const OFFLINE_PACKAGE_URL = './downloads/VisionQC_Offline_v4.7.32.zip';
+  const EXPECTED_AGENT_VERSION = '1.3.20';
+  const AGENT_INSTALLER_URL = './downloads/VisionQC_Agent_Installer_v1.3.20.exe';
+  const OFFLINE_PACKAGE_URL = './downloads/VisionQC_Offline_v4.7.33.zip';
   // SQLite에는 사용자가 명시적으로 남기려는 두 종류의 결과만 표시한다.
   // 이전 버전의 단발 검사(single-inspection) 이력은 보존하되 화면 집계에서는 제외한다.
   const PERSISTED_HISTORY_SOURCE_TYPES = ['simulation', 'csv-import', 'csv-file-stream'];
@@ -178,6 +178,9 @@
     loading: '',
     modalMissKey: null,
     modalItem: null,
+    modalSequence: [],
+    modalSequenceIndex: -1,
+    modalSequenceKind: '',
     modalIndex: 0,
     modalUrl: '',
     modalImageRequestKey: '',
@@ -1046,6 +1049,9 @@
     keywordInputRoot:'Keyword 모드가 공통으로 검색할 이미지 루트 폴더입니다.',
     useGpu:'켜면 지정한 NVIDIA GPU로 VPDL Tool을 실행합니다.',
     gpuDevices:'사용할 GPU 장치 번호입니다. 여러 장치는 쉼표로 구분합니다.',
+    parallelPositions:'활성 Position마다 독립 Runtime Worker를 준비해 동시에 검사합니다.',
+    autoDistributeGpu:'Agent가 감지한 NVIDIA GPU 번호를 Position Worker에 순서대로 균등 배분합니다.',
+    maxParallelPositions:'동시에 실행할 Position Worker의 최대 개수입니다. 1~10 범위에서 제한합니다.',
     disableTensorRt:'Green 단독 검사에서 TensorRT를 끕니다. GPU별 최적화 문제를 구분하는 호환 옵션이며 속도·Score가 달라질 수 있습니다. 원본 Workspace는 저장하지 않으며 검사 후 다시 로드해야 합니다.',
     detailedDiagnostics:'단계별 실행 로그를 서버 내부에 저장합니다. 독립 Green 검사는 원본 SDK 생성자를 유지하며 SDK debug 옵션은 강제하지 않습니다. 기존 실행 방식에서는 SDK debug 로그도 켭니다. 로그 경로는 Agent logs의 cognex-sdk-log-locations.txt에서 확인하세요. 경로 정보가 포함되며 변경 후 Runtime File Load가 필요합니다.',
     disableOptimizedGpuMemory:'Green 단독 검사에서 GPU 메모리 선할당을 0으로 명시합니다. Green Standard 메모리 문제를 비교하는 선택 옵션이며 해결을 보장하지 않습니다. Workspace와 드라이버는 변경하지 않습니다. 변경 후 Runtime File Load가 필요합니다.',
@@ -2801,9 +2807,7 @@
     } catch (error) { showToast(`SQLite 검사 이력 삭제 실패: ${error.message || error}`, true); }
   }
 
-  function openHistoryImage(imageId) {
-    const item = (state.historyData?.items || []).find((row) => Number(row.imageId) === Number(imageId));
-    if (!item) return;
+  function historyModalItem(item) {
     const images = [];
     const overlayImages = [];
     const storedSourcePath = String(item.fullPath || '').trim();
@@ -2815,13 +2819,24 @@
       if (!tool.overlayPath) return;
       overlayImages.push({ fullPath:tool.overlayPath, relativePath:tool.overlayPath, name:`${tool.tool} Heatmap Overlay`, kind:'Heatmap Overlay', toolName:tool.tool });
     });
-    if (!images.length && !overlayImages.length) return showToast('저장된 원본 또는 Overlay 이미지 경로가 없습니다.', true);
+    if (!images.length && !overlayImages.length) return null;
     const tools = Object.fromEntries((item.tools || []).map((tool) => [tool.tool, { tool:tool.tool, result:tool.result, representativeScore:tool.score }]));
+    return { key:`history-${item.imageId}`, cellId:item.cellId || '-', position:item.position || '-', record:{ tools }, images, overlayImages, label:'SQLite History Image' };
+  }
+
+  function openHistoryImage(imageId) {
+    const sequence = (state.historyData?.items || []).map(historyModalItem).filter(Boolean);
+    const index = sequence.findIndex((item) => item.key === `history-${Number(imageId)}`);
+    if (index < 0) return showToast('저장된 원본 또는 Overlay 이미지 경로가 없습니다.', true);
     state.modalMissKey = null;
-    state.modalItem = { key:`history-${item.imageId}`, cellId:item.cellId || '-', position:item.position || '-', record:{ tools }, images, overlayImages, label:'SQLite History Image' };
+    state.modalSequence = sequence;
+    state.modalSequenceIndex = index;
+    state.modalSequenceKind = '검사 이력';
+    state.modalItem = sequence[index];
     state.modalIndex = 0;
     state.modalImageView = 'source';
-    state.modalOverlayPath = images.length ? '' : (overlayImages[0]?.fullPath || '');
+    const sourceImages = modalImagesForView(state.modalItem, 'source');
+    state.modalOverlayPath = sourceImages.length ? '' : (state.modalItem.overlayImages?.[0]?.fullPath || '');
     resetModalView();
     renderModal();
   }
@@ -2926,6 +2941,7 @@
     });
     return {
       outputRoot:'',
+      execution:{ parallelPositions:true, autoDistributeGpu:true, maxParallelPositions:10 },
       activePositionsByMode:{
         green:simulationPositionDefs().map(x => x.key),
         blue:simulationPositionDefs().map(x => x.key),
@@ -3028,6 +3044,10 @@
       disableOptimizedGpuMemory:false, detailedDiagnostics:false });
     form.blue = mergeSimulationSection(defaults.blue, legacyBlue, form.blue);
     form.integrated = mergeSimulationSection(defaults.integrated, legacyIntegrated, form.integrated);
+    form.execution = mergeSimulationSection(defaults.execution, {}, form.execution);
+    form.execution.parallelPositions = form.execution.parallelPositions !== false;
+    form.execution.autoDistributeGpu = form.execution.autoDistributeGpu !== false;
+    form.execution.maxParallelPositions = Math.max(1, Math.min(10, Number(form.execution.maxParallelPositions || 10)));
     // v4.7.9 이전 설정은 Crop 결과를 임시 파일로 삭제했습니다. 기존 기본값(false)을
     // 한 번만 Viewer 보존 기본값(true)으로 이관하고, 이후 사용자가 끈 값은 그대로 유지합니다.
     if (Number(form.integrated.viewerImageRetentionSchema || 0) < 1) {
@@ -3074,6 +3094,7 @@
     if (scope === 'green') return form.green;
     if (scope === 'blue') return form.blue;
     if (scope === 'integrated') return form.integrated;
+    if (scope === 'execution') return form.execution;
     if (scope === 'position') return form.positions[key] || null;
     return form;
   }
@@ -3493,7 +3514,8 @@
         vpdlAvailable,
         installedVpdl,
         vpdl:vpdlAvailable ? (runtimeActive ? (data.vpdlVersion || installedVpdl) : '미로드') : '미설치',
-        license:data.license || '확인 중', gpu:data.gpu || '-', instanceId:data.instanceId || '',
+        license:data.license || '확인 중', gpu:data.gpu || '-', gpuDeviceIndices:Array.isArray(data.gpuDeviceIndices) ? data.gpuDeviceIndices : [],
+        positionGpuAssignments:data.positionGpuAssignments || {}, instanceId:data.instanceId || '',
         activeVpdlApiVersion:String(data.activeVpdlApiVersion || '-'),
         availableVpdl:Array.isArray(data.availableVpdlVersions) ? data.availableVpdlVersions : [],
         runtimePreloaded,
@@ -4100,6 +4122,9 @@
     }));
     return {
       mode:state.simulationMode || 'integrated', webVersion:VERSION, outputRoot:form.outputRoot, namingProfile:state.namingProfile,
+      parallelPositions:form.execution.parallelPositions !== false,
+      autoDistributeGpu:form.execution.autoDistributeGpu !== false,
+      maxParallelPositions:Math.max(1, Math.min(10, Number(form.execution.maxParallelPositions || 10))),
       green, blue:cloneSimulation(form.blue), integrated:cloneSimulation(form.integrated),
       positions:simulationActivePositions(state.simulationMode || 'integrated', form).map(key => {
         const p = form.positions[key];
@@ -4123,6 +4148,7 @@
     const mode = String(request?.mode || 'green').trim().toLowerCase();
     const options = mode === 'green' ? request?.green || {} : request?.blue || {};
     let signature = `${mode}|${options.useGpu ? 'True' : 'False'}|${String(options.gpuDevices || '')}`;
+    signature += `|P:${request?.parallelPositions ? 'True' : 'False'}|A:${request?.autoDistributeGpu ? 'True' : 'False'}`;
     signature += `|D:${mode === 'green' && options.detailedDiagnostics !== false ? 'True' : 'False'}|M:${mode === 'green' && options.disableOptimizedGpuMemory ? 'True' : 'False'}`;
     const positions = Array.isArray(request?.positions) ? [...request.positions] : [];
     positions.sort((left, right) => {
@@ -4140,7 +4166,7 @@
   function simulationRuntimeControlSignature(request) {
     const mode = String(request?.mode || 'green').trim().toLowerCase();
     const options = mode === 'green' ? request?.green || {} : request?.blue || {};
-    return `${options.useGpu ? 'True' : 'False'}|${String(options.gpuDevices || '')}|D:${mode === 'green' && options.detailedDiagnostics !== false ? 'True' : 'False'}|M:${mode === 'green' && options.disableOptimizedGpuMemory ? 'True' : 'False'}`;
+    return `${options.useGpu ? 'True' : 'False'}|${String(options.gpuDevices || '')}|D:${mode === 'green' && options.detailedDiagnostics !== false ? 'True' : 'False'}|M:${mode === 'green' && options.disableOptimizedGpuMemory ? 'True' : 'False'}|P:${request?.parallelPositions ? 'True' : 'False'}|A:${request?.autoDistributeGpu ? 'True' : 'False'}`;
   }
 
   function simulationGreenWorkspaceSignature(request) {
@@ -4490,12 +4516,15 @@
       state.simulationAgent.runtimePreloadSignature = state.simulationRuntimeSignature;
       state.simulationAgent.runtimePreloadControlSignature = String(data.controlSignature || simulationRuntimeControlSignature(request));
       state.simulationAgent.runtimePreloadGreenWorkspaceSignature = String(data.greenWorkspaceSignature || simulationGreenWorkspaceSignature(request));
+      state.simulationAgent.positionGpuAssignments = data.positionGpuAssignments || {};
       state.simulationAgent.installedVpdl = data.installedVpdlVersion || data.vpdlVersion || state.simulationAgent.installedVpdl || '-';
       state.simulationAgent.vpdl = data.vpdlVersion || state.simulationAgent.installedVpdl;
       persistSimulationForm();
       if (state.page === 'simulation') renderSimulationPreserveScroll();
       const elapsed = Number(data.elapsedMs || 0) / 1000;
       appendSimulationLog({level:'INFO', message:`Runtime File Load 완료 · ${items.length}개 Workspace가 실제 Simulation Runtime으로 준비됨 · ${elapsed.toFixed(1)}초`});
+      const assignments = Object.entries(data.positionGpuAssignments || {}).map(([position,gpu]) => `${position}=GPU ${gpu}`).join(' · ');
+      if (assignments) appendSimulationLog({level:'INFO', message:`Position Worker GPU 배분 · ${assignments.replaceAll('GPU CPU','CPU')}`});
       if (addedTools.length) appendSimulationLog({level:'INFO', message:`Runtime Tool 자동 반영 · ${addedTools.join(', ')}`});
       showToast(request.mode === 'green' && request.green.originalProcess
         ? '구성 확인 완료. 검사 시작 시 독립 Green 프로세스에서 원본 방식으로 다시 로드합니다.'
@@ -4849,6 +4878,17 @@
     return `<label class="vq43-sim-option-field"><span>${escapeHtml(label)}</span><input data-sim-scope="${scope}" data-sim-field="${field}" value="${escapeHtml(target?.[field] ?? '')}" placeholder="${escapeHtml(placeholder)}"></label>`;
   }
 
+  function positionParallelOptions() {
+    const execution = ensureSimulationForm().execution;
+    const activeCount = simulationActivePositions().length;
+    const detected = Array.isArray(state.simulationAgent?.gpuDeviceIndices) ? state.simulationAgent.gpuDeviceIndices : [];
+    const gpuText = detected.length ? detected.join(', ') : 'Agent 연결 후 확인';
+    return `<section class="vq43-sim-option-section"><h3>Position 병렬 실행</h3><div class="vq43-sim-option-grid">
+      ${simulationCheck('execution','parallelPositions','Position 독립 병렬 실행')}${simulationCheck('execution','autoDistributeGpu','GPU 자동 균등 배분')}
+      ${simulationNumber('execution','maxParallelPositions','최대 동시 Position',1,10)}<label class="vq43-sim-option-field"><span>감지 GPU</span><input value="${escapeHtml(gpuText)}" readonly></label>
+    </div><p class="vq43-sim-option-note">활성 Position ${numberText(activeCount)}개를 각각 독립 Runtime으로 실행합니다. GPU 1개면 모든 Worker가 GPU 0을 공유하고, 여러 GPU면 0·1·0·1 순서로 균등 배분합니다. Runtime File Load에서 Worker별 Workspace를 한 번만 준비해 Simulation과 AI SUGGEST에서 재사용합니다.</p></section>`;
+  }
+
   function greenFilterOptions(integrated=false) {
     const scope = integrated ? 'integrated' : 'green';
     const obj = simulationScopeObject(scope,'');
@@ -4867,7 +4907,7 @@
       ${simulationCheck('green','keepSubfolders','하위 폴더 구조 유지')}${!integrated?simulationCheck('green','heatmapImageSave','NG 원본 위 Heatmap Overlay 저장'):''}
       ${!integrated?`${simulationCheck('green','forceJet','Gray HeatMap → Jet 변환')}${simulationNumber('green','heatmapAlpha','HeatMap Alpha %',0,100)}`:''}
       ${!integrated?simulationNumber('green','heatmapAlphaCut','Alpha Cut',0,255):''}
-    </div>${!integrated?'<p class="vq43-sim-option-note">Green 검사는 독립 프로세스에서 실행됩니다. 검사마다 새 Runtime을 사용하며 종료 후 Runtime File Load를 다시 누르세요. 원본 Workspace 파일은 변경하지 않습니다. 상세 로그에는 로컬 경로가 포함됩니다.</p>':''}<p class="vq43-sim-option-note">Progress Update 수만큼 상세 결과를 Agent가 메모리에 모아서 Web 분석 모델로 한 번에 전송합니다.</p></section>`;
+    </div>${!integrated?'<p class="vq43-sim-option-note">Runtime File Load에서 준비한 Workspace와 Runtime을 Simulation 및 AI SUGGEST가 재사용합니다. 원본 Workspace 파일은 변경하지 않습니다.</p>':''}<p class="vq43-sim-option-note">Progress Update 수만큼 상세 결과를 Agent가 메모리에 모아서 Web 분석 모델로 한 번에 전송합니다.</p></section>`;
   }
 
 
@@ -4973,9 +5013,9 @@
   function simulationOptionsPanel() {
     const mode = state.simulationMode || 'integrated';
     let body = '';
-    if (mode === 'green') body = greenFilterOptions(false) + greenRuntimeOptions() + toolSettingsOptions() + judgementOptions();
-    else if (mode === 'blue') body = blueRuntimeOptions() + blueCropOptions() + fallbackOptions();
-    else body = greenFilterOptions(true) + greenRuntimeOptions(true) + toolSettingsOptions() + judgementOptions() + blueRuntimeOptions() + blueCropOptions() + fallbackOptions();
+    if (mode === 'green') body = positionParallelOptions() + greenFilterOptions(false) + greenRuntimeOptions() + toolSettingsOptions() + judgementOptions();
+    else if (mode === 'blue') body = positionParallelOptions() + blueRuntimeOptions() + blueCropOptions() + fallbackOptions();
+    else body = positionParallelOptions() + greenFilterOptions(true) + greenRuntimeOptions(true) + toolSettingsOptions() + judgementOptions() + blueRuntimeOptions() + blueCropOptions() + fallbackOptions();
     return `<aside class="vq43-sim-options"><div class="vq43-sim-options-head"><div><strong>Simulation Options</strong><span>DL_Simulation v1.13 상세 설정</span></div><div><button data-vq-action="simulation-save-defaults">기본값 저장</button><button data-vq-action="simulation-restore-defaults">기본값 복원</button></div></div><div class="vq43-sim-options-scroll">${body}</div></aside>`;
   }
 
@@ -5468,10 +5508,15 @@
   }
 
   function openMissModal(key) {
-    const miss = (state.page === 'main' ? state.dashboardModel : state.model)?.misses.find((item) => item.key === key);
+    const model = state.page === 'main' ? state.dashboardModel : state.model;
+    const misses = (model?.misses || []).filter((item) => item.position === state.selectedMissPosition);
+    const miss = misses.find((item) => item.key === key);
     if (!miss) return;
     state.modalMissKey = key;
-    state.modalItem = { ...miss, overlayImages:overlayImagesForRecord(miss.record), label: 'Missed Actual NG' };
+    state.modalSequence = misses.map((item) => ({ ...item, overlayImages:overlayImagesForRecord(item.record), label:'Missed Actual NG' }));
+    state.modalSequenceIndex = state.modalSequence.findIndex((item) => item.key === key);
+    state.modalSequenceKind = '미검';
+    state.modalItem = state.modalSequence[state.modalSequenceIndex];
     state.modalIndex = 0;
     state.modalImageView = 'source';
     state.modalOverlayPath = '';
@@ -5696,12 +5741,17 @@
     const scorePointIndex = Number.isInteger(miss.scorePointIndex) ? miss.scorePointIndex : -1;
     const scorePointCount = scorePointIndex >= 0 ? state.analysisPoints.length : 0;
     const scoreNavigation = scorePointCount > 1;
+    const sequenceCount = Array.isArray(state.modalSequence) ? state.modalSequence.length : 0;
+    const sequenceIndex = Number(state.modalSequenceIndex);
+    const sequenceNavigation = scorePointIndex < 0 && sequenceCount > 1 && sequenceIndex >= 0;
+    const mediaPrevious = navigationIndex > 0;
+    const mediaNext = navigationIndex < navigationImages.length - 1;
     const countText = scorePointIndex >= 0
       ? ('Score ' + (scorePointIndex + 1) + ' / ' + scorePointCount)
-      : selectedOverlay ? ('Heatmap ' + (navigationIndex + 1) + ' / ' + overlayImages.length) : ((state.modalIndex+1) + ' / ' + displayImages.length);
-    const showNavigation = scoreNavigation || navigationImages.length > 1;
-    const previousDisabled = scoreNavigation ? scorePointIndex <= 0 : navigationIndex === 0;
-    const nextDisabled = scoreNavigation ? scorePointIndex >= scorePointCount - 1 : navigationIndex >= navigationImages.length - 1;
+      : (sequenceNavigation ? `${state.modalSequenceKind} ${sequenceIndex + 1} / ${sequenceCount} · ` : '') + (selectedOverlay ? ('Heatmap ' + (navigationIndex + 1) + ' / ' + overlayImages.length) : ((state.modalIndex+1) + ' / ' + displayImages.length));
+    const showNavigation = scoreNavigation || sequenceNavigation || navigationImages.length > 1;
+    const previousDisabled = scoreNavigation ? scorePointIndex <= 0 : (!mediaPrevious && (!sequenceNavigation || sequenceIndex <= 0));
+    const nextDisabled = scoreNavigation ? scorePointIndex >= scorePointCount - 1 : (!mediaNext && (!sequenceNavigation || sequenceIndex >= sequenceCount - 1));
     const canMoveActualNg = !selectedOverlay && !!image.actualNg && !!image.fileHandle && !!image.rootHandleKey;
     const moveButton = canMoveActualNg ? '<button type="button" class="vq43-modal-delete" data-vq-action="modal-move-delet">이미지 제외</button>' : '';
     modal.innerHTML = `<div class="vq43-modal-card"><div class="vq43-modal-head"><div><small>${escapeHtml(miss.label || 'Actual NG Image')}</small><strong>${escapeHtml(miss.cellId)} · ${miss.position}</strong></div><div class="vq43-modal-head-actions">${moveButton}<button class="vq43-close" data-vq-action="close-modal">×</button></div></div>${switcher}${heatmapCreate}<div class="vq43-modal-image" id="vq43-modal-viewport"><div class="vq43-modal-media-layer"><img id="vq43-modal-zoom-image" draggable="false" src="${state.modalUrl}" alt="${escapeHtml(image.file?.name || image.name || image.relativePath)}"></div><div class="vq43-modal-zoom-tools"><span id="vq43-modal-zoom-value">100%</span><button data-vq-action="modal-reset">원위치</button></div><div class="vq43-modal-help">마우스 휠: 확대/축소 · 드래그: 이동 · 더블클릭: 원위치</div>${showNavigation?`<button class="vq43-modal-nav prev" data-vq-action="modal-prev" ${previousDisabled?'disabled':''}>‹</button><button class="vq43-modal-nav next" data-vq-action="modal-next" ${nextDisabled?'disabled':''}>›</button>`:''}</div><div class="vq43-modal-foot"><div class="vq43-modal-path"><span>${escapeHtml(image.relativePath)}</span><b>${countText}</b></div><div class="vq43-modal-scores">${scores}</div></div></div>`;
@@ -5807,16 +5857,36 @@
       changeScorePointImage(delta);
       return;
     }
+    let movedWithinItem = false;
     if (state.modalOverlayPath) {
       const overlays = Array.isArray(miss.overlayImages) ? miss.overlayImages : [];
       const current = overlays.findIndex((image) => image.fullPath === state.modalOverlayPath);
       const next = Math.max(0, Math.min(overlays.length - 1, current + delta));
-      if (overlays[next]?.fullPath) state.modalOverlayPath = overlays[next].fullPath;
+      if (next !== current && overlays[next]?.fullPath) { state.modalOverlayPath = overlays[next].fullPath; movedWithinItem = true; }
     } else {
       const images = modalImagesForView(miss);
-      state.modalIndex = Math.max(0, Math.min(images.length - 1, state.modalIndex + delta));
+      const next = Math.max(0, Math.min(images.length - 1, state.modalIndex + delta));
+      if (next !== state.modalIndex) { state.modalIndex = next; movedWithinItem = true; }
     }
+    if (!movedWithinItem && changeModalSequenceItem(delta)) return;
     renderModal();
+  }
+
+  function changeModalSequenceItem(delta) {
+    const sequence = Array.isArray(state.modalSequence) ? state.modalSequence : [];
+    const current = Number(state.modalSequenceIndex);
+    const next = current + (delta < 0 ? -1 : 1);
+    if (!delta || current < 0 || next < 0 || next >= sequence.length) return false;
+    state.modalSequenceIndex = next;
+    state.modalItem = sequence[next];
+    state.modalMissKey = state.modalSequenceKind === '미검' ? state.modalItem.key : null;
+    state.modalIndex = 0;
+    state.modalImageView = 'source';
+    const sourceImages = modalImagesForView(state.modalItem, 'source');
+    state.modalOverlayPath = sourceImages.length ? '' : (state.modalItem.overlayImages?.[0]?.fullPath || '');
+    resetModalView();
+    renderModal();
+    return true;
   }
 
   function changeScorePointImage(delta) {
@@ -5936,6 +6006,9 @@
     state.modalImageRequestKey = '';
     state.modalMissKey = null;
     state.modalItem = null;
+    state.modalSequence = [];
+    state.modalSequenceIndex = -1;
+    state.modalSequenceKind = '';
     state.modalIndex = 0;
     state.modalImageView = 'source';
     state.modalOverlayPath = '';
@@ -6007,6 +6080,35 @@
         if (!state.model) state.model = { tools: ['Crack'], records: [], misses: [], detectedActual: new Set() };
         state.model.misses = [miss]; openMissModal(key);
       },
+      openMissSequenceRegression() {
+        const svg = (label) => new File([`<svg xmlns="http://www.w3.org/2000/svg" width="400" height="240"><text x="20" y="120">${label}</text></svg>`], `${label}.svg`, {type:'image/svg+xml'});
+        const misses = ['MISS-CELL-001','MISS-CELL-002','MISS-CELL-003'].map((cellId, index) => ({
+          key:`CA(TOP)|${cellId}`, cellId, position:'CA(TOP)',
+          images:[{ file:svg(cellId), relativePath:`debug/${cellId}.svg`, viewKind:'source' }],
+          record:{ tools:{ Crack:{ tool:'Crack', result:index === 1 ? 'NG' : 'OK', representativeScore:.70 + index / 10 } } }
+        }));
+        state.page = 'main';
+        state.selectedMissPosition = 'CA(TOP)';
+        state.dashboardModel = { misses };
+        openMissModal(misses[0].key);
+      },
+      openHistorySequenceRegression() {
+        state.historyData = { items:[
+          { imageId:101, cellId:'HISTORY-CELL-001', position:'AN(TOP)', fullPath:'C:\\debug\\history-1.png', processedPath:'', tools:[] },
+          { imageId:102, cellId:'HISTORY-CELL-002', position:'AN(TOP)', fullPath:'C:\\debug\\history-2.png', processedPath:'', tools:[] },
+          { imageId:103, cellId:'HISTORY-CELL-003', position:'AN(TOP)', fullPath:'C:\\debug\\history-3.png', processedPath:'', tools:[] }
+        ] };
+        openHistoryImage(101);
+      },
+      modalSequenceSnapshot() {
+        return {
+          cellId:state.modalItem?.cellId || '', kind:state.modalSequenceKind,
+          index:state.modalSequenceIndex, count:state.modalSequence.length,
+          previousDisabled:!!$('#vq43-modal [data-vq-action="modal-prev"]')?.disabled,
+          nextDisabled:!!$('#vq43-modal [data-vq-action="modal-next"]')?.disabled
+        };
+      },
+      simulationRequestSnapshot() { return buildSimulationRequest(); },
       openViewerRegression() {
         const svg = (label, color) => new File([`<svg xmlns="http://www.w3.org/2000/svg" width="1000" height="600"><rect width="100%" height="100%" fill="${color}"/><text x="50%" y="50%" fill="white" font-size="52" text-anchor="middle">${label}</text></svg>`], `${label}.svg`, {type:'image/svg+xml'});
         const record = { tools:{ Crack:{tool:'Crack',result:'NG',representativeScore:.74} } };

@@ -54,6 +54,7 @@ namespace VpdlGreenHeatmapOverlay
         public bool DisableOptimizedGpuMemory { get; set; }
         public List<WorkspaceSlotConfig> WorkspaceSlots { get; set; } = new List<WorkspaceSlotConfig>();
         public string OutputRoot { get; set; }
+        public string ResultFileSuffix { get; set; }
         public string CellIdCsvPath { get; set; }
         public bool KeywordMode { get; set; } = false;
         public string KeywordInputRoot { get; set; }

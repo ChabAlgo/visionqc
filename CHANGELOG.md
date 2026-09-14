@@ -1,5 +1,13 @@
 # VisionQC 변경 이력
 
+## v4.7.33 / Agent 1.3.20
+
+- Position마다 독립 Runtime을 사전 로드해 최대 10개 Position Simulation을 동시에 실행.
+- 감지한 NVIDIA GPU를 Position에 순환 배분하며 단일 GPU 공유도 지원.
+- 병렬 실행 후 Runtime을 재사용하고 Position별 결과 CSV를 기존 통합 형식으로 병합.
+- 대시보드 미검 Cell과 검사 이력 Cell 이미지 탐색에 방향키 순차 이동 및 양 끝 정지 적용.
+- 상세 검증·한계: `RELEASE_NOTES_v4.7.33_KR.md`.
+
 ## v4.7.30 / Agent 1.3.19
 
 - 날짜별 검사 NG율 그래프의 세로축을 데이터에 맞춰 자동 확대하도록 변경.

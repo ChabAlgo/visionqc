@@ -26,7 +26,8 @@ namespace VisionQC.LocalAgent
 {
     internal sealed class AgentServer : IDisposable
     {
-        private const int Port = 17891;
+        private readonly int _port;
+        private readonly int _parentProcessId;
         private readonly JavaScriptSerializer _json = new JavaScriptSerializer { MaxJsonLength = int.MaxValue };
         private readonly object _sync = new object();
         private readonly object _vpdlSync = new object();
@@ -43,6 +44,7 @@ namespace VisionQC.LocalAgent
         private string _runtimeMessage = "Agent 준비 완료 · GPU/License는 Runtime File Load에서 초기화합니다.";
         private readonly string _vpdlVersion;
         private readonly string _gpuName;
+        private readonly List<int> _gpuDeviceIndices;
         private DateTime _lastProgressBroadcast = DateTime.MinValue;
         private DateTime _simulationStartedUtc = DateTime.MinValue;
         private int _liveRecordCount = 0;
@@ -55,6 +57,15 @@ namespace VisionQC.LocalAgent
         private bool _inspectionControlDeferred;
         private bool _vpdlReservedForSimulation;
         private LocalRuntime.Control _preloadedRuntimeControl;
+        private readonly Dictionary<string, PositionWorkerClient> _preloadedPositionWorkers = new Dictionary<string, PositionWorkerClient>(StringComparer.OrdinalIgnoreCase);
+        private readonly Dictionary<string, string> _preloadedPositionGpuAssignments = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+        private readonly object _parallelProgressSync = new object();
+        private Dictionary<string, PositionProgressState> _parallelProgressStates;
+        private Dictionary<string, string> _parallelPositionDisplayNames;
+        private string _parallelCoordinatorToken = "";
+        private string _forwardCoordinatorUrl = "";
+        private string _forwardCoordinatorToken = "";
+        private string _forwardPositionKey = "";
         private string _preloadedRuntimeSignature = "";
         private string _preloadedRuntimeToken = "";
         private string _preloadedRuntimeMode = "";
@@ -73,19 +84,40 @@ namespace VisionQC.LocalAgent
 
         public AgentServer()
         {
+            int configuredPort;
+            _port = int.TryParse(Environment.GetEnvironmentVariable("VISIONQC_AGENT_PORT"), out configuredPort) && configuredPort > 0 ? configuredPort : 17891;
+            int configuredParentProcessId;
+            _parentProcessId = int.TryParse(Environment.GetEnvironmentVariable("VISIONQC_AGENT_PARENT_PID"), out configuredParentProcessId) && configuredParentProcessId > 0 ? configuredParentProcessId : 0;
             _vpdlVersion = DetectVpdlVersion();
             _gpuName = DetectGpuName();
+            _gpuDeviceIndices = DetectGpuDeviceIndices();
             AgentDiagnostics.Write("GPU", _gpuName);
+            AgentDiagnostics.Write("GPU_DEVICES", _gpuDeviceIndices.Count == 0 ? "-" : string.Join(",", _gpuDeviceIndices));
             Task.Run(() => AgentDiagnostics.WriteNvidiaEnvironment());
             _picker = new PickerService(AppendAgentLog);
             _imagePreview = new ImagePreviewService();
             _historyStore = new SqliteRunStore(ResolveHistoryDatabasePath());
             _history = new HistoryService(_historyStore, _json);
+            if (_parentProcessId > 0) Task.Run(MonitorParentProcess);
+        }
+
+        private void MonitorParentProcess()
+        {
+            while (!_serverCts.IsCancellationRequested)
+            {
+                try
+                {
+                    using (Process parent = Process.GetProcessById(_parentProcessId))
+                        if (parent.HasExited) { _serverCts.Cancel(); return; }
+                }
+                catch { _serverCts.Cancel(); return; }
+                Thread.Sleep(1000);
+            }
         }
 
         public void RunUntilExit(bool openOfflinePage = false)
         {
-            _listener = new TcpListener(IPAddress.Loopback, Port);
+            _listener = new TcpListener(IPAddress.Loopback, _port);
             try
             {
                 _listener.Start();
@@ -181,6 +213,12 @@ namespace VisionQC.LocalAgent
                         break;
                     case "/api/runtime/preload":
                         result = PreloadRuntime(request.Body);
+                        break;
+                    case "/api/parallel/progress":
+                        result = ReceiveParallelWorkerProgress(request.Body);
+                        break;
+                    case "/api/parallel/configure":
+                        result = ConfigureParallelWorkerForwarding(request.Body);
                         break;
                     case "/api/workspace/inspect":
                         result = InspectWorkspace(request.Body);
@@ -335,12 +373,33 @@ namespace VisionQC.LocalAgent
                 return new { ok = false, error = position.displayName + " Green Workspace가 설정되지 않았습니다." };
 
             LocalRuntime.Control control = null;
+            PositionWorkerClient positionWorker = null;
             string signature = BuildRuntimePreloadSignature(req);
             lock (_vpdlSync) {
                 if (_vpdlReservedForSimulation)
                     return new { ok = false, busy = true, error = "다른 VPDL 작업이 실행 중입니다. 완료 후 AI Suggest를 실행하세요." };
                 if (!HasCompatiblePreloadedRuntime(req, signature))
                     return new { ok = false, error = "현재 설정과 일치하는 사전 로드 Runtime이 없습니다. Simulation에서 Runtime File Load를 먼저 실행하세요." };
+                if (_preloadedPositionWorkers.Count > 0)
+                {
+                    if (!_preloadedPositionWorkers.TryGetValue(position.key, out positionWorker))
+                        return new { ok = false, error = position.displayName + " Position Worker가 없습니다. Runtime File Load를 다시 실행하세요." };
+                    _vpdlReservedForSimulation = true;
+                }
+            }
+            if (positionWorker != null)
+            {
+                try
+                {
+                    AgentSingleInspectionRequest childRequest = _json.Deserialize<AgentSingleInspectionRequest>(_json.Serialize(
+                        ClonePositionRequest(req, position, _preloadedPositionGpuAssignments)));
+                    childRequest.imagePath = req.imagePath;
+                    Dictionary<string, object> result = WorkerPost<Dictionary<string, object>>(positionWorker, "/api/classification/inspect", childRequest, 4 * 60 * 1000);
+                    AppendAgentLog("INFO", "Position Worker 단일 Green 검사 완료 | " + position.displayName + " | " + Path.GetFileName(req.imagePath));
+                    return result;
+                }
+                catch (SysException ex) { return new { ok = false, error = "Position Worker 단일 Green 검사 실패: " + ex.Message }; }
+                finally { lock (_vpdlSync) _vpdlReservedForSimulation = false; }
             }
             lock (_vpdlSync)
             {
@@ -468,17 +527,19 @@ namespace VisionQC.LocalAgent
                 activeVpdlApiVersion = Program.ActiveVpdlInstallation == null ? "-" : Program.ActiveVpdlInstallation.ApiVersion,
                 vpdlWorkerMode = Environment.GetEnvironmentVariable("VISIONQC_VPDL_WORKER_MODE") ?? "exact",
                 availableVpdlVersions = VpdlRuntimeCatalog.Discover().Select(item => new { productVersion = item.ProductVersion, apiVersion = item.ApiVersion, displayName = item.DisplayName, workerInstalled = VpdlWorkerLocator.IsAvailable(Program.AgentHomeDirectory, item.ApiVersion) }).ToArray(),
-                vpdlVersion = (_preloadedRuntimeControl != null || _vpdlReservedForSimulation) ? _vpdlVersion : "-",
+                vpdlVersion = (HasAnyPreloadedRuntimeLocked() || _vpdlReservedForSimulation) ? _vpdlVersion : "-",
                 license = _licenseStatus,
                 runtimeMessage = _runtimeMessage,
                 gpu = _gpuName,
+                gpuDeviceIndices = _gpuDeviceIndices.ToArray(),
                 running = state.running,
-                runtimePreloaded = _preloadedRuntimeControl != null,
+                runtimePreloaded = HasAnyPreloadedRuntimeLocked(),
                 runtimePreloadMode = _preloadedRuntimeMode,
                 runtimePreloadToken = _preloadedRuntimeToken,
                 runtimePreloadSignature = _preloadedRuntimeSignature,
                 runtimePreloadControlSignature = _preloadedRuntimeControlSignature,
                 runtimePreloadGreenWorkspaceSignature = _preloadedGreenWorkspaceSignature,
+                positionGpuAssignments = _preloadedPositionGpuAssignments.ToDictionary(x => x.Key, x => x.Value, StringComparer.OrdinalIgnoreCase),
                 historyDatabasePath = _historyStore.DatabasePath,
                 state = state
             };
@@ -510,7 +571,7 @@ namespace VisionQC.LocalAgent
             string requested = FirstNonEmpty(GetString(request, "apiVersion", ""), GetString(request, "version", ""));
             var target = VpdlRuntimeCatalog.FindByVersion(requested);
             if (target == null) return new { ok = false, error = "선택한 VPDL 버전이 정상 설치본으로 확인되지 않습니다: " + requested };
-            if (_vpdlReservedForSimulation || _preloadedRuntimeControl != null)
+            if (_vpdlReservedForSimulation || HasAnyPreloadedRuntimeLocked())
                 return new { ok = false, error = "Simulation 또는 Runtime File Load가 실행 중입니다. 완료 또는 중지 후 VPDL 버전을 전환하세요." };
 
             if (!VpdlWorkerLocator.IsAvailable(Program.AgentHomeDirectory, target.ApiVersion))
@@ -595,6 +656,7 @@ namespace VisionQC.LocalAgent
                 DisposePreloadedRuntimeLocked();
 
                 LocalRuntime.Control control = null;
+                Dictionary<string, PositionWorkerClient> positionWorkers = null;
                 try
                 {
                     bool useGpu;
@@ -611,41 +673,57 @@ namespace VisionQC.LocalAgent
                         useGpu = blue.useGpu;
                         gpuDevices = blue.gpuDevices;
                     }
-                    var gpuMode = useGpu ? VpdlGpuMode.SingleDevicePerTool : VpdlGpuMode.NoSupport;
-                    var gpuList = ParseGpuList(gpuDevices, useGpu);
-                    AgentDiagnostics.Operation("Runtime preload | Mode=" + mode + " | GPU=" + useGpu + " | Devices=" + gpuDevices);
-                    AgentDiagnostics.Write("GPU_LIFECYCLE", "Actual runtime initialization | Mode=" + mode + " | Devices=" + gpuDevices);
-                    control = mode == "green"
-                        ? GreenRuntimeFactory.Create(gpuMode, gpuList, GetGreenOptions(req).detailedDiagnostics, GetGreenOptions(req).disableOptimizedGpuMemory, "Runtime File Load")
-                        : new LocalRuntime.Control(gpuMode, gpuList);
-                    AgentDiagnostics.WriteLoadedLibraries();
-
-                    var response = new RuntimePreloadResponse { ok = true, mode = mode, installedVpdlVersion = _vpdlVersion, vpdlVersion = _vpdlVersion };
                     var positions = EnabledPositions(req).ToList();
+                    bool parallel = CanUseParallelPositionRuntime(req, positions.Count);
+                    var assignments = BuildPositionGpuAssignments(req, positions, parallel);
+                    var response = new RuntimePreloadResponse { ok = true, mode = mode, installedVpdlVersion = _vpdlVersion, vpdlVersion = _vpdlVersion, parallelPositions = parallel, positionGpuAssignments = assignments };
                     int total = positions.Count * (mode == "integrated" ? 2 : 1);
                     int completed = 0;
-                    AppendAgentLog("INFO", "Runtime File Load 시작 | Mode=" + mode + " | Workspace " + total);
+                    AppendAgentLog("INFO", "Runtime File Load 시작 | Mode=" + mode + " | Workspace " + total + " | Position Worker=" + (parallel ? positions.Count : 1));
 
-                    foreach (var position in positions)
+                    if (parallel)
                     {
-                        if (mode != "blue")
+                        positionWorkers = new Dictionary<string, PositionWorkerClient>(StringComparer.OrdinalIgnoreCase);
+                        foreach (var position in positions)
                         {
-                            string path = FirstNonEmpty(position.greenWorkspacePath, position.workspacePath);
-                            response.items.Add(LoadPreloadedWorkspace(control, position, "green", "ws_" + position.key, path, mode == "green" && GetGreenOptions(req).detailedDiagnostics));
-                            completed++;
-                            AppendAgentLog("INFO", "Runtime File Load 진행 " + completed + "/" + total + " | " + position.displayName + " Green");
+                            AppendAgentLog("INFO", "Position Worker 준비 | " + position.displayName + " | GPU=" + assignments[position.key]);
+                            PositionWorkerClient worker = StartPositionWorker(position, assignments[position.key]);
+                            positionWorkers[position.key] = worker;
+                            AgentStartRequest childRequest = ClonePositionRequest(req, position, assignments);
+                            RuntimePreloadResponse childResponse = WorkerPost<RuntimePreloadResponse>(worker, "/api/runtime/preload", childRequest, 15 * 60 * 1000);
+                            if (childResponse == null || !childResponse.ok) throw new SysInvalidOperationException(position.displayName + " Worker Runtime Load 실패: " + (childResponse == null ? "응답 없음" : childResponse.error));
+                            response.items.AddRange(childResponse.items ?? new List<RuntimePreloadItem>());
+                            completed += childResponse.workspaceCount;
+                            AppendAgentLog("INFO", "Runtime File Load 진행 " + completed + "/" + total + " | " + position.displayName);
                         }
-                        if (mode != "green")
-                        {
-                            string path = FirstNonEmpty(position.blueWorkspacePath, position.workspacePath);
-                            response.items.Add(LoadPreloadedWorkspace(control, position, "blue", "blue_" + position.key, path));
-                            completed++;
-                            AppendAgentLog("INFO", "Runtime File Load 진행 " + completed + "/" + total + " | " + position.displayName + " Blue");
-                        }
+                        RememberPreloadedPositionWorkersLocked(positionWorkers, assignments, req, signature);
+                        positionWorkers = null;
                     }
-
-                    RememberPreloadedRuntimeLocked(control, req, signature);
-                    control = null;
+                    else
+                    {
+                        var gpuList = ParseGpuList(gpuDevices, useGpu);
+                        control = CreateRuntimeControl(req, mode, useGpu, gpuList, "Runtime File Load");
+                        foreach (var position in positions)
+                        {
+                            if (mode != "blue")
+                            {
+                                string path = FirstNonEmpty(position.greenWorkspacePath, position.workspacePath);
+                                response.items.Add(LoadPreloadedWorkspace(control, position, "green", "ws_" + position.key, path, mode == "green" && GetGreenOptions(req).detailedDiagnostics));
+                                completed++;
+                                AppendAgentLog("INFO", "Runtime File Load 진행 " + completed + "/" + total + " | " + position.displayName + " Green");
+                            }
+                            if (mode != "green")
+                            {
+                                string path = FirstNonEmpty(position.blueWorkspacePath, position.workspacePath);
+                                response.items.Add(LoadPreloadedWorkspace(control, position, "blue", "blue_" + position.key, path));
+                                completed++;
+                                AppendAgentLog("INFO", "Runtime File Load 진행 " + completed + "/" + total + " | " + position.displayName + " Blue");
+                            }
+                        }
+                        RememberPreloadedRuntimeLocked(control, req, signature);
+                        control = null;
+                    }
+                    AgentDiagnostics.WriteLoadedLibraries();
                     _licenseStatus = "Runtime Ready";
                     _runtimeMessage = "Runtime File Load 완료 · Simulation 시작 대기";
                     response.token = _preloadedRuntimeToken;
@@ -669,6 +747,13 @@ namespace VisionQC.LocalAgent
                         }
                     }
                     catch { }
+                        if (positionWorkers != null)
+                        {
+                            foreach (PositionWorkerClient failedWorker in positionWorkers.Values)
+                            {
+                                DisposePositionWorker(failedWorker);
+                            }
+                        }
                     DisposePreloadedRuntimeLocked();
                     sw.Stop();
                     _licenseStatus = "Runtime Error";
@@ -698,6 +783,186 @@ namespace VisionQC.LocalAgent
                 kind = kind,
                 info = info
             };
+        }
+
+        private LocalRuntime.Control CreateRuntimeControl(AgentStartRequest req, string mode, bool useGpu, List<int> gpuList, string reason)
+        {
+            var gpuMode = useGpu ? VpdlGpuMode.SingleDevicePerTool : VpdlGpuMode.NoSupport;
+            AgentDiagnostics.Operation(reason + " | Mode=" + mode + " | GPU=" + useGpu + " | Devices=" + string.Join(",", gpuList));
+            AgentDiagnostics.Write("GPU_LIFECYCLE", reason + " | Mode=" + mode + " | Devices=" + string.Join(",", gpuList));
+            return mode == "green"
+                ? GreenRuntimeFactory.Create(gpuMode, gpuList, GetGreenOptions(req).detailedDiagnostics, GetGreenOptions(req).disableOptimizedGpuMemory, reason)
+                : new LocalRuntime.Control(gpuMode, gpuList);
+        }
+
+        private PositionWorkerClient StartPositionWorker(AgentPositionRequest position, string gpuAssignment)
+        {
+            int port = ReserveLoopbackPort();
+            string home = Path.Combine(Path.GetTempPath(), "VisionQC-PositionWorker-" + Guid.NewGuid().ToString("N"));
+            Directory.CreateDirectory(home);
+            var worker = new PositionWorkerClient { PositionKey = position.key, DisplayName = position.displayName, GpuAssignment = gpuAssignment, Port = port, HomePath = home };
+            var start = new ProcessStartInfo
+            {
+                FileName = Application.ExecutablePath,
+                Arguments = "--worker",
+                UseShellExecute = false,
+                CreateNoWindow = true,
+                WindowStyle = ProcessWindowStyle.Hidden,
+                WorkingDirectory = home
+            };
+            start.EnvironmentVariables["VISIONQC_AGENT_PORT"] = port.ToString();
+            start.EnvironmentVariables["VISIONQC_AGENT_CHILD"] = "1";
+            start.EnvironmentVariables["VISIONQC_AGENT_PARENT_PID"] = Process.GetCurrentProcess().Id.ToString();
+            start.EnvironmentVariables["VISIONQC_AGENT_HOME"] = home;
+            start.EnvironmentVariables["VISIONQC_HISTORY_DB_PATH"] = Path.Combine(home, "history.sqlite");
+            worker.Process = Process.Start(start);
+            if (worker.Process == null) throw new SysInvalidOperationException(position.displayName + " Position Worker를 시작하지 못했습니다.");
+            var deadline = DateTime.UtcNow.AddSeconds(45);
+            while (DateTime.UtcNow < deadline)
+            {
+                if (worker.Process.HasExited) throw new SysInvalidOperationException(position.displayName + " Position Worker가 준비 중 종료되었습니다. ExitCode=" + worker.Process.ExitCode);
+                try
+                {
+                    WorkerGet<Dictionary<string, object>>(worker, "/api/status", 2000);
+                    return worker;
+                }
+                catch { Thread.Sleep(250); }
+            }
+            DisposePositionWorker(worker);
+            throw new TimeoutException(position.displayName + " Position Worker 준비 시간이 초과되었습니다.");
+        }
+
+        private static int ReserveLoopbackPort()
+        {
+            var listener = new TcpListener(IPAddress.Loopback, 0);
+            listener.Start();
+            int port = ((IPEndPoint)listener.LocalEndpoint).Port;
+            listener.Stop();
+            return port;
+        }
+
+        private T WorkerGet<T>(PositionWorkerClient worker, string path, int timeoutMs)
+        {
+            return WorkerRequest<T>(worker, path, null, timeoutMs);
+        }
+
+        private T WorkerPost<T>(PositionWorkerClient worker, string path, object body, int timeoutMs)
+        {
+            return WorkerRequest<T>(worker, path, body, timeoutMs);
+        }
+
+        private T WorkerRequest<T>(PositionWorkerClient worker, string path, object body, int timeoutMs)
+        {
+            var request = (HttpWebRequest)WebRequest.Create("http://127.0.0.1:" + worker.Port + path);
+            request.Method = body == null ? "GET" : "POST";
+            request.Timeout = timeoutMs;
+            request.ReadWriteTimeout = timeoutMs;
+            if (body != null)
+            {
+                byte[] bytes = Encoding.UTF8.GetBytes(_json.Serialize(body));
+                request.ContentType = "application/json";
+                request.ContentLength = bytes.Length;
+                using (Stream stream = request.GetRequestStream()) stream.Write(bytes, 0, bytes.Length);
+            }
+            using (var response = (HttpWebResponse)request.GetResponse())
+            using (var reader = new StreamReader(response.GetResponseStream(), Encoding.UTF8))
+                return _json.Deserialize<T>(reader.ReadToEnd());
+        }
+
+        private void DisposePositionWorker(PositionWorkerClient worker)
+        {
+            if (worker == null) return;
+            try { WorkerPost<Dictionary<string, object>>(worker, "/api/agent/exit", new { }, 2000); } catch { }
+            try
+            {
+                if (worker.Process != null && !worker.Process.WaitForExit(3000)) worker.Process.Kill();
+                worker.Process?.Dispose();
+            }
+            catch { }
+            try { if (Directory.Exists(worker.HomePath)) Directory.Delete(worker.HomePath, true); } catch { }
+        }
+
+        private object ConfigureParallelWorkerForwarding(string body)
+        {
+            var request = DeserializeDictionary(body);
+            _forwardCoordinatorUrl = GetString(request, "coordinatorUrl", "");
+            _forwardCoordinatorToken = GetString(request, "token", "");
+            _forwardPositionKey = GetString(request, "positionKey", "");
+            return new { ok = !string.IsNullOrWhiteSpace(_forwardCoordinatorUrl) && !string.IsNullOrWhiteSpace(_forwardCoordinatorToken) };
+        }
+
+        private object ReceiveParallelWorkerProgress(string body)
+        {
+            ParallelProgressEnvelope envelope;
+            try { envelope = _json.Deserialize<ParallelProgressEnvelope>(body ?? "{}"); }
+            catch (SysException ex) { return new { ok = false, error = ex.Message }; }
+            if (envelope == null || !string.Equals(envelope.token, _parallelCoordinatorToken, StringComparison.Ordinal) || envelope.progress == null)
+                return new { ok = false, error = "Position Worker progress token이 올바르지 않습니다." };
+            string displayName;
+            lock (_parallelProgressSync)
+            {
+                if (_parallelProgressStates == null || !_parallelProgressStates.ContainsKey(envelope.positionKey)) return new { ok = false, error = "Position Worker progress 대상이 없습니다." };
+                displayName = _parallelPositionDisplayNames != null && _parallelPositionDisplayNames.ContainsKey(envelope.positionKey) ? _parallelPositionDisplayNames[envelope.positionKey] : envelope.positionKey;
+            }
+            OnParallelEngineProgress(envelope.positionKey, displayName, envelope.progress, _parallelProgressStates, _parallelProgressSync);
+            return new { ok = true };
+        }
+
+        private void ForwardParallelProgress(ProcessProgress progress)
+        {
+            if (string.IsNullOrWhiteSpace(_forwardCoordinatorUrl) || string.IsNullOrWhiteSpace(_forwardCoordinatorToken) || progress == null) return;
+            try
+            {
+                var request = (HttpWebRequest)WebRequest.Create(_forwardCoordinatorUrl.TrimEnd('/') + "/api/parallel/progress");
+                request.Method = "POST";
+                request.Timeout = 5000;
+                request.ReadWriteTimeout = 5000;
+                request.ContentType = "application/json";
+                byte[] bytes = Encoding.UTF8.GetBytes(_json.Serialize(new ParallelProgressEnvelope { token = _forwardCoordinatorToken, positionKey = _forwardPositionKey, progress = progress }));
+                request.ContentLength = bytes.Length;
+                using (Stream stream = request.GetRequestStream()) stream.Write(bytes, 0, bytes.Length);
+                using (var response = request.GetResponse()) { }
+            }
+            catch (SysException ex) { AgentDiagnostics.Write("PARALLEL_PROGRESS_FORWARD_ERROR", ex.Message); }
+        }
+
+        private Dictionary<string, string> BuildPositionGpuAssignments(AgentStartRequest req, List<AgentPositionRequest> positions, bool parallel)
+        {
+            string mode = (req.mode ?? "green").Trim().ToLowerInvariant();
+            bool useGpu = mode == "green" ? GetGreenOptions(req).useGpu : GetBlueOptions(req).useGpu;
+            string configured = mode == "green" ? GetGreenOptions(req).gpuDevices : GetBlueOptions(req).gpuDevices;
+            var result = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+            if (!useGpu)
+            {
+                foreach (AgentPositionRequest position in positions) result[position.key] = "CPU";
+                return result;
+            }
+            List<int> available = req.autoDistributeGpu && _gpuDeviceIndices.Count > 0
+                ? _gpuDeviceIndices.ToList()
+                : ParseGpuList(configured, true);
+            if (!parallel)
+            {
+                string devices = string.Join(",", available);
+                foreach (AgentPositionRequest position in positions) result[position.key] = devices;
+                return result;
+            }
+            for (int index = 0; index < positions.Count; index++) result[positions[index].key] = available[index % available.Count].ToString();
+            return result;
+        }
+
+        private bool CanUseParallelPositionRuntime(AgentStartRequest req, int positionCount)
+        {
+            if (req == null || !req.parallelPositions || positionCount <= 1) return false;
+            if (string.Equals((req.mode ?? "green").Trim(), "green", StringComparison.OrdinalIgnoreCase))
+            {
+                AgentGreenOptions options = GetGreenOptions(req);
+                if (options.originalProcess || options.freshRuntime || options.disableTensorRt)
+                {
+                    AppendAgentLog("WARN", "원본/호환 Runtime 옵션은 기존 직렬 실행으로 유지합니다. Position 병렬 실행은 표준 사전 로드 Runtime에서 사용됩니다.");
+                    return false;
+                }
+            }
+            return true;
         }
 
         private string ValidateRuntimePreloadRequest(AgentStartRequest req)
@@ -733,6 +998,7 @@ namespace VisionQC.LocalAgent
             sb.Append(mode).Append('|');
             if (mode == "green") sb.Append(green.useGpu).Append('|').Append(green.gpuDevices ?? "");
             else sb.Append(blue.useGpu).Append('|').Append(blue.gpuDevices ?? "");
+            sb.Append("|P:").Append(req.parallelPositions).Append("|A:").Append(req.autoDistributeGpu);
             sb.Append(RuntimeDiagnosticSignature(req));
             foreach (var p in EnabledPositions(req).OrderBy(x => x.key, StringComparer.OrdinalIgnoreCase))
             {
@@ -749,10 +1015,10 @@ namespace VisionQC.LocalAgent
             if (mode == "green")
             {
                 AgentGreenOptions green = GetGreenOptions(req);
-                return green.useGpu + "|" + (green.gpuDevices ?? "") + RuntimeDiagnosticSignature(req);
+                return green.useGpu + "|" + (green.gpuDevices ?? "") + RuntimeDiagnosticSignature(req) + ParallelRuntimeSignature(req);
             }
             AgentBlueOptions blue = GetBlueOptions(req);
-            return blue.useGpu + "|" + (blue.gpuDevices ?? "") + RuntimeDiagnosticSignature(req);
+            return blue.useGpu + "|" + (blue.gpuDevices ?? "") + RuntimeDiagnosticSignature(req) + ParallelRuntimeSignature(req);
         }
 
         private string RuntimeDiagnosticSignature(AgentStartRequest req)
@@ -760,6 +1026,17 @@ namespace VisionQC.LocalAgent
             bool green = string.Equals(req.mode ?? "green", "green", StringComparison.OrdinalIgnoreCase);
             var options = GetGreenOptions(req);
             return "|D:" + (green && options.detailedDiagnostics) + "|M:" + (green && options.disableOptimizedGpuMemory);
+        }
+
+        private static string ParallelRuntimeSignature(AgentStartRequest req)
+        {
+            // Worker concurrency can change after preload because it does not alter a Runtime.
+            return "|P:" + req.parallelPositions + "|A:" + req.autoDistributeGpu;
+        }
+
+        private static int NormalizeMaxParallel(AgentStartRequest req)
+        {
+            return Math.Max(1, Math.Min(10, req == null || req.maxParallelPositions <= 0 ? 10 : req.maxParallelPositions));
         }
 
         private string BuildGreenWorkspaceSignature(AgentStartRequest req)
@@ -775,7 +1052,7 @@ namespace VisionQC.LocalAgent
 
         private bool HasCompatiblePreloadedRuntime(AgentStartRequest req, string requestedSignature)
         {
-            if (_preloadedRuntimeControl == null) return false;
+            if (!HasAnyPreloadedRuntimeLocked()) return false;
             if (string.Equals(_preloadedRuntimeSignature, requestedSignature, StringComparison.Ordinal)) return true;
 
             string requestedMode = (req.mode ?? "green").Trim().ToLowerInvariant();
@@ -787,12 +1064,33 @@ namespace VisionQC.LocalAgent
 
         private void RememberPreloadedRuntimeLocked(LocalRuntime.Control control, AgentStartRequest req, string signature)
         {
+            _preloadedPositionWorkers.Clear();
+            _preloadedPositionGpuAssignments.Clear();
             _preloadedRuntimeControl = control;
             _preloadedRuntimeSignature = signature;
             _preloadedRuntimeToken = Guid.NewGuid().ToString("N");
             _preloadedRuntimeMode = (req.mode ?? "green").Trim().ToLowerInvariant();
             _preloadedRuntimeControlSignature = BuildRuntimeControlSignature(req);
             _preloadedGreenWorkspaceSignature = BuildGreenWorkspaceSignature(req);
+        }
+
+        private void RememberPreloadedPositionWorkersLocked(Dictionary<string, PositionWorkerClient> workers, Dictionary<string, string> assignments, AgentStartRequest req, string signature)
+        {
+            _preloadedRuntimeControl = null;
+            _preloadedPositionWorkers.Clear();
+            foreach (var item in workers) _preloadedPositionWorkers[item.Key] = item.Value;
+            _preloadedPositionGpuAssignments.Clear();
+            foreach (var item in assignments) _preloadedPositionGpuAssignments[item.Key] = item.Value;
+            _preloadedRuntimeSignature = signature;
+            _preloadedRuntimeToken = Guid.NewGuid().ToString("N");
+            _preloadedRuntimeMode = (req.mode ?? "green").Trim().ToLowerInvariant();
+            _preloadedRuntimeControlSignature = BuildRuntimeControlSignature(req);
+            _preloadedGreenWorkspaceSignature = BuildGreenWorkspaceSignature(req);
+        }
+
+        private bool HasAnyPreloadedRuntimeLocked()
+        {
+            return _preloadedRuntimeControl != null || _preloadedPositionWorkers.Count > 0;
         }
 
         private static string NormalizeRuntimePath(string path)
@@ -803,16 +1101,19 @@ namespace VisionQC.LocalAgent
 
         private void DisposePreloadedRuntimeLocked()
         {
-            try
+            if (_preloadedRuntimeControl != null)
             {
-                if (_preloadedRuntimeControl != null)
+                try
                 {
                     RuntimeWorkspaceRegistry.Remove(_preloadedRuntimeControl);
                     _preloadedRuntimeControl.Dispose();
                 }
+                catch { }
             }
-            catch { }
+            foreach (PositionWorkerClient worker in _preloadedPositionWorkers.Values) DisposePositionWorker(worker);
             _preloadedRuntimeControl = null;
+            _preloadedPositionWorkers.Clear();
+            _preloadedPositionGpuAssignments.Clear();
             _preloadedRuntimeSignature = "";
             _preloadedRuntimeToken = "";
             _preloadedRuntimeMode = "";
@@ -1159,6 +1460,8 @@ namespace VisionQC.LocalAgent
             if (!string.IsNullOrEmpty(validation)) return new { ok = false, error = validation };
 
             LocalRuntime.Control simulationControl;
+            Dictionary<string, PositionWorkerClient> positionWorkers = null;
+            Dictionary<string, string> positionGpuAssignments = null;
             lock (_vpdlSync)
             {
                 if (_vpdlReservedForSimulation)
@@ -1168,6 +1471,13 @@ namespace VisionQC.LocalAgent
                     return new { ok = false, error = "현재 설정에 맞는 Runtime 사전 로드가 없습니다. Workspace Runtime Structure의 Runtime File Load를 다시 실행하세요." };
                 _vpdlReservedForSimulation = true;
                 simulationControl = _preloadedRuntimeControl;
+                if (_preloadedPositionWorkers.Count > 0)
+                {
+                    positionWorkers = _preloadedPositionWorkers.ToDictionary(x => x.Key, x => x.Value, StringComparer.OrdinalIgnoreCase);
+                    positionGpuAssignments = _preloadedPositionGpuAssignments.ToDictionary(x => x.Key, x => x.Value, StringComparer.OrdinalIgnoreCase);
+                    _preloadedPositionWorkers.Clear();
+                    _preloadedPositionGpuAssignments.Clear();
+                }
                 _preloadedRuntimeControl = null;
                 _preloadedRuntimeSignature = "";
                 _preloadedRuntimeToken = "";
@@ -1201,7 +1511,7 @@ namespace VisionQC.LocalAgent
                 StartSimulationHistory(req);
                 AppendAgentLog("START", "Simulation 시작 | Mode=" + _state.mode + " | Batch=" + _liveBatchSize + " | Output=" + (req.outputRoot ?? ""));
                 Broadcast("progress", Snapshot(), true);
-                _simulationTask = Task.Run(() => RunSimulation(req, simulationControl, _simulationCts.Token));
+                _simulationTask = Task.Run(() => RunSimulation(req, simulationControl, positionWorkers, positionGpuAssignments, _simulationCts.Token));
                 return new { ok = true, state = Snapshot() };
             }
             catch (SysException ex)
@@ -1215,6 +1525,10 @@ namespace VisionQC.LocalAgent
                         {
                             RuntimeWorkspaceRegistry.Remove(simulationControl);
                             simulationControl.Dispose();
+                        }
+                        if (positionWorkers != null)
+                        {
+                            foreach (PositionWorkerClient positionWorker in positionWorkers.Values) DisposePositionWorker(positionWorker);
                         }
                     }
                     catch { }
@@ -1241,11 +1555,21 @@ namespace VisionQC.LocalAgent
             return new { ok = true };
         }
 
-        private void RunSimulation(AgentStartRequest req, LocalRuntime.Control simulationControl, CancellationToken token)
+        private void RunSimulation(AgentStartRequest req, LocalRuntime.Control simulationControl, Dictionary<string, PositionWorkerClient> positionWorkers, Dictionary<string, string> positionGpuAssignments, CancellationToken token)
         {
             bool runtimeReusable = true;
             try
             {
+                if (positionWorkers != null && positionWorkers.Count > 1)
+                {
+                    RunParallelPositionSimulation(req, positionWorkers, positionGpuAssignments, token);
+                    lock (_sync) _state.running = false;
+                    FlushLiveBatch();
+                    CompleteSimulationHistory("completed", _state.message);
+                    AppendAgentLog("DONE", _state.message + " | Result=" + (_state.resultCsv ?? ""));
+                    Broadcast("completed", Snapshot(), true);
+                    return;
+                }
                 var progress = new DirectProgress<ProcessProgress>(p => OnEngineProgress(p));
                 string mode = (req.mode ?? "green").Trim().ToLowerInvariant();
                 if (mode == "blue")
@@ -1262,7 +1586,7 @@ namespace VisionQC.LocalAgent
                 {
                     var integratedOptions = GetIntegratedOptions(req);
                     bool keepCropImages = integratedOptions.keepCropImages;
-                    string cropRoot = Path.Combine(req.outputRoot, keepCropImages ? "_VisionQC_Integrated_Images" : "_VisionQC_BlueCrop_Temp");
+                    string cropRoot = PositionCropRoot(req, keepCropImages);
                     var blue = BuildBlueConfig(req, cropRoot, true);
                     var green = BuildGreenConfig(req, req.outputRoot, cropRoot, true);
                     var summary = IntegratedSimulationProcessor.RunStreaming(blue, green, keepCropImages, cropRoot, simulationControl, true, progress, token);
@@ -1336,6 +1660,7 @@ namespace VisionQC.LocalAgent
                 lock (_sync)
                 {
                     _state.running = false;
+                    _state.activePositionWorkers = 0;
                     _state.message = "사용자에 의해 중지되었습니다.";
                 }
                 FlushLiveBatch();
@@ -1349,6 +1674,7 @@ namespace VisionQC.LocalAgent
                 lock (_sync)
                 {
                     _state.running = false;
+                    _state.activePositionWorkers = 0;
                     _state.error = ex.ToString();
                     _state.message = "Simulation 오류: " + ex.Message;
                 }
@@ -1360,6 +1686,7 @@ namespace VisionQC.LocalAgent
             }
             finally
             {
+                if (positionWorkers != null && positionWorkers.Count > 1) CleanupParallelTemporaryCrops(req);
                 lock (_vpdlSync)
                 {
                     if (runtimeReusable && simulationControl != null)
@@ -1369,6 +1696,14 @@ namespace VisionQC.LocalAgent
                         _licenseStatus = "Runtime Ready";
                         _runtimeMessage = "Simulation 완료 · 사전 로드 Runtime 재사용 가능";
                         simulationControl = null;
+                    }
+                    else if (runtimeReusable && positionWorkers != null && positionWorkers.Count > 0)
+                    {
+                        DisposePreloadedRuntimeLocked();
+                        RememberPreloadedPositionWorkersLocked(positionWorkers, positionGpuAssignments ?? new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase), req, BuildRuntimePreloadSignature(req));
+                        _licenseStatus = "Runtime Ready";
+                        _runtimeMessage = "병렬 Simulation 완료 · Position Runtime 재사용 가능";
+                        positionWorkers = null;
                     }
                     else
                     {
@@ -1382,11 +1717,261 @@ namespace VisionQC.LocalAgent
                             }
                         }
                         catch { }
+                        if (positionWorkers != null)
+                        {
+                            foreach (PositionWorkerClient positionWorker in positionWorkers.Values) DisposePositionWorker(positionWorker);
+                        }
                         _runtimeMessage = "Runtime File Load를 다시 실행하세요. 진단/호환 검사 또는 오류 후에는 Runtime을 재사용하지 않습니다.";
                     }
                     _vpdlReservedForSimulation = false;
                 }
             }
+        }
+
+        private sealed class PositionProgressState
+        {
+            public int Processed;
+            public int Total;
+            public int Ok;
+            public int Ng;
+        }
+
+        private sealed class PositionRunResult
+        {
+            public string PositionKey;
+            public string DisplayName;
+            public int Processed;
+            public int Total;
+            public int Ok;
+            public int Ng;
+            public string CsvPath;
+        }
+
+        private sealed class PositionWorkerClient
+        {
+            public string PositionKey;
+            public string DisplayName;
+            public string GpuAssignment;
+            public int Port;
+            public string HomePath;
+            public Process Process;
+        }
+
+        private sealed class ParallelProgressEnvelope
+        {
+            public string token { get; set; }
+            public string positionKey { get; set; }
+            public ProcessProgress progress { get; set; }
+        }
+
+        private sealed class WorkerApiResponse
+        {
+            public bool ok { get; set; }
+            public bool running { get; set; }
+            public string error { get; set; }
+            public SimulationState state { get; set; }
+        }
+
+        private void RunParallelPositionSimulation(AgentStartRequest req, Dictionary<string, PositionWorkerClient> workers, Dictionary<string, string> assignments, CancellationToken token)
+        {
+            var positions = EnabledPositions(req).ToList();
+            int maxParallel = Math.Min(positions.Count, NormalizeMaxParallel(req));
+            var progressStates = positions.ToDictionary(x => x.key, x => new PositionProgressState(), StringComparer.OrdinalIgnoreCase);
+            var gate = new SemaphoreSlim(maxParallel, maxParallel);
+            var requests = positions.ToDictionary(position => position.key, position => ClonePositionRequest(req, position, assignments), StringComparer.OrdinalIgnoreCase);
+            string coordinatorToken = Guid.NewGuid().ToString("N");
+            lock (_parallelProgressSync)
+            {
+                _parallelCoordinatorToken = coordinatorToken;
+                _parallelProgressStates = progressStates;
+                _parallelPositionDisplayNames = positions.ToDictionary(x => x.key, x => x.displayName, StringComparer.OrdinalIgnoreCase);
+            }
+            foreach (AgentPositionRequest position in positions)
+            {
+                WorkerApiResponse configured = WorkerPost<WorkerApiResponse>(workers[position.key], "/api/parallel/configure", new
+                {
+                    coordinatorUrl = "http://127.0.0.1:" + _port,
+                    token = coordinatorToken,
+                    positionKey = position.key
+                }, 5000);
+                if (configured == null || !configured.ok)
+                    throw new SysInvalidOperationException(position.displayName + " Position Worker 진행 연결에 실패했습니다: " + (configured == null ? "응답 없음" : configured.error));
+            }
+            lock (_sync)
+            {
+                _state.activePositionWorkers = maxParallel;
+                _state.completedPositionWorkers = 0;
+                _state.message = "Position 병렬 Simulation 시작 | " + positions.Count + "개 / 동시 " + maxParallel + "개";
+            }
+            AppendAgentLog("INFO", _state.message);
+
+            var tasks = positions.Select(position => Task.Run(() =>
+            {
+                gate.Wait(token);
+                try
+                {
+                    token.ThrowIfCancellationRequested();
+                    string gpu = assignments != null && assignments.ContainsKey(position.key) ? assignments[position.key] : "-";
+                    AppendAgentLog("INFO", "Position Worker 시작 | " + position.displayName + " | GPU=" + gpu);
+                    PositionWorkerClient worker = workers[position.key];
+                    WorkerApiResponse started = WorkerPost<WorkerApiResponse>(worker, "/api/simulation/start", requests[position.key], 30000);
+                    if (started == null || !started.ok)
+                        throw new SysInvalidOperationException(position.displayName + " Position Worker 시작 실패: " + (started == null ? "응답 없음" : started.error));
+                    WorkerApiResponse status = started;
+                    try
+                    {
+                        do
+                        {
+                            token.ThrowIfCancellationRequested();
+                            Thread.Sleep(250);
+                            status = WorkerGet<WorkerApiResponse>(worker, "/api/status", 5000);
+                        }
+                        while (status != null && status.running);
+                    }
+                    catch (OperationCanceledException)
+                    {
+                        try { WorkerPost<WorkerApiResponse>(worker, "/api/simulation/stop", new { }, 5000); } catch { }
+                        throw;
+                    }
+                    if (status == null || !status.ok || status.state == null)
+                        throw new SysInvalidOperationException(position.displayName + " Position Worker 상태를 읽지 못했습니다: " + (status == null ? "응답 없음" : status.error));
+                    if (!string.IsNullOrWhiteSpace(status.state.error))
+                        throw new SysInvalidOperationException(position.displayName + " Position Worker 오류: " + status.state.error);
+                    PositionRunResult result = new PositionRunResult
+                    {
+                        PositionKey = position.key, DisplayName = position.displayName,
+                        Processed = status.state.processed, Total = status.state.total,
+                        Ok = status.state.ok, Ng = status.state.ng, CsvPath = status.state.resultCsv
+                    };
+                    lock (_sync)
+                    {
+                        _state.completedPositionWorkers++;
+                        _state.message = "Position 완료 " + _state.completedPositionWorkers + "/" + positions.Count + " | " + position.displayName;
+                    }
+                    AppendAgentLog("DONE", "Position Worker 완료 | " + position.displayName + " | " + result.Processed + "건");
+                    Broadcast("progress", Snapshot(), true);
+                    return result;
+                }
+                finally { gate.Release(); }
+            }, token)).ToArray();
+
+            try
+            {
+                try { Task.WaitAll(tasks); }
+                catch (AggregateException ex)
+                {
+                    var actual = ex.Flatten().InnerExceptions.FirstOrDefault(error => !(error is OperationCanceledException)) ?? ex.Flatten().InnerExceptions.First();
+                    if (actual is OperationCanceledException) throw new OperationCanceledException(token);
+                    throw actual;
+                }
+                var results = tasks.Select(task => task.Result).ToList();
+                string mode = (req.mode ?? "green").Trim().ToLowerInvariant();
+                lock (_sync)
+                {
+                    _state.processed = results.Sum(x => x.Processed);
+                    _state.total = results.Sum(x => x.Total);
+                    _state.ok = results.Sum(x => x.Ok);
+                    _state.ng = results.Sum(x => x.Ng);
+                    _state.resultCsv = mode == "blue" ? null : MergePositionResultCsv(req.outputRoot, results.Select(x => x.CsvPath));
+                    _state.activePositionWorkers = 0;
+                    _state.completedPositionWorkers = results.Count;
+                    _state.message = "Position 병렬 Simulation 완료 | " + results.Count + "개";
+                }
+            }
+            finally
+            {
+                lock (_parallelProgressSync)
+                {
+                    _parallelCoordinatorToken = "";
+                    _parallelProgressStates = null;
+                    _parallelPositionDisplayNames = null;
+                }
+                gate.Dispose();
+            }
+        }
+
+        private void CleanupParallelTemporaryCrops(AgentStartRequest req)
+        {
+            if (!string.Equals((req.mode ?? "").Trim(), "integrated", StringComparison.OrdinalIgnoreCase) || GetIntegratedOptions(req).keepCropImages) return;
+            string temporaryCropRoot = Path.Combine(req.outputRoot, "_VisionQC_BlueCrop_Temp");
+            try
+            {
+                if (Directory.Exists(temporaryCropRoot)) Directory.Delete(temporaryCropRoot, true);
+            }
+            catch (SysException cleanupError)
+            {
+                AppendAgentLog("WARN", "병렬 통합 임시 이미지 정리 실패(검사 결과는 유지): " + cleanupError.Message);
+            }
+        }
+
+        private AgentStartRequest ClonePositionRequest(AgentStartRequest source, AgentPositionRequest position, Dictionary<string, string> assignments)
+        {
+            AgentStartRequest clone = _json.Deserialize<AgentStartRequest>(_json.Serialize(source));
+            clone.positions = clone.positions.Where(item => string.Equals(item.key, position.key, StringComparison.OrdinalIgnoreCase)).ToList();
+            string assigned;
+            if (assignments != null && assignments.TryGetValue(position.key, out assigned) && assigned != "CPU")
+            {
+                if (clone.green != null) clone.green.gpuDevices = assigned;
+                if (clone.blue != null) clone.blue.gpuDevices = assigned;
+            }
+            clone.parallelPositions = false;
+            clone.autoDistributeGpu = false;
+            clone.parallelPositionKey = position.key;
+            return clone;
+        }
+
+        private static string PositionCropRoot(AgentStartRequest req, bool keepCropImages)
+        {
+            string root = Path.Combine(req.outputRoot, keepCropImages ? "_VisionQC_Integrated_Images" : "_VisionQC_BlueCrop_Temp");
+            if (string.IsNullOrWhiteSpace(req.parallelPositionKey)) return root;
+            string safe = req.parallelPositionKey;
+            foreach (char invalid in Path.GetInvalidFileNameChars()) safe = safe.Replace(invalid, '_');
+            return Path.Combine(root, safe);
+        }
+
+        private void OnParallelEngineProgress(string positionKey, string displayName, ProcessProgress progress, Dictionary<string, PositionProgressState> states, object progressSync)
+        {
+            ProcessProgress aggregate;
+            lock (progressSync)
+            {
+                PositionProgressState state = states[positionKey];
+                if (progress.Processed.HasValue) state.Processed = progress.Processed.Value;
+                else if (progress.LiveRecord != null) state.Processed++;
+                if (progress.Total.HasValue) state.Total = progress.Total.Value;
+                if (progress.OkCount.HasValue) state.Ok = progress.OkCount.Value;
+                if (progress.NgCount.HasValue) state.Ng = progress.NgCount.Value;
+                aggregate = new ProcessProgress
+                {
+                    Message = string.IsNullOrWhiteSpace(progress.Message) ? null : "[" + displayName + "] " + progress.Message,
+                    Processed = states.Values.Sum(x => x.Processed), Total = states.Values.Sum(x => x.Total),
+                    OkCount = states.Values.Sum(x => x.Ok), NgCount = states.Values.Sum(x => x.Ng),
+                    CurrentFile = progress.CurrentFile, LiveRecord = progress.LiveRecord
+                };
+            }
+            OnEngineProgress(aggregate);
+        }
+
+        private static string MergePositionResultCsv(string outputRoot, IEnumerable<string> paths)
+        {
+            var inputs = paths.Where(path => !string.IsNullOrWhiteSpace(path) && File.Exists(path)).ToList();
+            if (inputs.Count == 0) return "";
+            if (inputs.Count == 1) return inputs[0];
+            string output = Path.Combine(outputRoot, "results_" + DateTime.Now.ToString("yyyyMMdd_HHmmss") + "_parallel.csv");
+            using (var writer = new StreamWriter(output, false, new UTF8Encoding(true)))
+            {
+                bool headerWritten = false;
+                foreach (string input in inputs)
+                {
+                    using (var reader = new StreamReader(input, true))
+                    {
+                        string header = reader.ReadLine();
+                        if (!headerWritten && header != null) { writer.WriteLine(header); headerWritten = true; }
+                        string line;
+                        while ((line = reader.ReadLine()) != null) writer.WriteLine(line);
+                    }
+                }
+            }
+            return output;
         }
 
         private void StartSimulationHistory(AgentStartRequest request)
@@ -1503,7 +2088,7 @@ namespace VisionQC.LocalAgent
                     _liveRecordCount++;
                     // Integrated Streaming은 LiveRecord 이벤트에 Processed가 없으므로
                     // 실제 상세 결과 수를 처리 수로 사용한다.
-                    _state.processed = Math.Max(_state.processed, _liveRecordCount);
+                    _state.processed = p.Processed.HasValue ? Math.Max(_state.processed, p.Processed.Value) : Math.Max(_state.processed, _liveRecordCount);
                     _liveBuffer.Add(p.LiveRecord);
                     if (_liveBuffer.Count >= Math.Max(1, _liveBatchSize))
                     {
@@ -1524,7 +2109,7 @@ namespace VisionQC.LocalAgent
                 {
                     _state.message = p.Message;
                     var m = Regex.Match(p.Message, @"OK\s*=\s*(\d+)\s*,?\s*NG\s*=\s*(\d+)", RegexOptions.IgnoreCase);
-                    if (m.Success)
+                    if (m.Success && !p.OkCount.HasValue && !p.NgCount.HasValue)
                     {
                         _state.ok = int.Parse(m.Groups[1].Value);
                         _state.ng = int.Parse(m.Groups[2].Value);
@@ -1580,6 +2165,7 @@ namespace VisionQC.LocalAgent
                     logMessage = logMessage.Substring(6).Trim();
                 AppendAgentLog(level, logMessage);
             }
+            ForwardParallelProgress(p);
         }
 
         private void FlushLiveBatch()
@@ -1700,6 +2286,7 @@ namespace VisionQC.LocalAgent
                 // Heatmap Overlay는 Green 원본 검사 결과에만 저장한다. Integrated는 Blue Crop 파이프라인과 분리한다.
                 HeatmapImageSave = !integrated && opt.heatmapImageSave,
                 KeepSubfolders = opt.keepSubfolders,
+                ResultFileSuffix = req.parallelPositionKey,
                 ForceJetWhenGrayscale = opt.forceJet,
                 PrintEvery = Math.Max(1, opt.printEvery <= 0 ? 100 : opt.printEvery),
                 Tools = tools,
@@ -2018,6 +2605,37 @@ namespace VisionQC.LocalAgent
             catch { return "-"; }
         }
 
+        private static List<int> DetectGpuDeviceIndices()
+        {
+            var indices = new List<int>();
+            try
+            {
+                var start = new ProcessStartInfo
+                {
+                    FileName = "nvidia-smi.exe",
+                    Arguments = "--query-gpu=index --format=csv,noheader,nounits",
+                    UseShellExecute = false,
+                    CreateNoWindow = true,
+                    RedirectStandardOutput = true,
+                    RedirectStandardError = true,
+                    WindowStyle = ProcessWindowStyle.Hidden
+                };
+                using (Process process = Process.Start(start))
+                {
+                    string output = process.StandardOutput.ReadToEnd();
+                    if (!process.WaitForExit(5000)) { try { process.Kill(); } catch { } return indices; }
+                    foreach (string line in output.Split(new[] { '\r', '\n' }, StringSplitOptions.RemoveEmptyEntries))
+                    {
+                        int index;
+                        if (int.TryParse(line.Trim(), out index) && !indices.Contains(index)) indices.Add(index);
+                    }
+                }
+            }
+            catch { }
+            indices.Sort();
+            return indices;
+        }
+
         private static List<int> ParseGpuList(string text, bool useGpu)
         {
             var list = new List<int>();
@@ -2201,7 +2819,7 @@ namespace VisionQC.LocalAgent
             {
                 Process.Start(new ProcessStartInfo
                 {
-                    FileName = "http://127.0.0.1:" + Port + "/",
+                    FileName = "http://127.0.0.1:" + _port + "/",
                     UseShellExecute = true
                 });
             }

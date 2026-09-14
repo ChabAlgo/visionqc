@@ -14,6 +14,11 @@ namespace VisionQC.LocalAgent
         public AgentIntegratedOptions integrated { get; set; }
         public List<AgentPositionRequest> positions { get; set; }
         public NamingProfile namingProfile { get; set; }
+        public bool parallelPositions { get; set; }
+        public bool autoDistributeGpu { get; set; }
+        public int maxParallelPositions { get; set; }
+        // Coordinator-only marker used to isolate temporary Integrated crops per Position worker.
+        public string parallelPositionKey { get; set; }
 
         // v0.1.x compatibility fields
         public bool useGpu { get; set; }
@@ -367,6 +372,8 @@ namespace VisionQC.LocalAgent
         public string vpdlVersion { get; set; }
         public int workspaceCount { get; set; }
         public long elapsedMs { get; set; }
+        public bool parallelPositions { get; set; }
+        public Dictionary<string, string> positionGpuAssignments { get; set; } = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
         public List<RuntimePreloadItem> items { get; set; } = new List<RuntimePreloadItem>();
     }
 
@@ -387,5 +394,7 @@ namespace VisionQC.LocalAgent
         public double etaSeconds { get; set; }
         public double imagesPerSecond { get; set; }
         public int batchSize { get; set; }
+        public int activePositionWorkers { get; set; }
+        public int completedPositionWorkers { get; set; }
     }
 }

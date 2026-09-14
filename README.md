@@ -1,14 +1,16 @@
-# VisionQC v4.7.32 / Local Agent v1.3.19
+# VisionQC v4.7.33 / Local Agent v1.3.20
 
 ## 현재 릴리스 안내
 
-- 설치 파일: [VisionQC Agent 1.3.19](downloads/VisionQC_Agent_Installer_v1.3.19.exe)
-- 오프라인 패키지: [VisionQC Offline 4.7.32](downloads/VisionQC_Offline_v4.7.32.zip)
+- 설치 파일: [VisionQC Agent 1.3.20](downloads/VisionQC_Agent_Installer_v1.3.20.exe)
+- 오프라인 패키지: [VisionQC Offline 4.7.33](downloads/VisionQC_Offline_v4.7.33.zip)
 - SQLite 이력, 대용량 CSV 직접 적재, 파일명 Position 기반 AI Green 검사, 원본/Heatmap Viewer를 제공합니다.
-- 최신 변경·검증: [v4.7.32 릴리스 노트](RELEASE_NOTES_v4.7.32_KR.md). 기존 설계는 `ARCHITECTURE_V4.7.0_KR.md` 참고.
-- 소스 폴더 `LocalAgent_v0.2.12`는 유지된 경로명입니다. 실제 배포 Agent 버전은 1.3.19이며 `RELEASE_MANIFEST.json`과 EXE 파일 버전으로 확인합니다.
+- 최신 변경·검증: [v4.7.33 릴리스 노트](RELEASE_NOTES_v4.7.33_KR.md). 기존 설계는 `ARCHITECTURE_V4.7.0_KR.md` 참고.
+- 소스 폴더 `LocalAgent_v0.2.12`는 유지된 경로명입니다. 실제 배포 Agent 버전은 1.3.20이며 `RELEASE_MANIFEST.json`과 EXE 파일 버전으로 확인합니다.
 
-- 이번 배포: 저장된 CSV/XLSX 결과를 다시 불러올 때 이전 날짜 선택을 해제해 새 데이터로 메인 대시보드를 즉시 다시 집계합니다.
+- 이번 배포: Position마다 독립 Agent 작업 프로세스를 사용해 최대 10개 Position을 병렬 검사하고, 감지한 GPU를 순환 배분합니다. 한 개 GPU도 여러 Position이 공유할 수 있습니다.
+- 대시보드 미검 Cell과 검사 이력 Cell 이미지 창은 방향키로 이전·다음 Cell을 순서대로 탐색하며 양 끝에서 정지합니다.
+- 저장된 CSV/XLSX 결과를 다시 불러올 때 이전 날짜 선택을 해제해 새 데이터로 메인 대시보드를 즉시 다시 집계합니다.
 
 # 이전 변경 이력
 
