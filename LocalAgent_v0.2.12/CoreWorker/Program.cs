@@ -9,7 +9,7 @@ namespace VisionQC.LocalAgent
 {
     internal static class Program
     {
-        internal const string AgentVersion = "1.3.23";
+        internal const string AgentVersion = "1.3.24";
         private static int _requestedExitCode;
 
         internal static string AgentHomeDirectory

@@ -1,7 +1,7 @@
 (() => {
   'use strict';
 
-  const VERSION = '4.7.36';
+  const VERSION = '4.7.37';
   const DEFAULT_POSITION_DEFS = [
     { key:'CA_TOP', name:'CA(TOP)' },
     { key:'AN_TOP', name:'AN(TOP)' },
@@ -27,9 +27,9 @@
   const NG_POSITION_PREFIX = 'ng-position:';
   const IMG_RE = /\.(png|jpe?g|bmp|gif|webp|tif?f)$/i;
   const LOCAL_AGENT_URL = 'http://127.0.0.1:17891';
-  const EXPECTED_AGENT_VERSION = '1.3.23';
-  const AGENT_INSTALLER_URL = './downloads/VisionQC_Agent_Installer_v1.3.23.exe';
-  const OFFLINE_PACKAGE_URL = './downloads/VisionQC_Offline_v4.7.36.zip';
+  const EXPECTED_AGENT_VERSION = '1.3.24';
+  const AGENT_INSTALLER_URL = './downloads/VisionQC_Agent_Installer_v1.3.24.exe';
+  const OFFLINE_PACKAGE_URL = './downloads/VisionQC_Offline_v4.7.37.zip';
   // SQLite에는 사용자가 명시적으로 남기려는 두 종류의 결과만 표시한다.
   // 이전 버전의 단발 검사(single-inspection) 이력은 보존하되 화면 집계에서는 제외한다.
   const PERSISTED_HISTORY_SOURCE_TYPES = ['simulation', 'csv-import', 'csv-file-stream'];
@@ -138,6 +138,8 @@
     liveUiPointerActive: false,
     liveUiRenderPending: false,
     liveUiRenderTimer: null,
+    liveUiRenderForce: false,
+    liveUiLastRenderAt: 0,
     historyImporting: false,
     historyLoaded: false,
     historyLoading: false,
@@ -800,9 +802,33 @@
     renderAnalysisPreserveDropdown();
   }
 
-  function flushPendingLiveUiRender() {
+  function liveUiRenderInterval() {
+    const rows = Number(state.simulationLiveRows || 0);
+    if (!state.simulationProgress?.running) return 0;
+    if (rows >= 200000) return 12000;
+    if (rows >= 50000) return 8000;
+    if (rows >= 10000) return 5000;
+    return 3000;
+  }
+
+  function schedulePendingLiveUiRender(delay) {
+    if (state.liveUiRenderTimer) return;
+    state.liveUiRenderTimer = setTimeout(() => {
+      state.liveUiRenderTimer = null;
+      flushPendingLiveUiRender();
+    }, Math.max(0, Number(delay || 0)));
+  }
+
+  function flushPendingLiveUiRender(force = false) {
     if (!state.liveUiRenderPending || state.liveUiPointerActive) return;
+    const mustRender = force || state.liveUiRenderForce;
+    const remaining = liveUiRenderInterval() - (Date.now() - Number(state.liveUiLastRenderAt || 0));
+    if (!mustRender && remaining > 0) {
+      schedulePendingLiveUiRender(remaining);
+      return;
+    }
     state.liveUiRenderPending = false;
+    state.liveUiRenderForce = false;
     if (state.liveUiRenderTimer) {
       clearTimeout(state.liveUiRenderTimer);
       state.liveUiRenderTimer = null;
@@ -817,15 +843,18 @@
       }
       renderAnalysisPreserveDropdown();
     }
+    state.liveUiLastRenderAt = Date.now();
   }
 
   function queueLiveUiRender() {
+    const force = arguments[0] === true;
     state.liveUiRenderPending = true;
-    if (state.liveUiRenderTimer) return;
-    state.liveUiRenderTimer = setTimeout(() => {
+    state.liveUiRenderForce = state.liveUiRenderForce || force;
+    if (force && state.liveUiRenderTimer) {
+      clearTimeout(state.liveUiRenderTimer);
       state.liveUiRenderTimer = null;
-      flushPendingLiveUiRender();
-    }, 100);
+    }
+    schedulePendingLiveUiRender(force ? 0 : 100);
   }
 
   function closeAnalysisDropdowns(except = null) {
@@ -1965,10 +1994,11 @@
     return {
       records:[], recordMap:new Map(), actualMap,
       actualCountByPosition, positionStats:new Map(), globalToolRefs:new Map(),
-      cellStats:new Map(), ngCellCount:0, actualScores:new Map(),
+      cellStats:new Map(), ngCellCount:0, totalRecordNg:0, actualScores:new Map(),
       matchedActual:new Set(), detectedActual:new Set(), missMap:new Map(),
       duplicateMap:new Map(), resultCellIdSamples:[],
       actualCellIdSamples:[...new Set((ngImages || []).map((image) => image.cellId))].slice(0, 3),
+      dashboardDates:new Map(), dashboardUnknownRows:0,
       appendedRows:0
     };
   }
@@ -1978,6 +2008,7 @@
     stats.total += delta;
     if (record.totalResult === 'NG') stats.ng += delta;
     if (record.totalResult === 'OK') stats.ok += delta;
+    if (record.totalResult === 'NG') accumulator.totalRecordNg += delta;
     updateLiveCellStats(accumulator, record.cellId, record.totalResult === 'NG', delta);
 
     Object.values(record.tools).forEach((tool) => {
@@ -2020,8 +2051,28 @@
     });
   }
 
+  function appendRowToLiveDashboardDates(accumulator, row) {
+    const date = dashboardDateForRow(row);
+    if (!date) {
+      accumulator.dashboardUnknownRows += 1;
+      return;
+    }
+    if (!accumulator.dashboardDates.has(date))
+      accumulator.dashboardDates.set(date, { recordMap:new Map(), total:0, ng:0 });
+    const bucket = accumulator.dashboardDates.get(date);
+    const key = resultKey(row.position, row.cellId);
+    const previous = bucket.recordMap.get(key);
+    const record = aggregateRows(previous ? previous.sourceRows.concat(row) : [row])[0];
+    applyThresholdSimulation([record]);
+    if (!previous) bucket.total += 1;
+    else if (previous.totalResult === 'NG') bucket.ng -= 1;
+    if (record.totalResult === 'NG') bucket.ng += 1;
+    bucket.recordMap.set(key, record);
+  }
+
   function appendRowsToLiveAnalysisAccumulator(accumulator, rows) {
     (rows || []).forEach((row) => {
+      appendRowToLiveDashboardDates(accumulator, row);
       const key = resultKey(row.position, row.cellId);
       const previous = accumulator.recordMap.get(key);
       if (previous) updateLiveRecordContribution(accumulator, previous, -1);
@@ -2359,6 +2410,19 @@
   // aggregateRows()가 Cell ID + Position으로 이미 중복을 하나의 record로 통합하므로 동일 이미지 재실행은 다시 세지 않는다.
   function currentAnalysisDashboardData() {
     const records = Array.isArray(state.dashboardModel?.records) ? state.dashboardModel.records : (state.model?.records || []);
+    const live = state.simulationLiveAccumulator;
+    if (live && !state.dashboardDate) {
+      const daily = [...live.dashboardDates.entries()]
+        .map(([date, bucket]) => ({ date, total:bucket.total, ng:bucket.ng, ngRate:bucket.total ? bucket.ng / bucket.total : 0 }))
+        .sort((a, b) => a.date.localeCompare(b.date));
+      return {
+        totalCount:live.recordMap.size,
+        ngCount:Number(live.totalRecordNg || 0),
+        uniqueCellCount:live.recordMap.size,
+        daily,
+        unknown:Number(live.dashboardUnknownRows || 0)
+      };
+    }
     const allRows = positionNames().flatMap(position => state.resultInputs[position]?.rows || []);
     const dailyRows = new Map();
     allRows.forEach(row => { const date = dashboardDateForRow(row); if (date) {
@@ -4515,7 +4579,7 @@
     state.simulationSyncedRunId = String(runId || '');
     state.simulationLiveAccumulator = null;
     rebuildModel(false);
-    if (state.page === 'main' || state.page === 'analysis') queueLiveUiRender();
+    if (state.page === 'main' || state.page === 'analysis') queueLiveUiRender(true);
     updateSimulationStatusDom();
     return accepted;
   }
@@ -6417,7 +6481,7 @@
       incrementalAggregationRegression() {
         const positions = positionNames().slice(0, 2);
         const raw = (position, id, total, crackResult, crackScore, weldResult = 'OK', weldScore = .2) => ({
-          FileName:`${position}-${id}.jpg`, CellId:id, Position:position, TotalResult:total,
+          FileName:`${position}-${id}.jpg`, CaptureTimestamp:id === 'CELL-2' ? '2026-09-14T08:00:00' : '2026-09-13T08:00:00', CellId:id, Position:position, TotalResult:total,
           Tools:{
             Crack:{Tool:'Crack',Result:crackResult,Score:crackScore},
             Welding:{Tool:'Welding',Result:weldResult,Score:weldScore}
@@ -6454,7 +6518,13 @@
           unmatchedActualCount:model.unmatchedActualCount, duplicates:model.duplicates.map((record) => record.key).sort()
         });
         const incremental = snapshot(state.model), complete = snapshot(expected);
-        return { equal:JSON.stringify(incremental) === JSON.stringify(complete), appendedRows:state.simulationLiveAccumulator.appendedRows, incremental, complete };
+        return {
+          equal:JSON.stringify(incremental) === JSON.stringify(complete),
+          appendedRows:state.simulationLiveAccumulator.appendedRows,
+          dashboard:currentAnalysisDashboardData(),
+          incremental,
+          complete
+        };
       },
       incrementalPerformanceRegression(count = 200000, batchSize = 25) {
         const positions = positionNames().slice(0, 4);
@@ -6471,7 +6541,7 @@
           for (let index = offset; index < Math.min(count, offset + batchSize); index += 1) {
             const position = positions[index % positions.length];
             records.push({
-              FileName:`${index}.jpg`, CellId:`CELL-${index}`, Position:position, TotalResult:index % 5 ? 'OK' : 'NG',
+              FileName:`${index}.jpg`, CaptureTimestamp:'2026-09-14T08:00:00', CellId:`CELL-${index}`, Position:position, TotalResult:index % 5 ? 'OK' : 'NG',
               Tools:{
                 Crack:{Tool:'Crack',Result:index % 11 ? 'OK' : 'NG',Score:.71},
                 FoilDamage:{Tool:'FoilDamage',Result:'OK',Score:.82},

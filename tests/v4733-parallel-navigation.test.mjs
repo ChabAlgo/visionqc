@@ -78,3 +78,14 @@ test('running Simulation incrementally flushes and reads DB rows without mixing 
   assert.match(web, /appendRowsToLiveAnalysisAccumulator/);
   assert.match(web, /liveAnalysisModel/);
 });
+
+test('live dashboard redraw is throttled independently from progress and date totals stay incremental', () => {
+  assert.match(web, /function liveUiRenderInterval\(\)/);
+  assert.match(web, /rows >= 200000\) return 12000/);
+  assert.match(web, /function schedulePendingLiveUiRender\(delay\)/);
+  assert.match(web, /queueLiveUiRender\(true\)/);
+  assert.match(web, /function appendRowToLiveDashboardDates/);
+  assert.match(web, /dashboardDates:new Map\(\)/);
+  assert.match(web, /if \(live && !state\.dashboardDate\)/);
+  assert.match(web, /updateGlobalSimulationProgress\(\);/);
+});

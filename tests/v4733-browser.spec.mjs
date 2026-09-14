@@ -37,6 +37,20 @@ test('live aggregation matches a complete rebuild across batches and duplicate c
   expect(result.appendedRows).toBe(4);
   expect(result.incremental).toEqual(result.complete);
   expect(result.equal).toBe(true);
+  expect(result.dashboard).toMatchObject({ totalCount:3, ngCount:2, uniqueCellCount:3, unknown:0 });
+  expect(result.dashboard.daily).toEqual([
+    { date:'2026-09-13', total:2, ng:1, ngRate:.5 },
+    { date:'2026-09-14', total:1, ng:1, ngRate:1 }
+  ]);
+});
+
+test('200k live rows keep incremental totals without rescanning prior dashboard dates', async ({ page }) => {
+  test.setTimeout(60000);
+  await open(page);
+  const result = await page.evaluate(() => window.__VISIONQC_DEBUG__.incrementalPerformanceRegression(200000, 25));
+  expect(result.liveRows).toBe(200000);
+  expect(result.dashboardTotal).toBe(200000);
+  expect(result.elapsedMs).toBeLessThan(30000);
 });
 
 for (const scenario of [

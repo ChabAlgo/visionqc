@@ -1,12 +1,12 @@
-# VisionQC v4.7.36 / Local Agent v1.3.23
+# VisionQC v4.7.37 / Local Agent v1.3.24
 
 ## 현재 릴리스 안내
 
-- 설치 파일: [VisionQC Agent 1.3.23](downloads/VisionQC_Agent_Installer_v1.3.23.exe)
-- 오프라인 패키지: [VisionQC Offline 4.7.36](downloads/VisionQC_Offline_v4.7.36.zip)
+- 설치 파일: [VisionQC Agent 1.3.24](downloads/VisionQC_Agent_Installer_v1.3.24.exe)
+- 오프라인 패키지: [VisionQC Offline 4.7.37](downloads/VisionQC_Offline_v4.7.37.zip)
 - SQLite 이력, 대용량 CSV 직접 적재, 파일명 Position 기반 AI Green 검사, 원본/Heatmap Viewer를 제공합니다.
-- 최신 변경·검증: [v4.7.36 릴리스 노트](RELEASE_NOTES_v4.7.36_KR.md). 기존 설계는 `ARCHITECTURE_V4.7.0_KR.md` 참고.
-- 소스 폴더 `LocalAgent_v0.2.12`는 유지된 경로명입니다. 실제 배포 Agent 버전은 1.3.23이며 `RELEASE_MANIFEST.json`과 EXE 파일 버전으로 확인합니다.
+- 최신 변경·검증: [v4.7.37 릴리스 노트](RELEASE_NOTES_v4.7.37_KR.md). 기존 설계는 `ARCHITECTURE_V4.7.0_KR.md` 참고.
+- 소스 폴더 `LocalAgent_v0.2.12`는 유지된 경로명입니다. 실제 배포 Agent 버전은 1.3.24이며 `RELEASE_MANIFEST.json`과 EXE 파일 버전으로 확인합니다.
 
 - 이번 배포: Simulation 실행 중 약 2초마다 해당 실행의 새 SQLite 결과만 읽어 대시보드 처리 건수를 따라갑니다.
 - 실시간 이벤트와 DB 결과를 중복 집계하지 않으며, 완료 후 전체 저장 건수를 다시 검증합니다.
