@@ -81,6 +81,7 @@ namespace VisionQC.LocalAgent
         private readonly HistoryService _history;
         private SqliteRunStore.RunStoreSession _simulationHistorySession;
         private bool _simulationHistoryWriteFailed;
+        private string _lastSimulationRunId = "";
 
         public AgentServer()
         {
@@ -276,6 +277,9 @@ namespace VisionQC.LocalAgent
                         break;
                     case "/api/simulation/state":
                         result = Snapshot();
+                        break;
+                    case "/api/simulation/results":
+                        result = ReadSimulationResults(request.Body);
                         break;
                     case "/api/agent/unregister":
                         Program.UnregisterProtocol();
@@ -1980,6 +1984,8 @@ namespace VisionQC.LocalAgent
             {
                 lock (_historyWriteSync)
                 {
+                    _lastSimulationRunId = "";
+                    lock (_sync) _state.simulationRunId = "";
                     if (_simulationHistorySession != null) _historyStore.Complete(_simulationHistorySession, "replaced", "새 Simulation 실행으로 교체됨");
                     _simulationHistorySession = _historyStore.Start(new SqliteRunStore.RunStoreStart
                     {
@@ -1995,6 +2001,8 @@ namespace VisionQC.LocalAgent
                         WorkspaceType = (request.mode ?? "green").Trim().ToLowerInvariant(),
                         WorkspacesByPosition = BuildHistoryWorkspaceMap(request)
                     });
+                    _lastSimulationRunId = _simulationHistorySession.RunId;
+                    lock (_sync) _state.simulationRunId = _lastSimulationRunId;
                     _simulationHistoryWriteFailed = false;
                 }
             }
@@ -2003,6 +2011,17 @@ namespace VisionQC.LocalAgent
                 _simulationHistorySession = null;
                 AppendAgentLog("WARN", "SQLite Simulation 이력 시작 실패(검사는 계속 진행): " + ex.Message);
             }
+        }
+
+        private SqliteRunStore.SimulationResultPage ReadSimulationResults(string body)
+        {
+            var data = DeserializeDictionary(body);
+            string runId = GetString(data, "runId", "").Trim();
+            string expected;
+            lock (_historyWriteSync) expected = _lastSimulationRunId;
+            if (string.IsNullOrWhiteSpace(runId) || !string.Equals(runId, expected, StringComparison.OrdinalIgnoreCase))
+                return new SqliteRunStore.SimulationResultPage { ok = false, runId = runId, error = "현재 Simulation 실행 ID가 아닙니다." };
+            return _historyStore.ReadSimulationResultPage(runId, GetLong(data, "afterImageId", 0), GetInt(data, "pageSize", 500));
         }
 
         private static Dictionary<string, SqliteRunStore.HistoryWorkspaceValue> BuildHistoryWorkspaceMap(AgentStartRequest request)
@@ -2567,7 +2586,9 @@ namespace VisionQC.LocalAgent
                     running = _state.running, mode = _state.mode, processed = _state.processed, total = _state.total,
                     ok = _state.ok, ng = _state.ng, current = _state.current, message = _state.message,
                     outputRoot = _state.outputRoot, resultCsv = _state.resultCsv, error = _state.error,
-                    elapsedSeconds = elapsed, etaSeconds = eta, imagesPerSecond = ips, batchSize = _liveBatchSize
+                    elapsedSeconds = elapsed, etaSeconds = eta, imagesPerSecond = ips, batchSize = _liveBatchSize,
+                    activePositionWorkers = _state.activePositionWorkers, completedPositionWorkers = _state.completedPositionWorkers,
+                    simulationRunId = _state.simulationRunId
                 };
             }
         }
@@ -2723,6 +2744,12 @@ namespace VisionQC.LocalAgent
         {
             object value; if (data == null || !data.TryGetValue(key, out value) || value == null) return fallback;
             int n; return int.TryParse(Convert.ToString(value), out n) ? n : fallback;
+        }
+
+        private static long GetLong(Dictionary<string, object> data, string key, long fallback)
+        {
+            object value; if (data == null || !data.TryGetValue(key, out value) || value == null) return fallback;
+            long n; return long.TryParse(Convert.ToString(value), out n) ? n : fallback;
         }
 
         private static T RunStaDialog<T>(Func<IWin32Window, T> action)

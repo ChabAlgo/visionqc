@@ -1,7 +1,7 @@
 (() => {
   'use strict';
 
-  const VERSION = '4.7.33';
+  const VERSION = '4.7.34';
   const DEFAULT_POSITION_DEFS = [
     { key:'CA_TOP', name:'CA(TOP)' },
     { key:'AN_TOP', name:'AN(TOP)' },
@@ -27,9 +27,9 @@
   const NG_POSITION_PREFIX = 'ng-position:';
   const IMG_RE = /\.(png|jpe?g|bmp|gif|webp|tif?f)$/i;
   const LOCAL_AGENT_URL = 'http://127.0.0.1:17891';
-  const EXPECTED_AGENT_VERSION = '1.3.20';
-  const AGENT_INSTALLER_URL = './downloads/VisionQC_Agent_Installer_v1.3.20.exe';
-  const OFFLINE_PACKAGE_URL = './downloads/VisionQC_Offline_v4.7.33.zip';
+  const EXPECTED_AGENT_VERSION = '1.3.21';
+  const AGENT_INSTALLER_URL = './downloads/VisionQC_Agent_Installer_v1.3.21.exe';
+  const OFFLINE_PACKAGE_URL = './downloads/VisionQC_Offline_v4.7.34.zip';
   // SQLite에는 사용자가 명시적으로 남기려는 두 종류의 결과만 표시한다.
   // 이전 버전의 단발 검사(single-inspection) 이력은 보존하되 화면 집계에서는 제외한다.
   const PERSISTED_HISTORY_SOURCE_TYPES = ['simulation', 'csv-import', 'csv-file-stream'];
@@ -169,6 +169,11 @@
     simulationForm: safeJsonParse(safeStorageGet(SIM_CONFIG_KEY) || safeStorageGet(SIM_LEGACY_CONFIG_KEY), {}),
     simulationLiveActive: false,
     simulationLiveRows: 0,
+    simulationLiveRunId: '',
+    simulationSyncedRunId: '',
+    simulationResultSyncPromise: null,
+    simulationResultSyncRetryAt: 0,
+    simulationResultSyncFailureNotifiedRunId: '',
     simulationLogs: [],
     notifications: safeJsonParse(safeStorageGet(NOTIFICATION_KEY), []),
     notificationPanelOpen: false,
@@ -3536,6 +3541,10 @@
         clearSimulationLoadedWorkspaces({ render:true });
       }
       const nowRunning = !!data.state?.running;
+      const runId = String(data.state?.simulationRunId || '');
+      if (nowRunning && runId) state.simulationLiveRunId = runId;
+      if (!nowRunning && runId && state.simulationLiveRunId === runId && state.simulationSyncedRunId !== runId)
+        reconcileSimulationResults(data.state);
       if (!nowRunning && data.runtimePreloaded && data.runtimePreloadToken) {
         const request = buildSimulationRequest();
         if (isCompatiblePreloadedRuntime(request, state.simulationAgent)) {
@@ -3672,10 +3681,16 @@
       const events = new EventSource(`${LOCAL_AGENT_URL}/api/events`);
       ['status','progress','completed','stopped','error'].forEach((name) => events.addEventListener(name, (event) => {
         try {
-          state.simulationProgress = { ...state.simulationProgress, ...JSON.parse(event.data) };
+          const update = JSON.parse(event.data);
+          state.simulationProgress = { ...state.simulationProgress, ...update };
+          const runId = String(update?.simulationRunId || '');
+          if (update?.running && runId) state.simulationLiveRunId = runId;
           if (name === 'completed' || name === 'stopped' || name === 'error') state.simulationLiveActive = false;
           if (name === 'error') clearSimulationRuntimeReadiness();
-          if (name === 'completed' || name === 'stopped') setTimeout(pollSimulationAgentStatus, 100);
+          if (name === 'completed' || name === 'stopped') {
+            reconcileSimulationResults(update);
+            setTimeout(pollSimulationAgentStatus, 100);
+          }
           updateSimulationStatusDom();
         } catch (_) { }
       }));
@@ -4235,37 +4250,112 @@
     });
     state.simulationLiveActive = true;
     state.simulationLiveRows = 0;
+    state.simulationLiveRunId = '';
+    state.simulationSyncedRunId = '';
+    state.simulationResultSyncPromise = null;
+    state.simulationResultSyncRetryAt = 0;
+    state.simulationResultSyncFailureNotifiedRunId = '';
     rebuildModel(false);
   }
 
-  function applySimulationAnalysisBatch(data) {
-    const records = Array.isArray(data?.records) ? data.records : [];
-    if (!records.length) return;
-    records.forEach((record, offset) => {
-      const position = normalizePosition(record.Position ?? record.position);
-      if (!position) return;
-      const cellId = String(record.CellId ?? record.cellId ?? '').trim().toUpperCase();
-      if (!cellId) return;
-      if (!state.resultInputs[position]) state.resultInputs[position] = { position, fileName:'LIVE Simulation', fileSize:0, rows:[], warnings:[], updatedAt:Date.now() };
-      const tools = {};
-      const sourceTools = record.Tools ?? record.tools ?? {};
-      Object.entries(sourceTools).forEach(([name, value]) => {
-        const toolName = String(value?.Tool ?? value?.tool ?? name).trim();
-        if (!toolName) return;
-        tools[toolName] = { tool:toolName, result:normalizeResult(value?.Result ?? value?.result), score:parseNumber(value?.Score ?? value?.score), overlayPath:String(value?.OverlayPath ?? value?.overlayPath ?? '') };
-      });
-      state.resultInputs[position].rows.push({
+  function simulationAnalysisRow(record, sourceRowNumber) {
+    const position = normalizePosition(record?.Position ?? record?.position);
+    if (!position) return null;
+    const cellId = String(record?.CellId ?? record?.cellId ?? '').trim().toUpperCase();
+    if (!cellId) return null;
+    const tools = {};
+    const sourceTools = record?.Tools ?? record?.tools ?? {};
+    Object.entries(sourceTools).forEach(([name, value]) => {
+      const toolName = String(value?.Tool ?? value?.tool ?? name).trim();
+      if (!toolName) return;
+      tools[toolName] = { tool:toolName, result:normalizeResult(value?.Result ?? value?.result), score:parseNumber(value?.Score ?? value?.score), overlayPath:String(value?.OverlayPath ?? value?.overlayPath ?? '') };
+    });
+    return {
         sourceFileName:String(record.FileName ?? record.fileName ?? 'LIVE'),
-        sourceRowNumber:state.simulationLiveRows + offset + 1,
+        sourceRowNumber,
         captureTimestamp:String(record.CaptureTimestamp ?? record.captureTimestamp ?? ''),
         fullPath:String(record.FullPath ?? record.fullPath ?? ''),
         processedPath:String(record.ProcessingPath ?? record.processingPath ?? record.ProcessedPath ?? record.processedPath ?? ''),
         cellId, position,
         totalResult:normalizeResult(record.TotalResult ?? record.totalResult),
         tools
-      });
+    };
+  }
+
+  function replaceSimulationAnalysisRecords(records, runId) {
+    const nextInputs = {};
+    let accepted = 0;
+    (Array.isArray(records) ? records : []).forEach((record) => {
+      const row = simulationAnalysisRow(record, accepted + 1);
+      if (!row) return;
+      if (!nextInputs[row.position]) nextInputs[row.position] = { position:row.position, fileName:'LIVE Simulation', fileSize:0, rows:[], warnings:[], updatedAt:Date.now() };
+      nextInputs[row.position].rows.push(row);
+      accepted += 1;
     });
-    state.simulationLiveRows += records.length;
+    state.dashboardDate = '';
+    state.resultInputs = nextInputs;
+    state.simulationLiveRows = accepted;
+    state.simulationSyncedRunId = String(runId || '');
+    rebuildModel(false);
+    if (state.page === 'main' || state.page === 'analysis') queueLiveUiRender();
+    updateSimulationStatusDom();
+    return accepted;
+  }
+
+  async function reconcileSimulationResults(simulationState) {
+    const runId = String(simulationState?.simulationRunId || state.simulationLiveRunId || '');
+    if (!runId || state.simulationLiveRunId !== runId || state.simulationSyncedRunId === runId) return;
+    if (Date.now() < Number(state.simulationResultSyncRetryAt || 0)) return;
+    if (state.simulationResultSyncPromise) return state.simulationResultSyncPromise;
+    const task = (async () => {
+      const records = [];
+      let afterImageId = 0;
+      let expectedTotal = 0;
+      let pageCount = 0;
+      while (true) {
+        pageCount += 1;
+        if (pageCount > 100000) throw new Error('완료 결과 페이지 수가 비정상적으로 많습니다.');
+        const page = await agentFetch('/api/simulation/results', { method:'POST', body:{ runId, afterImageId, pageSize:1000 }, timeout:15000 });
+        if (!page?.ok) throw new Error(page?.error || '완료 결과를 읽지 못했습니다.');
+        const batch = Array.isArray(page.records) ? page.records : [];
+        records.push(...batch);
+        expectedTotal = Number(page.totalCount || expectedTotal || 0);
+        const nextImageId = Number(page.nextImageId || 0);
+        if (page.hasMore && (!batch.length || nextImageId <= afterImageId)) throw new Error('완료 결과 페이지 순서가 올바르지 않습니다.');
+        afterImageId = nextImageId;
+        if (!page.hasMore) break;
+      }
+      if (expectedTotal !== records.length) throw new Error(`완료 결과 수가 맞지 않습니다. 저장 ${numberText(expectedTotal)}건 / 조회 ${numberText(records.length)}건`);
+      if (state.simulationLiveRunId !== runId) return;
+      const accepted = replaceSimulationAnalysisRecords(records, runId);
+      state.simulationResultSyncRetryAt = 0;
+      state.simulationResultSyncFailureNotifiedRunId = '';
+      appendSimulationLog({ level:'INFO', message:`대시보드 완료 결과 재동기화 · ${numberText(accepted)}건` });
+    })().catch((error) => {
+      if (state.simulationLiveRunId !== runId) return;
+      state.simulationResultSyncRetryAt = Date.now() + 5000;
+      if (state.simulationResultSyncFailureNotifiedRunId !== runId) {
+        state.simulationResultSyncFailureNotifiedRunId = runId;
+        appendSimulationLog({ level:'WARN', message:`대시보드 완료 결과 재동기화 실패: ${error.message}` });
+        addNotification(`대시보드 결과 재동기화 실패: ${error.message}`, 'WARN');
+      }
+    }).finally(() => {
+      if (state.simulationResultSyncPromise === task) state.simulationResultSyncPromise = null;
+    });
+    state.simulationResultSyncPromise = task;
+    return task;
+  }
+
+  function applySimulationAnalysisBatch(data) {
+    const records = Array.isArray(data?.records) ? data.records : [];
+    if (!records.length) return;
+    records.forEach((record) => {
+      const row = simulationAnalysisRow(record, state.simulationLiveRows + 1);
+      if (!row) return;
+      if (!state.resultInputs[row.position]) state.resultInputs[row.position] = { position:row.position, fileName:'LIVE Simulation', fileSize:0, rows:[], warnings:[], updatedAt:Date.now() };
+      state.resultInputs[row.position].rows.push(row);
+      state.simulationLiveRows += 1;
+    });
     if (data?.state && typeof data.state === 'object') state.simulationProgress = { ...state.simulationProgress, ...data.state };
     else if (Number.isFinite(Number(data?.processed))) state.simulationProgress.processed = Number(data.processed);
     rebuildModel(false);
@@ -4316,6 +4406,7 @@
       const data = await agentFetch('/api/simulation/start', { method:'POST', body:request, timeout:10000 });
       if (!data.ok) throw new Error(data.error || 'Simulation 시작 실패');
       state.simulationProgress = { ...state.simulationProgress, ...(data.state || {}), running:true };
+      state.simulationLiveRunId = String(data.state?.simulationRunId || '');
       updateSimulationStatusDom();
     } catch (error) {
       state.simulationLiveActive = false;
@@ -6022,6 +6113,19 @@
   function installDebugApi() {
     if (!new URLSearchParams(location.search).has('vqDebug') && !window.__VQ_DEBUG_REQUESTED__) return;
     window.__VISIONQC_DEBUG__ = {
+      reconcileLiveRowsRegression() {
+        state.simulationLiveRunId = 'debug-run';
+        state.simulationSyncedRunId = '';
+        state.resultInputs = {};
+        state.simulationLiveRows = 0;
+        const record = (position, index) => ({ FileName:`${position}-${index}.jpg`, CellId:`CELL-${position}-${index}`, Position:position, TotalResult:'NG', Tools:{ Crack:{ Tool:'Crack', Result:'NG', Score:.8 } } });
+        const positions = positionNames().slice(0, 4);
+        applySimulationAnalysisBatch({ records:[record(positions[0],1),record(positions[1],1)] });
+        const partial = state.simulationLiveRows;
+        const complete = positions.flatMap(position => [1,2,3].map(index => record(position,index)));
+        const accepted = replaceSimulationAnalysisRecords(complete, 'debug-run');
+        return { partial, accepted, dashboardTotal:state.dashboardModel.records.length, positionCounts:Object.values(state.resultInputs).map(input => input.rows.length), syncedRunId:state.simulationSyncedRunId };
+      },
       seedRows(rows) {
         state.resultInputs = Object.fromEntries(positionNames().map(position => [position,{rows:rows.filter(r=>r.position===position),fileName:'debug.csv',warnings:[]} ]));
         state.ngImages=[]; state.dashboardDate=''; state.initialized=true; rebuildModel(false); setPage('main');

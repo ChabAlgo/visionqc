@@ -1,5 +1,12 @@
 # VisionQC 변경 이력
 
+## v4.7.34 / Agent 1.3.21
+
+- Simulation 완료 시 실행 ID로 SQLite 원본 결과를 다시 읽어, 실시간 이벤트 누락으로 대시보드 건수가 작게 표시되는 문제를 수정했습니다.
+- 완료 결과는 최대 1,000건씩 페이지 단위로 조회하며 전체 저장 건수와 조회 건수가 일치할 때만 기존 화면 데이터를 교체합니다.
+- Agent 상태 응답에 Simulation 실행 ID와 Position Worker 진행 상태가 빠지지 않도록 보완했습니다.
+- 상세 검증·한계: `RELEASE_NOTES_v4.7.34_KR.md`.
+
 ## v4.7.33 / Agent 1.3.20
 
 - Position마다 독립 Runtime을 사전 로드해 최대 10개 Position Simulation을 동시에 실행.

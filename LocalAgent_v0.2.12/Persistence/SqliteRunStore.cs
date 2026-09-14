@@ -384,6 +384,101 @@ LIMIT @limit OFFSET @offset;";
             return response;
         }
 
+        // 실시간 SSE는 브라우저 새로고침이나 순간적인 연결 끊김 때 일부 배치를 놓칠 수 있다.
+        // 완료된 한 실행의 원본 행을 순서대로 다시 읽어 화면 집계를 정확히 맞춘다.
+        internal SimulationResultPage ReadSimulationResultPage(string runId, long afterImageId, int requestedPageSize)
+        {
+            EnsureSchema();
+            int pageSize = Math.Max(10, Math.Min(1000, requestedPageSize <= 0 ? 500 : requestedPageSize));
+            var response = new SimulationResultPage { ok = true, runId = runId ?? "", nextImageId = Math.Max(0, afterImageId) };
+            using (var connection = new SQLiteConnection("Data Source=" + _databasePath + ";Version=3;Foreign Keys=True;Read Only=False;"))
+            {
+                connection.Open();
+                using (var count = connection.CreateCommand())
+                {
+                    count.CommandText = "SELECT COUNT(*) FROM images WHERE run_id=@run_id;";
+                    Add(count, "@run_id", runId);
+                    response.totalCount = Convert.ToInt64(count.ExecuteScalar(), CultureInfo.InvariantCulture);
+                }
+
+                var recordsByImageId = new Dictionary<long, LiveAnalysisRecord>();
+                using (var command = connection.CreateCommand())
+                {
+                    command.CommandText = @"SELECT image_id, source_file_name, full_path, processed_path, cell_id, position_key,
+ total_result, judgement, capture_timestamp
+FROM images WHERE run_id=@run_id AND image_id>@after_image_id
+ORDER BY image_id ASC LIMIT @limit;";
+                    Add(command, "@run_id", runId);
+                    Add(command, "@after_image_id", Math.Max(0, afterImageId));
+                    Add(command, "@limit", pageSize + 1);
+                    using (SQLiteDataReader reader = command.ExecuteReader())
+                    {
+                        while (reader.Read())
+                        {
+                            long imageId = ReadLong(reader, 0);
+                            var record = new LiveAnalysisRecord
+                            {
+                                FileName = ReadString(reader, 1),
+                                FullPath = ReadString(reader, 2),
+                                ProcessingPath = ReadString(reader, 3),
+                                CellId = ReadString(reader, 4),
+                                Position = ReadString(reader, 5),
+                                TotalResult = ReadString(reader, 6),
+                                Judgement = ReadString(reader, 7),
+                                CaptureTimestamp = ReadString(reader, 8)
+                            };
+                            recordsByImageId[imageId] = record;
+                            response.records.Add(record);
+                            response.nextImageId = imageId;
+                        }
+                    }
+                }
+                if (response.records.Count > pageSize)
+                {
+                    response.hasMore = true;
+                    long overflowImageId = recordsByImageId.Keys.Max();
+                    recordsByImageId.Remove(overflowImageId);
+                    response.records.RemoveAt(response.records.Count - 1);
+                    response.nextImageId = recordsByImageId.Count == 0 ? Math.Max(0, afterImageId) : recordsByImageId.Keys.Max();
+                }
+
+                if (recordsByImageId.Count > 0)
+                {
+                    using (var command = connection.CreateCommand())
+                    {
+                        var names = new List<string>();
+                        int index = 0;
+                        foreach (long imageId in recordsByImageId.Keys)
+                        {
+                            string name = "@image" + index++;
+                            names.Add(name);
+                            Add(command, name, imageId);
+                        }
+                        command.CommandText = "SELECT image_id, tool_name, result, score, overlay_path FROM tool_results WHERE run_id=@run_id AND image_id IN (" + string.Join(",", names) + ") ORDER BY tool_result_id;";
+                        Add(command, "@run_id", runId);
+                        using (SQLiteDataReader reader = command.ExecuteReader())
+                        {
+                            while (reader.Read())
+                            {
+                                LiveAnalysisRecord record;
+                                if (!recordsByImageId.TryGetValue(ReadLong(reader, 0), out record)) continue;
+                                string toolName = ReadString(reader, 1);
+                                if (string.IsNullOrWhiteSpace(toolName)) continue;
+                                record.Tools[toolName] = new LiveToolResult
+                                {
+                                    Tool = toolName,
+                                    Result = ReadString(reader, 2),
+                                    Score = reader.IsDBNull(3) ? (double?)null : Convert.ToDouble(reader.GetValue(3), CultureInfo.InvariantCulture),
+                                    OverlayPath = ReadString(reader, 4)
+                                };
+                            }
+                        }
+                    }
+                }
+            }
+            return response;
+        }
+
         // 원본 Run 이력은 추적 가능하도록 보존한다. 화면 조회/집계에서는 같은 Cell ID + Position + Workspace를
         // 하나의 검사 대상으로 보고 가장 마지막에 기록된 결과만 남긴다. Cell ID나 Position이 없는
         // 행은 서로 동일하다고 판단할 근거가 없으므로 중복 제거하지 않는다.
@@ -673,6 +768,17 @@ UPDATE schema_info SET schema_version = CASE WHEN schema_version < 4 THEN 4 ELSE
             internal string Type;
             internal string Name;
             internal string Key;
+        }
+
+        internal sealed class SimulationResultPage
+        {
+            public bool ok { get; set; }
+            public string error { get; set; }
+            public string runId { get; set; }
+            public long totalCount { get; set; }
+            public long nextImageId { get; set; }
+            public bool hasMore { get; set; }
+            public List<LiveAnalysisRecord> records { get; set; } = new List<LiveAnalysisRecord>();
         }
 
         private sealed class HistoryRecordValue

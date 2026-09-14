@@ -6,6 +6,7 @@ const web = readFileSync(new URL('../visionqc-extension.js', import.meta.url), '
 const server = readFileSync(new URL('../LocalAgent_v0.2.12/AgentServer.cs', import.meta.url), 'utf8');
 const dto = readFileSync(new URL('../LocalAgent_v0.2.12/AgentDtos.cs', import.meta.url), 'utf8');
 const green = readFileSync(new URL('../LocalAgent_v0.2.12/Engine/GreenOverlayProcessor.cs', import.meta.url), 'utf8');
+const store = readFileSync(new URL('../LocalAgent_v0.2.12/Persistence/SqliteRunStore.cs', import.meta.url), 'utf8');
 
 test('Position simulation uses independent Agent processes with bounded parallel workers', () => {
   assert.match(dto, /bool parallelPositions/);
@@ -52,4 +53,15 @@ test('miss and history viewers keep ordered sequences and stop at both ends', ()
   assert.match(web, /next < 0 \|\| next >= sequence\.length/);
   assert.match(web, /previousDisabled = .*sequenceIndex <= 0/);
   assert.match(web, /nextDisabled = .*sequenceIndex >= sequenceCount - 1/);
+});
+
+test('completed Simulation reconciles dropped SSE rows from the exact SQLite run', () => {
+  assert.match(dto, /string simulationRunId/);
+  assert.match(server, /"\/api\/simulation\/results"/);
+  assert.match(server, /ReadSimulationResultPage\(runId/);
+  assert.match(store, /WHERE run_id=@run_id AND image_id>@after_image_id/);
+  assert.doesNotMatch(store.match(/internal SimulationResultPage ReadSimulationResultPage[\s\S]*?return response;\s*\n        }/)?.[0] || '', /BuildDeduplicatedHistoryCte/);
+  assert.match(web, /function reconcileSimulationResults/);
+  assert.match(web, /replaceSimulationAnalysisRecords\(records, runId\)/);
+  assert.match(web, /expectedTotal !== records\.length/);
 });

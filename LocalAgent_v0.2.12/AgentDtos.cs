@@ -396,5 +396,6 @@ namespace VisionQC.LocalAgent
         public int batchSize { get; set; }
         public int activePositionWorkers { get; set; }
         public int completedPositionWorkers { get; set; }
+        public string simulationRunId { get; set; }
     }
 }

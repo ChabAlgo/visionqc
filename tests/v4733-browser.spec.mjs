@@ -19,6 +19,12 @@ test('Position parallel options default on and max concurrency updates without l
   expect(updated.maxParallelPositions).toBe(4);
 });
 
+test('completed-run reconciliation replaces a partial live dashboard with every stored row', async ({ page }) => {
+  await open(page);
+  const result = await page.evaluate(() => window.__VISIONQC_DEBUG__.reconcileLiveRowsRegression());
+  expect(result).toEqual({ partial:2, accepted:12, dashboardTotal:12, positionCounts:[3,3,3,3], syncedRunId:'debug-run' });
+});
+
 for (const scenario of [
   { name:'Dashboard 미검 Cell ID', open:'openMissSequenceRegression', kind:'미검', cells:['MISS-CELL-001','MISS-CELL-002','MISS-CELL-003'] },
   { name:'검사 이력 Cell 이미지 탐색', open:'openHistorySequenceRegression', kind:'검사 이력', cells:['HISTORY-CELL-001','HISTORY-CELL-002','HISTORY-CELL-003'] }
