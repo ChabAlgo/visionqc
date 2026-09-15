@@ -25,6 +25,10 @@ test('classification preserves a right-side focus above 100 percent during norma
   const files = Array.from({ length:10 }, (_, index) => svgFile(index + 1));
   await page.locator('input[type="file"][accept="image/*"]').setInputFiles(files);
   await expect(page.locator('main img[alt="classification-01.svg"]').first()).toBeVisible();
+  await page.waitForFunction(() => {
+    const image = document.querySelector('main img[alt="classification-01.svg"]');
+    return image?.complete && image.naturalWidth > 0;
+  });
   await page.getByTitle('Toggle Fit/Zoom').click();
   await page.getByTitle('Zoom In').click();
   await page.getByTitle('Zoom In').click();
@@ -36,6 +40,10 @@ test('classification preserves a right-side focus above 100 percent during norma
 
   await page.keyboard.press('ArrowRight');
   await expect(page.locator('main img[alt="classification-02.svg"]').first()).toBeVisible();
+  await page.waitForFunction(() => {
+    const image = document.querySelector('main img[alt="classification-02.svg"]');
+    return image?.complete && image.naturalWidth > 0;
+  });
   await expect.poll(async () => Math.abs((await normalizedFocus(page)).x - before.x), { timeout:5000 }).toBeLessThan(.04);
   await expect.poll(async () => Math.abs((await normalizedFocus(page)).y - before.y), { timeout:5000 }).toBeLessThan(.04);
 
@@ -108,7 +116,7 @@ test('analysis uses the requested left-right order and readable compact light te
 });
 
 test('running Simulation progress remains fixed while moving between menus', async ({ page }) => {
-  await page.route('**/api/status', route => route.fulfill({ status:200, contentType:'application/json', body:JSON.stringify({ ok:true, agentVersion:'1.3.24', vpdlAvailable:true }) }));
+  await page.route('**/api/status', route => route.fulfill({ status:200, contentType:'application/json', body:JSON.stringify({ ok:true, agentVersion:'1.3.25', vpdlAvailable:true }) }));
   await open(page);
   await page.evaluate(() => window.__VISIONQC_DEBUG__.seedRunningProgress());
   const progress = page.locator('#vq43-global-sim-progress');

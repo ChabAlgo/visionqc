@@ -1,19 +1,19 @@
 {
-  "releaseTag": "visionqc-v4.7.37-agent-v1.3.24",
-  "webVersion": "4.7.37",
-  "agentVersion": "1.3.24",
-  "minimumAgentVersion": "1.3.24",
+  "releaseTag": "visionqc-v4.7.38-agent-v1.3.25",
+  "webVersion": "4.7.38",
+  "agentVersion": "1.3.25",
+  "minimumAgentVersion": "1.3.25",
   "compatibility": {
-    "web": "4.7.37",
-    "agent": "1.3.24"
+    "web": "4.7.38",
+    "agent": "1.3.25"
   },
   "artifacts": {
-    "agentInstaller": "downloads/VisionQC_Agent_Installer_v1.3.24.exe",
-    "offlinePackage": "downloads/VisionQC_Offline_v4.7.37.zip",
+    "agentInstaller": "downloads/VisionQC_Agent_Installer_v1.3.25.exe",
+    "offlinePackage": "downloads/VisionQC_Offline_v4.7.38.zip",
     "sha256": {
-      "agentInstaller": "2746DC6EAB01F6306907BC82FD66E05145956E833AF565B9ECA9641E4D5F7EFA",
-      "offlinePackage": "05E0B35DDA920E290B81AB07758A13FD8EFE771314CB87FC4DFBFE99AA9EAA0F"
+      "agentInstaller": "5909848EAEE40AC2B3E1F68188677C8DCE1A6219E4E5A1FAB2A83BCA90CBCB9E",
+      "offlinePackage": "5CA73A8486D7176BC772F112D9ADF8ACAE24A158ED2E941ACB8ABD8D831C5BF8"
     }
   },
-  "notes": "진행률 갱신과 대시보드 전체 렌더링을 분리하고 날짜별 NG율도 새 결과만 증분 집계합니다."
+  "notes": "전체보기와 날짜 선택이 날짜별 Cell ID·Position 기준으로 동일한 검사·NG 합계를 사용합니다."
 }

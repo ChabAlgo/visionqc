@@ -1,7 +1,7 @@
 (() => {
   'use strict';
 
-  const VERSION = '4.7.37';
+  const VERSION = '4.7.38';
   const DEFAULT_POSITION_DEFS = [
     { key:'CA_TOP', name:'CA(TOP)' },
     { key:'AN_TOP', name:'AN(TOP)' },
@@ -27,9 +27,9 @@
   const NG_POSITION_PREFIX = 'ng-position:';
   const IMG_RE = /\.(png|jpe?g|bmp|gif|webp|tif?f)$/i;
   const LOCAL_AGENT_URL = 'http://127.0.0.1:17891';
-  const EXPECTED_AGENT_VERSION = '1.3.24';
-  const AGENT_INSTALLER_URL = './downloads/VisionQC_Agent_Installer_v1.3.24.exe';
-  const OFFLINE_PACKAGE_URL = './downloads/VisionQC_Offline_v4.7.37.zip';
+  const EXPECTED_AGENT_VERSION = '1.3.25';
+  const AGENT_INSTALLER_URL = './downloads/VisionQC_Agent_Installer_v1.3.25.exe';
+  const OFFLINE_PACKAGE_URL = './downloads/VisionQC_Offline_v4.7.38.zip';
   // SQLite에는 사용자가 명시적으로 남기려는 두 종류의 결과만 표시한다.
   // 이전 버전의 단발 검사(single-inspection) 이력은 보존하되 화면 집계에서는 제외한다.
   const PERSISTED_HISTORY_SOURCE_TYPES = ['simulation', 'csv-import', 'csv-file-stream'];
@@ -269,6 +269,23 @@
     return sorted.length % 2 ? sorted[middle] : (sorted[middle - 1] + sorted[middle]) / 2;
   };
   const resultKey = (position, cellId) => `${position}|${cellId}`;
+
+  // Cell ID는 날짜가 바뀌어도 다시 사용될 수 있다. 분석 집계에서는 같은 날짜 안의
+  // Cell+Position만 중복으로 묶고, 서로 다른 날짜의 검사는 별도 검사 건으로 유지한다.
+  const datedResultKey = (position, cellId, date) => date ? `${resultKey(position, cellId)}|${date}` : resultKey(position, cellId);
+
+  function analysisRowKey(row) {
+    return datedResultKey(row?.position, row?.cellId, dashboardDateForRow(row));
+  }
+
+  function analysisImageKey(image) {
+    return datedResultKey(image?.position, image?.cellId, dashboardDateForImage(image));
+  }
+
+  function analysisCellKey(record) {
+    const date = dashboardDateForRecord(record);
+    return date ? `${record.cellId}|${date}` : record.cellId;
+  }
 
   const thresholdKey = (position, tool) => `${position}|${tool}`;
   const clampScore = (value, fallback = 0.50) => {
@@ -1794,7 +1811,7 @@
   function aggregateRows(rows) {
     const groups = new Map();
     rows.forEach((row) => {
-      const key = resultKey(row.position, row.cellId);
+      const key = analysisRowKey(row);
       if (!groups.has(key)) groups.set(key, []);
       groups.get(key).push(row);
     });
@@ -1853,14 +1870,15 @@
     const recordMap = new Map(records.map((record) => [record.key, record]));
     const actualMap = new Map();
     ngImages.forEach((image) => {
-      const key = resultKey(image.position, image.cellId);
+      const key = analysisImageKey(image);
       if (!actualMap.has(key)) actualMap.set(key, []);
       actualMap.get(key).push(image);
     });
     const cells = new Map();
     records.forEach((record) => {
-      if (!cells.has(record.cellId)) cells.set(record.cellId, []);
-      cells.get(record.cellId).push(record);
+      const key = analysisCellKey(record);
+      if (!cells.has(key)) cells.set(key, []);
+      cells.get(key).push(record);
     });
     const ngCellCount = Array.from(cells.values()).filter((items) => items.some((item) => item.totalResult === 'NG')).length;
     const misses = [], detectedActual = new Set();
@@ -1984,7 +2002,7 @@
   function createLiveAnalysisAccumulator(ngImages = state.ngImages) {
     const actualMap = new Map(), actualCountByPosition = new Map();
     (ngImages || []).forEach((image) => {
-      const key = resultKey(image.position, image.cellId);
+      const key = analysisImageKey(image);
       if (!actualMap.has(key)) {
         actualMap.set(key, []);
         adjustLiveCount(actualCountByPosition, image.position, 1);
@@ -2009,7 +2027,7 @@
     if (record.totalResult === 'NG') stats.ng += delta;
     if (record.totalResult === 'OK') stats.ok += delta;
     if (record.totalResult === 'NG') accumulator.totalRecordNg += delta;
-    updateLiveCellStats(accumulator, record.cellId, record.totalResult === 'NG', delta);
+    updateLiveCellStats(accumulator, analysisCellKey(record), record.totalResult === 'NG', delta);
 
     Object.values(record.tools).forEach((tool) => {
       adjustLiveCount(accumulator.globalToolRefs, tool.tool, delta);
@@ -2060,7 +2078,7 @@
     if (!accumulator.dashboardDates.has(date))
       accumulator.dashboardDates.set(date, { recordMap:new Map(), total:0, ng:0 });
     const bucket = accumulator.dashboardDates.get(date);
-    const key = resultKey(row.position, row.cellId);
+    const key = analysisRowKey(row);
     const previous = bucket.recordMap.get(key);
     const record = aggregateRows(previous ? previous.sourceRows.concat(row) : [row])[0];
     applyThresholdSimulation([record]);
@@ -2073,7 +2091,7 @@
   function appendRowsToLiveAnalysisAccumulator(accumulator, rows) {
     (rows || []).forEach((row) => {
       appendRowToLiveDashboardDates(accumulator, row);
-      const key = resultKey(row.position, row.cellId);
+      const key = analysisRowKey(row);
       const previous = accumulator.recordMap.get(key);
       if (previous) updateLiveRecordContribution(accumulator, previous, -1);
       const record = aggregateRows(previous ? previous.sourceRows.concat(row) : [row])[0];
@@ -2146,7 +2164,7 @@
       const selectedRows = sourceRows.filter(row => dashboardDateForRow(row) === state.dashboardDate);
       const selectedKeys = new Set(selectedRows.map(row => resultKey(row.position,row.cellId)));
       const selectedNg = state.ngImages.filter(image => {
-        const date = filenameCaptureTimestamp(image.relativePath).slice(0,10);
+        const date = dashboardDateForImage(image);
         return date ? date === state.dashboardDate : selectedKeys.has(resultKey(image.position,image.cellId));
       });
       state.dashboardModel = buildAnalysisModel(selectedRows, selectedNg);
@@ -2401,13 +2419,19 @@
       filenameCaptureTimestamp(row?.fullPath || row?.sourceFileName).slice(0,10);
   }
 
+  function dashboardDateForImage(image) {
+    return dashboardDateFromText(image?.captureTimestamp) ||
+      filenameCaptureTimestamp(image?.fullPath || image?.relativePath || image?.name).slice(0,10);
+  }
+
   function dashboardDateForRecord(record) {
     const dates = [...new Set((record?.sourceRows || [record]).map(dashboardDateForRow).filter(Boolean))].sort();
     return dates[0] || '';
   }
 
   // 메인 대시보드는 SQLite 누적 이력이 아니라, 현재 화면에서 분석 중인 하나의 결과 집합만 표시한다.
-  // aggregateRows()가 Cell ID + Position으로 이미 중복을 하나의 record로 통합하므로 동일 이미지 재실행은 다시 세지 않는다.
+  // aggregateRows()는 같은 날짜의 Cell ID + Position 중복만 하나의 record로 통합한다.
+  // 날짜가 다른 동일 Cell ID는 서로 다른 검사 건이므로 전체보기에서 각각 계산한다.
   function currentAnalysisDashboardData() {
     const records = Array.isArray(state.dashboardModel?.records) ? state.dashboardModel.records : (state.model?.records || []);
     const live = state.simulationLiveAccumulator;
@@ -2440,7 +2464,7 @@
 
   function mainHistoryDashboardPanel() {
     const data = currentAnalysisDashboardData();
-    return `<section class="vq43-section vq43-main-history-dashboard"><div class="vq43-section-title"><span class="vq43-step blue">H</span><div><h3>날짜별 검사 NG율 · 현재 분석 결과</h3><p>현재 실행한 시뮬레이션 또는 현재 불러온 CSV 분석 결과만 집계합니다. Cell ID + Position이 같은 중복은 한 번만 계산합니다. 날짜를 누르면 메인 대시보드 전체가 해당 날짜로 집계됩니다. 전체보기로 모든 결과를 복원합니다.</p></div><button class="vq43-btn" data-vq-action="dashboard-all">전체보기</button><button class="vq43-btn vq43-btn-blue" data-vq-action="history-open">검사 이력 열기</button></div><div class="vq43-main-history-kpis"><span>검사 Cell·Position <b>${numberText(data.totalCount)}</b></span><span class="ng">NG Cell·Position <b>${numberText(data.ngCount)}</b></span><span>고유 Cell·Position <b>${numberText(data.uniqueCellCount)}</b></span><span class="ng">NG율 <b>${rateText(data.totalCount ? data.ngCount / data.totalCount : 0)}</b></span></div>${state.dashboardDate ? '<p class="vq43-note">선택 날짜: '+escapeHtml(state.dashboardDate)+'</p>' : ''}${data.unknown ? '<p class="vq43-note">날짜 미인식 '+numberText(data.unknown)+'행: 전체 집계에는 포함되며 날짜 그래프에서는 제외됩니다. 파일명 규칙을 확인하세요.</p>' : ''}${historyDateBars(data.daily)}</section>`;
+    return `<section class="vq43-section vq43-main-history-dashboard"><div class="vq43-section-title"><span class="vq43-step blue">H</span><div><h3>날짜별 검사 NG율 · 현재 분석 결과</h3><p>현재 실행한 시뮬레이션 또는 현재 불러온 CSV 분석 결과만 집계합니다. 같은 날짜의 Cell ID + Position 중복은 한 번만 계산하고, 날짜가 다르면 별도 검사 건으로 계산합니다. 날짜를 누르면 메인 대시보드 전체가 해당 날짜로 집계됩니다. 전체보기로 모든 날짜 결과를 합산합니다.</p></div><button class="vq43-btn" data-vq-action="dashboard-all">전체보기</button><button class="vq43-btn vq43-btn-blue" data-vq-action="history-open">검사 이력 열기</button></div><div class="vq43-main-history-kpis"><span>검사 Cell·Position <b>${numberText(data.totalCount)}</b></span><span class="ng">NG Cell·Position <b>${numberText(data.ngCount)}</b></span><span>고유 Cell·Position <b>${numberText(data.uniqueCellCount)}</b></span><span class="ng">NG율 <b>${rateText(data.totalCount ? data.ngCount / data.totalCount : 0)}</b></span></div>${state.dashboardDate ? '<p class="vq43-note">선택 날짜: '+escapeHtml(state.dashboardDate)+'</p>' : ''}${data.unknown ? '<p class="vq43-note">날짜 미인식 '+numberText(data.unknown)+'행: 전체 집계에는 포함되며 날짜 그래프에서는 제외됩니다. 파일명 규칙을 확인하세요.</p>' : ''}${historyDateBars(data.daily)}</section>`;
   }
 
 
@@ -2527,12 +2551,14 @@
     const misses = ((state.page === 'main' ? state.dashboardModel : state.model)?.misses || []).filter((item) => item.position === position);
     if (!misses.length) return showToast(`${position} 미검 데이터가 없습니다.`, true);
     const tools = [...new Set(misses.flatMap((miss) => Object.keys(miss.record.tools)))].sort();
-    const headers = ['Cell ID', 'Position', 'Simulated_Total_result'];
+    const headers = ['CaptureTimestamp', 'Cell ID', 'Position', 'Simulated_Total_result'];
     tools.forEach((tool) => headers.push(`${tool}_result`, `${tool}_score`, `${tool}_threshold`));
     headers.push('Actual_Image_Count', 'Actual_Image_Path');
     const lines = [headers.map(csvCell).join(',')];
     misses.forEach((miss) => {
-      const row = [miss.cellId, miss.position, miss.record.totalResult];
+      const source = miss.record.sourceRows?.[0] || {};
+      const timestamp = source.captureTimestamp || (dashboardDateForRecord(miss.record) ? `${dashboardDateForRecord(miss.record)}T00:00:00` : '');
+      const row = [timestamp, miss.cellId, miss.position, miss.record.totalResult];
       tools.forEach((tool) => {
         const observation = miss.record.tools[tool];
         row.push(observation?.result || '', Number.isFinite(observation?.representativeScore) ? observation.representativeScore.toFixed(4) : '', observation ? observation.threshold.toFixed(2) : '');
@@ -2547,13 +2573,15 @@
     const model = state.model;
     if (!model?.records.length) return showToast('저장할 결과 데이터가 없습니다.', true);
     const tools = model.tools;
-    const headers = ['Cell ID', 'Position', 'Total_result'];
+    const headers = ['CaptureTimestamp', 'Cell ID', 'Position', 'Total_result', 'FullPath', 'ProcessedPath', 'Source_File', 'Source_Row'];
     tools.forEach((tool) => headers.push(`${tool}_result`, `${tool}_score`));
     const lines = [headers.map(csvCell).join(',')];
     const positions = positionNames();
-    const sorted = [...model.records].sort((a, b) => positions.indexOf(a.position) - positions.indexOf(b.position) || a.cellId.localeCompare(b.cellId));
+    const sorted = [...model.records].sort((a, b) => dashboardDateForRecord(a).localeCompare(dashboardDateForRecord(b)) || positions.indexOf(a.position) - positions.indexOf(b.position) || a.cellId.localeCompare(b.cellId));
     sorted.forEach((record) => {
-      const row = [record.cellId, record.position, record.baseTotalResult];
+      const source = record.sourceRows?.[0] || {};
+      const timestamp = source.captureTimestamp || (dashboardDateForRecord(record) ? `${dashboardDateForRecord(record)}T00:00:00` : '');
+      const row = [timestamp, record.cellId, record.position, record.baseTotalResult, source.fullPath || '', source.processedPath || '', source.sourceFileName || '', source.sourceRowNumber || ''];
       tools.forEach((toolName) => {
         const tool = record.tools[toolName];
         row.push(tool?.baseResult || '', Number.isFinite(tool?.representativeScore) ? tool.representativeScore.toFixed(4) : '');

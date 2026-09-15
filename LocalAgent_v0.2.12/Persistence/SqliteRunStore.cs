@@ -485,9 +485,9 @@ ORDER BY image_id ASC LIMIT @limit;";
             CommitAndContinue(session);
         }
 
-        // 원본 Run 이력은 추적 가능하도록 보존한다. 화면 조회/집계에서는 같은 Cell ID + Position + Workspace를
-        // 하나의 검사 대상으로 보고 가장 마지막에 기록된 결과만 남긴다. Cell ID나 Position이 없는
-        // 행은 서로 동일하다고 판단할 근거가 없으므로 중복 제거하지 않는다.
+        // 원본 Run 이력은 추적 가능하도록 보존한다. 화면 조회/집계에서는 같은 날짜의
+        // Cell ID + Position + Workspace를 하나의 검사 대상으로 보고 가장 마지막에 기록된 결과만 남긴다.
+        // 날짜가 다르면 별도 검사 건이며, Cell ID나 Position이 없는 행은 중복 제거하지 않는다.
         private static string BuildDeduplicatedHistoryCte(string where)
         {
             return @"WITH filtered_images AS (
@@ -496,7 +496,8 @@ ORDER BY image_id ASC LIMIT @limit;";
     SELECT f.*,
       CASE WHEN TRIM(IFNULL(f.cell_id,''))='' OR TRIM(IFNULL(f.position_key,''))='' THEN 1
            ELSE ROW_NUMBER() OVER (
-             PARTITION BY UPPER(IFNULL(f.cell_id,'')), UPPER(IFNULL(f.position_key,'')), UPPER(IFNULL(f.workspace_key,''))
+             PARTITION BY UPPER(IFNULL(f.cell_id,'')), UPPER(IFNULL(f.position_key,'')), UPPER(IFNULL(f.workspace_key,'')),
+               SUBSTR(COALESCE(NULLIF(f.capture_timestamp,''), f.inspected_at_utc),1,10)
              ORDER BY IFNULL(f.inspected_at_utc,'') DESC, f.image_id DESC
            ) END AS vq_history_rank
     FROM filtered_images f
@@ -677,9 +678,10 @@ CREATE INDEX IF NOT EXISTS idx_tool_results_run_tool ON tool_results(run_id, too
                         command.CommandText = @"CREATE INDEX IF NOT EXISTS idx_images_processed_path ON images(processed_path);
 CREATE INDEX IF NOT EXISTS idx_images_workspace ON images(workspace_type, workspace_key, position_key);
 CREATE INDEX IF NOT EXISTS idx_images_history_dedupe ON images(cell_id, position_key, workspace_key, inspected_at_utc, image_id);
+CREATE INDEX IF NOT EXISTS idx_images_history_dedupe_date ON images(cell_id, position_key, workspace_key, capture_timestamp, inspected_at_utc, image_id);
 UPDATE images SET workspace_type=LOWER(IFNULL((SELECT r.mode FROM runs r WHERE r.run_id=images.run_id),''))
 WHERE TRIM(IFNULL(workspace_type,''))='' AND EXISTS (SELECT 1 FROM runs r WHERE r.run_id=images.run_id AND TRIM(IFNULL(r.mode,''))<>'');
-UPDATE schema_info SET schema_version = CASE WHEN schema_version < 4 THEN 4 ELSE schema_version END;";
+UPDATE schema_info SET schema_version = CASE WHEN schema_version < 5 THEN 5 ELSE schema_version END;";
                         command.ExecuteNonQuery();
                     }
                 }

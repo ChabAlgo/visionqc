@@ -79,5 +79,5 @@ test('loading a saved result clears a stale dashboard date and shows the new row
   const snapshot = await page.evaluate(() => window.__VISIONQC_DEBUG__.dateSnapshot());
   expect(snapshot.selected).toBe('');
   expect(snapshot.total).toBe(1);
-  expect(snapshot.keys).toEqual(['AN(TOP)|P163GG23M2100001']);
+  expect(snapshot.keys).toEqual(['AN(TOP)|P163GG23M2100001|2026-10-05']);
 });

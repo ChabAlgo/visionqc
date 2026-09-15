@@ -9,14 +9,20 @@ test('strict date graph filters all main aggregates before Cell-Position dedupli
  const points=page.locator('[data-vq-action="dashboard-day"]');
  await expect(points).toHaveCount(2);
  let snap=await page.evaluate(()=>window.__VISIONQC_DEBUG__.dateSnapshot());
- expect(snap.total).toBe(3);expect(snap.days.map(d=>d.date)).toEqual(['2026-08-24','2026-09-03']);
+ expect(snap.total).toBe(4);expect(snap.ng).toBe(2);
+ expect(snap.days.map(d=>d.date)).toEqual(['2026-08-24','2026-09-03']);
+ expect(snap.days.reduce((sum,d)=>sum+d.total,0)).toBe(snap.total);
+ expect(snap.days.reduce((sum,d)=>sum+d.ng,0)).toBe(snap.ng);
+ expect(snap.keys).toEqual(expect.arrayContaining([
+  'AN(TOP)|CELL1|2026-08-24','AN(TOP)|CELL1|2026-09-03'
+ ]));
  await points.first().click();
  snap=await page.evaluate(()=>window.__VISIONQC_DEBUG__.dateSnapshot());
  expect(snap.selected).toBe('2026-08-24');expect(snap.total).toBe(2);expect(snap.ng).toBe(1);
  await page.locator('[data-vq-action="dashboard-day"]').last().focus(); await page.keyboard.press('Enter');
  snap=await page.evaluate(()=>window.__VISIONQC_DEBUG__.dateSnapshot()); expect(snap.selected).toBe('2026-09-03');expect(snap.total).toBe(2);
  await page.locator('[data-vq-action="dashboard-all"]').click();
- snap=await page.evaluate(()=>window.__VISIONQC_DEBUG__.dateSnapshot());expect(snap.selected).toBe('');expect(snap.total).toBe(3);
+ snap=await page.evaluate(()=>window.__VISIONQC_DEBUG__.dateSnapshot());expect(snap.selected).toBe('');expect(snap.total).toBe(4);expect(snap.ng).toBe(2);
 });
 test('timestamp format controls token activation and named rules save/load across reload',async({page})=>{
  await page.addInitScript(()=>localStorage.setItem('visionqc-v43-active-page','settings'));
@@ -70,7 +76,7 @@ test('AI SUGGEST button calls local runtime without API key and keeps labels on 
 test('history DB delete requires confirmation and refreshes the empty database',async({page})=>{
  let deleteCalls=0;
  await page.addInitScript(()=>localStorage.setItem('visionqc-v43-active-page','history'));
- await page.route('**/api/status',route=>route.fulfill({status:200,contentType:'application/json',body:JSON.stringify({ok:true,agentVersion:'1.3.24',vpdlAvailable:true,running:false})}));
+ await page.route('**/api/status',route=>route.fulfill({status:200,contentType:'application/json',body:JSON.stringify({ok:true,agentVersion:'1.3.25',vpdlAvailable:true,running:false})}));
  await page.route('**/api/history/search',route=>route.fulfill({status:200,contentType:'application/json',body:JSON.stringify({ok:true,totalCount:0,ngCount:0,uniqueCellCount:0,page:1,pageSize:50,daily:[],items:[],filterOptions:{positions:[],tools:[],workspaceTypes:[],workspaces:[]},databasePath:'C:/Temp/test.sqlite'})}));
  await page.route('**/api/history/delete',async route=>{deleteCalls++;expect(route.request().postDataJSON()).toEqual({confirm:'DELETE_ALL_HISTORY'});await route.fulfill({status:200,contentType:'application/json',body:JSON.stringify({ok:true,deletedRuns:2,deletedImages:10,deletedToolResults:40,databasePath:'C:/Temp/test.sqlite'})});});
  await page.goto('/index.html?vqDebug=1&browserRegression=1',{waitUntil:'domcontentloaded'});

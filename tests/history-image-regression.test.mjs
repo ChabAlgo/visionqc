@@ -97,3 +97,12 @@ test('main date dashboard stays in the current analysis set and Auto Scroll reac
   assert.doesNotMatch(statusDom, /scrollSimulationLogToBottom/);
   assert.match(appendLog, /scrollSimulationLogToBottom/);
 });
+
+test('analysis identity keeps different capture dates separate while deduplicating within a date', () => {
+  assert.match(js, /const datedResultKey =/);
+  const aggregate = js.slice(js.indexOf('function aggregateRows'), js.indexOf('function applyThresholdSimulation'));
+  const live = js.slice(js.indexOf('function appendRowToLiveDashboardDates'), js.indexOf('function liveAnalysisModel'));
+  assert.match(aggregate, /const key = analysisRowKey\(row\)/);
+  assert.equal((live.match(/const key = analysisRowKey\(row\)/g) || []).length, 2);
+  assert.match(js, /날짜가 다르면 별도 검사 건으로 계산합니다/);
+});

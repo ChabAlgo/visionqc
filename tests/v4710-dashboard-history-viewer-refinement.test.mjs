@@ -59,7 +59,7 @@ test('history supports 10000 exact Cell IDs and DB-backed Position Tool Workspac
   assert.match(store, /temp_history_cell_ids/);
   assert.match(store, /workspace_type, workspace_name, workspace_key/);
   assert.match(store, /ROW_NUMBER\(\) OVER/);
-  assert.match(store, /PARTITION BY UPPER\(IFNULL\(f\.cell_id,''\)\), UPPER\(IFNULL\(f\.position_key,''\)\), UPPER\(IFNULL\(f\.workspace_key,''\)\)/);
+  assert.match(store, /PARTITION BY UPPER\(IFNULL\(f\.cell_id,''\)\), UPPER\(IFNULL\(f\.position_key,''\)\), UPPER\(IFNULL\(f\.workspace_key,''\)\),[\s\S]*SUBSTR\(COALESCE\(NULLIF\(f\.capture_timestamp,''\), f\.inspected_at_utc\),1,10\)/);
   assert.match(server, /BuildHistoryWorkspaceMap\(request\)/);
   assert.match(css, /calendar-picker-indicator\{filter:invert\(1\)/);
 });
