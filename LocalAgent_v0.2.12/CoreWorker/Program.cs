@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.IO;
 using System.Reflection;
 using System.Windows.Forms;
@@ -9,7 +9,7 @@ namespace VisionQC.LocalAgent
 {
     internal static class Program
     {
-        internal const string AgentVersion = "1.3.27";
+        internal const string AgentVersion = "1.3.28";
         private static int _requestedExitCode;
 
         internal static string AgentHomeDirectory

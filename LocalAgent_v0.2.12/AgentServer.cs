@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Collections;
 using System.Collections.Generic;
 using System.Diagnostics;
@@ -47,6 +47,10 @@ namespace VisionQC.LocalAgent
         private readonly List<int> _gpuDeviceIndices;
         private DateTime _lastProgressBroadcast = DateTime.MinValue;
         private DateTime _simulationStartedUtc = DateTime.MinValue;
+        private DateTime _simulationEndedUtc = DateTime.MinValue;
+        private string _simulationHistoryDecision = "";
+        private bool _simulationNeedsHistoryChoice = true;
+        private readonly SqliteRunStore _simulationStore;
         private int _liveRecordCount = 0;
         private int _lastProgressValue = -1;
         private SimulationState _state = NewIdleState();
@@ -98,6 +102,7 @@ namespace VisionQC.LocalAgent
             _picker = new PickerService(AppendAgentLog);
             _imagePreview = new ImagePreviewService();
             _historyStore = new SqliteRunStore(ResolveHistoryDatabasePath());
+            _simulationStore = new SqliteRunStore(Path.Combine(Path.GetTempPath(), "VisionQC-pending-" + Guid.NewGuid().ToString("N") + ".sqlite"));
             _history = new HistoryService(_historyStore, _json);
             if (_parentProcessId > 0) Task.Run(MonitorParentProcess);
         }
@@ -277,6 +282,9 @@ namespace VisionQC.LocalAgent
                         break;
                     case "/api/simulation/state":
                         result = Snapshot();
+                        break;
+                    case "/api/simulation/history-decision":
+                        result = DecideSimulationHistory(request.Body);
                         break;
                     case "/api/simulation/results":
                         result = ReadSimulationResults(request.Body);
@@ -656,6 +664,7 @@ namespace VisionQC.LocalAgent
                 if (_vpdlReservedForSimulation)
                     return new RuntimePreloadResponse { ok = false, error = "Simulation이 실행 중입니다. 완료 또는 중지 후 Runtime File Load를 실행하세요." };
 
+                lock (_sync) { _simulationStartedUtc = DateTime.MinValue; _simulationEndedUtc = DateTime.MinValue; }
                 DisposeInspectionControlLocked();
                 DisposePreloadedRuntimeLocked();
 
@@ -1473,6 +1482,8 @@ namespace VisionQC.LocalAgent
         private object StartSimulation(string body)
         {
             AgentDiagnostics.SaveText("last-simulation-request.json", body);
+            lock (_historyWriteSync)
+                if (_simulationHistoryDecision == "pending") return new { ok = false, error = "이전 Simulation 결과의 DB 저장 여부를 먼저 선택하세요." };
             lock (_sync)
             {
                 if (_simulationTask != null && !_simulationTask.IsCompleted)
@@ -1524,6 +1535,8 @@ namespace VisionQC.LocalAgent
                     _liveBatchSize = GetLiveBatchSize(req);
                     _liveRecordCount = 0;
                     _simulationStartedUtc = DateTime.UtcNow;
+                    _simulationEndedUtc = DateTime.MinValue;
+                    _simulationHistoryDecision = "";
                     _lastProgressBroadcast = DateTime.MinValue;
                     _lastProgressValue = -1;
                 }
@@ -1565,7 +1578,7 @@ namespace VisionQC.LocalAgent
                 }
                 lock (_sync)
                 {
-                    _state.running = false;
+                    _state.running = false; _simulationEndedUtc = DateTime.UtcNow;
                     _state.error = ex.ToString();
                     _state.message = "Simulation 시작 실패: " + ex.Message;
                 }
@@ -1592,7 +1605,7 @@ namespace VisionQC.LocalAgent
                 if (positionWorkers != null && positionWorkers.Count > 1)
                 {
                     RunParallelPositionSimulation(req, positionWorkers, positionGpuAssignments, token);
-                    lock (_sync) _state.running = false;
+                    lock (_sync) { _state.running = false; _simulationEndedUtc = DateTime.UtcNow; }
                     FlushLiveBatch();
                     CompleteSimulationHistory("completed", _state.message);
                     AppendAgentLog("DONE", _state.message + " | Result=" + (_state.resultCsv ?? ""));
@@ -1678,7 +1691,7 @@ namespace VisionQC.LocalAgent
                         _state.message = "Green Simulation 완료";
                     }
                 }
-                lock (_sync) _state.running = false;
+                lock (_sync) { _state.running = false; _simulationEndedUtc = DateTime.UtcNow; }
                 FlushLiveBatch();
                 CompleteSimulationHistory("completed", _state.message);
                 AppendAgentLog("DONE", _state.message + " | Result=" + (_state.resultCsv ?? ""));
@@ -1688,7 +1701,7 @@ namespace VisionQC.LocalAgent
             {
                 lock (_sync)
                 {
-                    _state.running = false;
+                    _state.running = false; _simulationEndedUtc = DateTime.UtcNow;
                     _state.activePositionWorkers = 0;
                     _state.message = "사용자에 의해 중지되었습니다.";
                 }
@@ -1702,7 +1715,7 @@ namespace VisionQC.LocalAgent
                 runtimeReusable = false;
                 lock (_sync)
                 {
-                    _state.running = false;
+                    _state.running = false; _simulationEndedUtc = DateTime.UtcNow;
                     _state.activePositionWorkers = 0;
                     _state.error = ex.ToString();
                     _state.message = "Simulation 오류: " + ex.Message;
@@ -1986,6 +1999,25 @@ namespace VisionQC.LocalAgent
             return ResultCsv.Merge(outputRoot, paths);
         }
 
+        private object DecideSimulationHistory(string body)
+        {
+            var data = DeserializeDictionary(body);
+            string runId = GetString(data, "runId", "");
+            string decision = GetString(data, "decision", "");
+            lock (_historyWriteSync)
+            {
+                if (runId != _lastSimulationRunId || string.IsNullOrEmpty(runId) || _simulationHistorySession != null)
+                    return new { ok = false, error = "완료된 현재 Simulation만 저장할 수 있습니다." };
+                if (decision != "save" && decision != "discard") return new { ok = false, error = "저장 선택을 확인하세요." };
+                if (_simulationHistoryDecision == "saved" || _simulationHistoryDecision == "declined")
+                    return new { ok = true, historyDecision = _simulationHistoryDecision };
+                if (_simulationHistoryDecision != "pending") return new { ok = false, error = "저장 가능한 완료 결과가 없습니다." };
+                if (decision == "save") _historyStore.CopyCompletedRunFrom(_simulationStore.DatabasePath, runId);
+                lock (_sync) _simulationHistoryDecision = decision == "save" ? "saved" : "declined";
+                return new { ok = true, historyDecision = _simulationHistoryDecision };
+            }
+        }
+
         private void StartSimulationHistory(AgentStartRequest request)
         {
             try
@@ -1993,9 +2025,12 @@ namespace VisionQC.LocalAgent
                 lock (_historyWriteSync)
                 {
                     _lastSimulationRunId = "";
+                    _simulationHistoryDecision = "";
                     lock (_sync) _state.simulationRunId = "";
-                    if (_simulationHistorySession != null) _historyStore.Complete(_simulationHistorySession, "replaced", "새 Simulation 실행으로 교체됨");
-                    _simulationHistorySession = _historyStore.Start(new SqliteRunStore.RunStoreStart
+                    if (_simulationHistorySession != null) _simulationStore.Complete(_simulationHistorySession, "replaced", "새 Simulation 실행으로 교체됨");
+                    _simulationNeedsHistoryChoice = string.IsNullOrWhiteSpace(request.parallelPositionKey);
+                    _simulationStore.DeleteAll();
+                    _simulationHistorySession = _simulationStore.Start(new SqliteRunStore.RunStoreStart
                     {
                         SourceType = "simulation",
                         Mode = request.mode ?? "green",
@@ -2030,11 +2065,11 @@ namespace VisionQC.LocalAgent
             {
                 expected = _lastSimulationRunId;
                 if (_simulationHistorySession != null && string.Equals(_simulationHistorySession.RunId, runId, StringComparison.OrdinalIgnoreCase))
-                    _historyStore.Flush(_simulationHistorySession);
+                    _simulationStore.Flush(_simulationHistorySession);
             }
             if (string.IsNullOrWhiteSpace(runId) || !string.Equals(runId, expected, StringComparison.OrdinalIgnoreCase))
                 return new SqliteRunStore.SimulationResultPage { ok = false, runId = runId, error = "현재 Simulation 실행 ID가 아닙니다." };
-            return _historyStore.ReadSimulationResultPage(runId, GetLong(data, "afterImageId", 0), GetInt(data, "pageSize", 500));
+            return _simulationStore.ReadSimulationResultPage(runId, GetLong(data, "afterImageId", 0), GetInt(data, "pageSize", 500));
         }
 
         private static Dictionary<string, SqliteRunStore.HistoryWorkspaceValue> BuildHistoryWorkspaceMap(AgentStartRequest request)
@@ -2075,7 +2110,7 @@ namespace VisionQC.LocalAgent
                 lock (_historyWriteSync)
                 {
                     if (_simulationHistorySession == null || _simulationHistoryWriteFailed) return;
-                    _historyStore.AppendLiveRecord(_simulationHistorySession, record);
+                    _simulationStore.AppendLiveRecord(_simulationHistorySession, record);
                 }
             }
             catch (SysException ex)
@@ -2092,7 +2127,8 @@ namespace VisionQC.LocalAgent
                 lock (_historyWriteSync)
                 {
                     if (_simulationHistorySession == null) return;
-                    _historyStore.Complete(_simulationHistorySession, status, message ?? "");
+                    _simulationStore.Complete(_simulationHistorySession, status, message ?? "");
+                    lock (_sync) _simulationHistoryDecision = status == "completed" && !_simulationHistoryWriteFailed && _simulationNeedsHistoryChoice ? "pending" : "";
                     _simulationHistorySession = null;
                 }
             }
@@ -2591,9 +2627,9 @@ namespace VisionQC.LocalAgent
         {
             lock (_sync)
             {
-                double elapsed = _simulationStartedUtc == DateTime.MinValue ? 0.0 : Math.Max(0.0, (DateTime.UtcNow - _simulationStartedUtc).TotalSeconds);
+                double elapsed = _simulationStartedUtc == DateTime.MinValue ? 0.0 : Math.Max(0.0, ((_state.running || _simulationEndedUtc == DateTime.MinValue ? DateTime.UtcNow : _simulationEndedUtc) - _simulationStartedUtc).TotalSeconds);
                 double ips = elapsed > 0.05 && _state.processed > 0 ? _state.processed / elapsed : 0.0;
-                double eta = ips > 0.0001 && _state.total > _state.processed ? (_state.total - _state.processed) / ips : 0.0;
+                double eta = _state.running && ips > 0.0001 && _state.total > _state.processed ? (_state.total - _state.processed) / ips : 0.0;
                 return new SimulationState
                 {
                     running = _state.running, mode = _state.mode, processed = _state.processed, total = _state.total,
@@ -2601,7 +2637,7 @@ namespace VisionQC.LocalAgent
                     outputRoot = _state.outputRoot, resultCsv = _state.resultCsv, error = _state.error,
                     elapsedSeconds = elapsed, etaSeconds = eta, imagesPerSecond = ips, batchSize = _liveBatchSize,
                     activePositionWorkers = _state.activePositionWorkers, completedPositionWorkers = _state.completedPositionWorkers,
-                    simulationRunId = _state.simulationRunId
+                    simulationRunId = _state.simulationRunId, historyDecision = _simulationHistoryDecision
                 };
             }
         }
@@ -2979,6 +3015,8 @@ namespace VisionQC.LocalAgent
             try { CompleteSimulationHistory("interrupted", "Agent 종료"); } catch { }
             try { _history.Dispose(); } catch { }
             try { _historyStore.Dispose(); } catch { }
+            try { _simulationStore.Dispose(); } catch { }
+            try { File.Delete(_simulationStore.DatabasePath); File.Delete(_simulationStore.DatabasePath + "-wal"); File.Delete(_simulationStore.DatabasePath + "-shm"); } catch { }
             try { _simulationCts?.Cancel(); } catch { }
             try { _serverCts.Cancel(); } catch { }
             try { _listener?.Stop(); } catch { }

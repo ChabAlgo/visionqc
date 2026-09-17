@@ -19,9 +19,9 @@ test('history Workspace options carry and filter by inspection mode', () => {
   const dto = read('LocalAgent_v0.2.12/AgentDtos.cs');
   const store = read('LocalAgent_v0.2.12/Persistence/SqliteRunStore.cs');
   assert.match(js, /function historyWorkspacesForType\(items, workspaceType\)/);
-  assert.match(js, /field === 'workspaceType'[\s\S]*historyWorkspaceKey|field === 'workspaceType'[\s\S]*workspaceKey = ''/);
+  assert.match(js, /field !== 'workspaceKey'[\s\S]*workspaceKey = ''/);
   assert.match(dto, /class AgentHistoryWorkspaceOption[\s\S]*workspaceType/);
-  assert.match(store, /workspaceType = type/);
+  assert.match(store, /workspaceType=ReadString\(reader,1\)/);
 });
 
 test('Simulation precedes Classification and package downloads require confirmation', () => {

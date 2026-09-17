@@ -69,7 +69,7 @@ test('completed Simulation reconciles dropped SSE rows from the exact SQLite run
 });
 
 test('running Simulation incrementally flushes and reads DB rows without mixing SSE duplicates', () => {
-  assert.match(server, /_historyStore\.Flush\(_simulationHistorySession\)/);
+  assert.match(server, /_simulationStore\.Flush\(_simulationHistorySession\)/);
   assert.match(store, /internal void Flush\(RunStoreSession session\)/);
   assert.match(web, /function syncSimulationLiveResults/);
   assert.match(web, /simulationDbLiveAfterImageId/);

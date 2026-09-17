@@ -1,19 +1,19 @@
 {
-  "releaseTag": "visionqc-v4.7.40-agent-v1.3.27",
-  "webVersion": "4.7.40",
-  "agentVersion": "1.3.27",
-  "minimumAgentVersion": "1.3.27",
+  "releaseTag": "visionqc-v4.7.41-agent-v1.3.28",
+  "webVersion": "4.7.41",
+  "agentVersion": "1.3.28",
+  "minimumAgentVersion": "1.3.28",
   "compatibility": {
-    "web": "4.7.40",
-    "agent": "1.3.27"
+    "web": "4.7.41",
+    "agent": "1.3.28"
   },
   "artifacts": {
-    "agentInstaller": "downloads/VisionQC_Agent_Installer_v1.3.27.exe",
-    "offlinePackage": "downloads/VisionQC_Offline_v4.7.40.zip",
+    "agentInstaller": "downloads/VisionQC_Agent_Installer_v1.3.28.exe",
+    "offlinePackage": "downloads/VisionQC_Offline_v4.7.41.zip",
     "sha256": {
-      "agentInstaller": "5DDF964F3CF19F8F5421E23B08345883DD53562980D1C2574C4262F71AD25018",
-      "offlinePackage": "ED81526D50FCA88D1EA3C1716CC49D60B34FB62819AE36A355076823F2F72706"
+      "agentInstaller": "D4D4325F31EE5BE0983BBC0FDD6C6A5029111E71D0F6A85F982B0D9C053B1BE9",
+      "offlinePackage": "DACF16F77D20DF53B003DC73ADFB72400C78877CF1E84A0D246A01D3B20F313D"
     }
   },
-  "notes": "원본 검사 행·이미지·Score 연결 및 CSV/SQLite 정합성, Workspace 변경 감지, 실제 NG 다중 이미지 보존, Heatmap 좌표 보완."
+  "notes": "완료 후 DB 저장 선택, 경과 시간 종료 처리, Position별 이력 필터, 날짜 표시/달력 클릭, 라벨별 Cell ID Excel 내보내기."
 }

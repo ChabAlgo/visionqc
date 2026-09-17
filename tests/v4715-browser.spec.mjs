@@ -51,6 +51,11 @@ test('Threshold control stays inside every narrow Tool card', async ({ page }) =
 
 test('History mode limits Workspace choices to actual matching records', async ({ page }) => {
   await open(page);
+  await page.route('**/api/history/search', async route => {
+    const type=route.request().postDataJSON().workspaceType;
+    const workspaces=[{value:'green-a',label:'green · Green A',workspaceType:'green'}, {value:'integrated-a',label:'integrated · Integrated A',workspaceType:'integrated'}, {value:'integrated-b',label:'integrated · Integrated B',workspaceType:'integrated'}].filter(w=>!type || w.workspaceType===type);
+    await route.fulfill({contentType:'application/json',body:JSON.stringify({ok:true,totalCount:0,page:1,items:[],daily:[],filterOptions:{positions:['AN(TOP)'],tools:['Crack'],workspaceTypes:['green','integrated'],workspaces}})});
+  });
   await page.evaluate(() => window.__VISIONQC_DEBUG__.seedHistoryFilters());
   const mode = page.locator('[data-history-field="workspaceType"]');
   const workspace = page.locator('[data-history-field="workspaceKey"]');

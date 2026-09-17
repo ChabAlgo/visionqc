@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
 using System.Data.SQLite;
 using System.Globalization;
@@ -25,6 +25,43 @@ namespace VisionQC.LocalAgent.Persistence
         }
 
         internal string DatabasePath { get { return _databasePath; } }
+
+        // Copy on explicit approval only. One transaction preserves row IDs, tools and timestamps;
+        // the run ID makes retries idempotent even when the HTTP response was lost.
+        internal void CopyCompletedRunFrom(string sourcePath, string runId)
+        {
+            EnsureSchema();
+            using (var connection = new SQLiteConnection("Data Source=" + _databasePath + ";Version=3;Foreign Keys=True;"))
+            {
+                connection.Open();
+                using (var attach = connection.CreateCommand())
+                {
+                    attach.CommandText = "ATTACH DATABASE @source AS pending;";
+                    Add(attach, "@source", sourcePath); attach.ExecuteNonQuery();
+                    attach.CommandText = "SELECT COUNT(*) FROM pending.runs WHERE run_id=@run AND status='completed'";
+                    Add(attach, "@run", runId);
+                    if (Convert.ToInt64(attach.ExecuteScalar()) != 1) throw new InvalidDataException("완료된 전체 결과를 확인하지 못했습니다.");
+                }
+                using (var tx = connection.BeginTransaction())
+                using (var command = connection.CreateCommand())
+                {
+                    command.Transaction = tx;
+                    Add(command, "@run", runId);
+                    command.CommandText = "SELECT COUNT(*) FROM main.runs WHERE run_id=@run";
+                    if (Convert.ToInt64(command.ExecuteScalar()) > 0) { tx.Commit(); return; }
+                    command.CommandText = "SELECT COUNT(*) FROM pending.runs WHERE run_id=@run AND status='completed' AND record_count=(SELECT COUNT(*) FROM pending.images WHERE run_id=@run)";
+                    if (Convert.ToInt64(command.ExecuteScalar()) != 1) throw new InvalidDataException("완료된 전체 결과를 확인하지 못했습니다.");
+                    command.CommandText = "SELECT COALESCE(MAX(image_id),0) FROM main.images";
+                    Add(command, "@offset", Convert.ToInt64(command.ExecuteScalar()));
+                    command.CommandText = @"INSERT INTO main.runs SELECT * FROM pending.runs WHERE run_id=@run;
+INSERT INTO main.images (image_id,run_id,sequence_no,source_file_name,source_row_number,full_path,processed_path,cell_id,position_key,total_result,judgement,capture_timestamp,inspected_at_utc,workspace_type,workspace_name,workspace_key)
+SELECT image_id+@offset,run_id,sequence_no,source_file_name,source_row_number,full_path,processed_path,cell_id,position_key,total_result,judgement,capture_timestamp,inspected_at_utc,workspace_type,workspace_name,workspace_key FROM pending.images WHERE run_id=@run;
+INSERT INTO main.tool_results (run_id,image_id,tool_name,result,score,overlay_path)
+SELECT run_id,image_id+@offset,tool_name,result,score,overlay_path FROM pending.tool_results WHERE run_id=@run;";
+                    command.ExecuteNonQuery(); tx.Commit();
+                }
+            }
+        }
 
         internal RunStoreSession Start(RunStoreStart request)
         {
@@ -279,7 +316,7 @@ SELECT last_insert_rowid();";
             {
                 connection.Open();
                 PrepareCellIdFilter(connection, request);
-                PopulateFilterOptions(connection, response);
+                PopulateFilterOptions(connection, response, request);
                 using (var command = connection.CreateCommand())
                 {
                     string where = BuildSearchWhere(command, request);
@@ -593,30 +630,25 @@ ORDER BY image_id ASC LIMIT @limit;";
             }
         }
 
-        private static void PopulateFilterOptions(SQLiteConnection connection, AgentHistorySearchResponse response)
+        private static void PopulateFilterOptions(SQLiteConnection connection, AgentHistorySearchResponse response, AgentHistorySearchRequest request)
         {
+            // Hierarchy: Position -> mode -> Workspace -> Tool. Keep parent choices available.
             response.filterOptions.positions = ReadDistinctStrings(connection, "SELECT DISTINCT position_key FROM images WHERE TRIM(IFNULL(position_key,''))<>'' ORDER BY position_key;");
-            response.filterOptions.tools = ReadDistinctStrings(connection, "SELECT DISTINCT tool_name FROM tool_results WHERE TRIM(IFNULL(tool_name,''))<>'' ORDER BY tool_name;");
-            response.filterOptions.workspaceTypes = ReadDistinctStrings(connection, "SELECT DISTINCT workspace_type FROM images WHERE TRIM(IFNULL(workspace_type,''))<>'' ORDER BY workspace_type;");
             using (var command = connection.CreateCommand())
             {
-                command.CommandText = @"SELECT workspace_key, MAX(workspace_type), MAX(workspace_name)
-FROM images WHERE TRIM(IFNULL(workspace_key,''))<>'' GROUP BY workspace_key ORDER BY MAX(workspace_type), MAX(workspace_name);";
-                using (SQLiteDataReader reader = command.ExecuteReader())
-                {
-                    while (reader.Read())
-                    {
-                        string key = ReadString(reader, 0);
-                        string type = ReadString(reader, 1);
-                        string name = ReadString(reader, 2);
-                        response.filterOptions.workspaces.Add(new AgentHistoryWorkspaceOption
-                        {
-                            value = key,
-                            label = string.Join(" · ", new[] { type, name }.Where(x => !string.IsNullOrWhiteSpace(x))),
-                            workspaceType = type
-                        });
-                    }
-                }
+                Add(command, "@position", request.position ?? "");
+                Add(command, "@type", request.workspaceType ?? "");
+                Add(command, "@workspace", request.workspaceKey ?? "");
+                string position = "(@position='' OR i.position_key=@position)";
+                string type = " AND (@type='' OR i.workspace_type=@type)";
+                string workspace = " AND (@workspace='' OR i.workspace_key=@workspace)";
+                command.CommandText = "SELECT DISTINCT workspace_type FROM images i WHERE " + position + " AND TRIM(IFNULL(workspace_type,''))<>'' ORDER BY workspace_type";
+                using (var reader = command.ExecuteReader()) while (reader.Read()) response.filterOptions.workspaceTypes.Add(ReadString(reader, 0));
+                command.CommandText = "SELECT workspace_key,MAX(workspace_type),MAX(workspace_name) FROM images i WHERE " + position + type + " AND TRIM(IFNULL(workspace_key,''))<>'' GROUP BY workspace_key ORDER BY MAX(workspace_type),MAX(workspace_name)";
+                using (var reader = command.ExecuteReader()) while (reader.Read())
+                    response.filterOptions.workspaces.Add(new AgentHistoryWorkspaceOption { value=ReadString(reader,0), workspaceType=ReadString(reader,1), label=string.Join(" · ", new[] {ReadString(reader,1),ReadString(reader,2)}.Where(x=>!string.IsNullOrWhiteSpace(x))) });
+                command.CommandText = "SELECT DISTINCT t.tool_name FROM tool_results t JOIN images i ON i.image_id=t.image_id WHERE " + position + type + workspace + " AND TRIM(IFNULL(t.tool_name,''))<>'' ORDER BY t.tool_name";
+                using (var reader = command.ExecuteReader()) while (reader.Read()) response.filterOptions.tools.Add(ReadString(reader,0));
             }
         }
 

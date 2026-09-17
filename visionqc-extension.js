@@ -1,7 +1,7 @@
 (() => {
   'use strict';
 
-  const VERSION = '4.7.40';
+  const VERSION = '4.7.41';
   const DEFAULT_POSITION_DEFS = [
     { key:'CA_TOP', name:'CA(TOP)' },
     { key:'AN_TOP', name:'AN(TOP)' },
@@ -27,9 +27,9 @@
   const NG_POSITION_PREFIX = 'ng-position:';
   const IMG_RE = /\.(png|jpe?g|bmp|gif|webp|tif?f)$/i;
   const LOCAL_AGENT_URL = 'http://127.0.0.1:17891';
-  const EXPECTED_AGENT_VERSION = '1.3.27';
-  const AGENT_INSTALLER_URL = './downloads/VisionQC_Agent_Installer_v1.3.27.exe';
-  const OFFLINE_PACKAGE_URL = './downloads/VisionQC_Offline_v4.7.40.zip';
+  const EXPECTED_AGENT_VERSION = '1.3.28';
+  const AGENT_INSTALLER_URL = './downloads/VisionQC_Agent_Installer_v1.3.28.exe';
+  const OFFLINE_PACKAGE_URL = './downloads/VisionQC_Offline_v4.7.41.zip';
   // SQLite에는 사용자가 명시적으로 남기려는 두 종류의 결과만 표시한다.
   // 이전 버전의 단발 검사(single-inspection) 이력은 보존하되 화면 집계에서는 제외한다.
   const PERSISTED_HISTORY_SOURCE_TYPES = ['simulation', 'csv-import', 'csv-file-stream'];
@@ -667,6 +667,14 @@
         });
       }
 
+      if (!$('#vq43-export-label-cells')) {
+        const button = document.createElement('button'); button.id = 'vq43-export-label-cells';
+        button.type = 'button'; button.className = 'vq43-btn'; button.textContent = 'Cell ID Excel';
+        button.title = '현재 라벨링한 Cell ID를 라벨별 시트로 저장합니다. 이미지는 복사하거나 이동하지 않습니다.';
+        button.onclick = event => { event.stopPropagation(); window.dispatchEvent(new CustomEvent('visionqc:export-label-cells')); };
+        actionArea.appendChild(button);
+      }
+
       // 상단 버튼을 2줄 고정 구조로 배치하기 위한 역할 지정
       Array.from(actionArea.querySelectorAll('button, label')).forEach((control) => {
         const label = (control.textContent || '').replace(/\s+/g, ' ').trim();
@@ -678,6 +686,7 @@
         else if (/^ZIP$/i.test(label)) control.dataset.vqHeaderRole = 'zip';
         else if (/^Organize Folder/i.test(label)) control.dataset.vqHeaderRole = 'organize';
         else if (/^Export Folder/i.test(label)) control.dataset.vqHeaderRole = 'export';
+        else if (/^Cell ID Excel/i.test(label)) control.dataset.vqHeaderRole = 'cells';
       });
     }
     document.title = `VisionQC DirectExport v${VERSION}`;
@@ -2537,6 +2546,70 @@
     return /[\",\r\n]/.test(text) ? `"${text.replace(/"/g, '""')}"` : text;
   }
 
+  function classificationCellId(fileName, profile = state.namingProfile) {
+    const naming = sanitizeNamingProfile(profile);
+    const stem = String(fileName || '').split(/[\\/]/).pop().replace(/\.[^.]*$/, '');
+    const tokens = stem.split(naming.delimiter).map(s=>s.trim()).filter(Boolean);
+    const rule = naming.cellId;
+    const valid = token => token && token.length === rule.candidateLength && /^[\p{L}\p{N}]+$/u.test(token) && (!rule.requireLetter || /\p{L}/u.test(token));
+    const candidates = rule.mode === 'token' ? [tokens[rule.tokenIndex-1]].filter(valid) : tokens.filter(valid);
+    return candidates.length === 1 ? candidates[0].slice(0,rule.extractLength).toUpperCase() : '';
+  }
+
+  function classificationCellSheets(items, classes) {
+    const groups = new Map(); let missing = 0;
+    for (const item of items || []) {
+      const labels = [...new Set(item.labels || [])].filter(Boolean);
+      if (!labels.length) continue;
+      const cell = classificationCellId(item.fileName);
+      if (!cell) { missing++; continue; }
+      for (const label of labels) {
+        if (!groups.has(label)) groups.set(label, new Set());
+        groups.get(label).add(cell);
+      }
+    }
+    if (missing) throw new Error(`라벨링된 이미지 ${numberText(missing)}개의 Cell ID를 추출하지 못했습니다. 설정의 파일명 규칙을 확인하세요. 누락 방지를 위해 내보내기를 중단했습니다.`);
+    const used = new Set();
+    return [...groups].map(([label,ids]) => {
+      const title = String((classes || []).find(c=>c.id===label)?.label || label);
+      const base = title.replace(/[\\/?*\[\]:\x00-\x1f]/g,'_').replace(/^'+|'+$/g,'').slice(0,31) || 'Label';
+      let name = base, suffix = 1;
+      while (used.has(name.toLowerCase()) || name.toLowerCase()==='history') { const tail=`_${suffix++}`; name=base.slice(0,31-tail.length)+tail; }
+      used.add(name.toLowerCase());
+      return {name,ids:[...ids].sort()};
+    });
+  }
+
+  async function buildClassificationWorkbook(sheets) {
+    if (!window.JSZip) throw new Error('엑셀 저장 모듈을 불러오지 못했습니다.');
+    const zip = new window.JSZip();
+    const xml = value => escapeHtml(String(value)).replace(/[\x00-\x08\x0b\x0c\x0e-\x1f]/g,'');
+    const ns = 'http://schemas.openxmlformats.org/spreadsheetml/2006/main';
+    const rel = 'http://schemas.openxmlformats.org/officeDocument/2006/relationships';
+    zip.file('[Content_Types].xml', '<?xml version="1.0" encoding="UTF-8"?><Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Default Extension="xml" ContentType="application/xml"/><Override PartName="/xl/workbook.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet.main+xml"/>'+sheets.map((s,i)=>`<Override PartName="/xl/worksheets/sheet${i+1}.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.worksheet+xml"/>`).join('')+'</Types>');
+    zip.file('_rels/.rels', `<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="${rel}/officeDocument" Target="xl/workbook.xml"/></Relationships>`);
+    zip.file('xl/workbook.xml', `<workbook xmlns="${ns}" xmlns:r="${rel}"><sheets>${sheets.map((s,i)=>`<sheet name="${xml(s.name)}" sheetId="${i+1}" r:id="rId${i+1}"/>`).join('')}</sheets></workbook>`);
+    zip.file('xl/_rels/workbook.xml.rels', `<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">${sheets.map((s,i)=>`<Relationship Id="rId${i+1}" Type="${rel}/worksheet" Target="worksheets/sheet${i+1}.xml"/>`).join('')}</Relationships>`);
+    sheets.forEach((sheet,i)=>{
+      if (sheet.ids.length > 1048575) throw new Error('한 시트의 Cell ID 수가 엑셀 한도를 초과했습니다.');
+      const rows = ['Cell ID',...sheet.ids].map((id,j)=>`<row r="${j+1}"><c r="A${j+1}" t="inlineStr"><is><t xml:space="preserve">${xml(id)}</t></is></c></row>`).join('');
+      zip.file(`xl/worksheets/sheet${i+1}.xml`, `<worksheet xmlns="${ns}"><sheetViews><sheetView workbookViewId="0"><pane ySplit="1" topLeftCell="A2" activePane="bottomLeft" state="frozen"/></sheetView></sheetViews><cols><col min="1" max="1" width="28" customWidth="1"/></cols><sheetData>${rows}</sheetData><autoFilter ref="A1:A${sheet.ids.length+1}"/></worksheet>`);
+    });
+    return zip.generateAsync({type:'blob',compression:'DEFLATE',mimeType:'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'});
+  }
+
+  window.addEventListener('visionqc:label-cells-data', async event => {
+    try {
+      const sheets = classificationCellSheets(event.detail?.items,event.detail?.classes);
+      if (!sheets.length) return showToast('라벨링된 이미지가 없습니다.',true);
+      const blob = await buildClassificationWorkbook(sheets);
+      const url = URL.createObjectURL(blob); const link = document.createElement('a');
+      link.href=url; link.download=`VisionQC_Label_Cell_ID_${new Date().toISOString().slice(0,10)}.xlsx`;
+      document.body.appendChild(link); link.click(); link.remove(); setTimeout(()=>URL.revokeObjectURL(url),3000);
+      showToast(`${sheets.length}개 라벨 시트로 Cell ID를 저장했습니다. 같은 라벨의 중복 Cell ID는 한 번만 기록합니다.`);
+    } catch (error) { showToast(error.message,true); }
+  });
+
   async function saveCsvFile(fileName, lines, successMessage) {
     const content = `\uFEFF${lines.join('\r\n')}`;
     const blob = new Blob([content], { type: 'text/csv;charset=utf-8' });
@@ -2908,17 +2981,23 @@
       input.oninput = sync;
       input.onchange = () => {
         sync();
-        if (field === 'workspaceType') {
-          state.historyFilters.workspaceKey = '';
-          const workspaceSelect = $('[data-history-field="workspaceKey"]', shell);
-          if (workspaceSelect) workspaceSelect.innerHTML = historySelectOptions(historyWorkspacesForType(state.historyData?.filterOptions?.workspaces, input.value), '');
+        if (['position','workspaceType','workspaceKey'].includes(field)) {
+          if (field === 'position') state.historyFilters.workspaceType = '';
+          if (field !== 'workspaceKey') state.historyFilters.workspaceKey = '';
+          if (state.historyData?.filterOptions) {
+            state.historyData.filterOptions.tools = [];
+            state.historyData.filterOptions.workspaces = field === 'workspaceType' ? historyWorkspacesForType(state.historyData.filterOptions.workspaces, input.value) : field === 'position' ? [] : state.historyData.filterOptions.workspaces;
+            if (field === 'position') state.historyData.filterOptions.workspaceTypes = [];
+          }
+          state.historyFilters.tool = '';
+          refreshHistory(true);
         }
       };
       input.onkeydown = (event) => {
         event.stopPropagation();
         if (event.key === 'Enter') { event.preventDefault(); refreshHistory(true); }
       };
-      input.onclick = (event) => event.stopPropagation();
+      input.onclick = (event) => { event.stopPropagation(); if (input.type === 'date') { try { input.showPicker?.(); } catch (_) {} } };
     });
     const draft = $('#vq43-history-cell-id-draft', shell);
     if (draft) {
@@ -2988,8 +3067,14 @@
     return `<div class="vq43-history-table"><div class="vq43-history-row head"><span>촬영/검사 시각</span><span>Cell ID</span><span>Position</span><span>결과</span><span>Tool Score</span><span>이미지</span></div>${items.map((item) => {
       const toolText = (item.tools || []).map((tool) => `<small class="${String(tool.result).toUpperCase()==='NG'?'ng':''}">${escapeHtml(tool.tool)} ${escapeHtml(tool.result || '-')} ${Number.isFinite(tool.score)?Number(tool.score).toFixed(4):'-'}</small>`).join('');
       const result = String(item.totalResult || '-').toUpperCase();
-      return `<div class="vq43-history-row" data-vq-history-row="${item.imageId}"><span title="${escapeHtml(item.inspectedAtUtc || '')}">${escapeHtml(item.captureTimestamp || item.inspectedAtUtc || '-')}</span><strong>${escapeHtml(item.cellId || '-')}</strong><span>${escapeHtml(item.position || '-')}</span><b class="${result==='NG'?'ng':'ok'}">${escapeHtml(result)}</b><span class="vq43-history-tools">${toolText || '-'}</span><button class="vq43-btn" data-vq-action="history-open-image" data-vq-history-image-id="${item.imageId}" ${item.fullPath || (item.tools || []).some((tool)=>tool.overlayPath)?'':'disabled'}>이미지</button></div>`;
+      return `<div class="vq43-history-row" data-vq-history-row="${item.imageId}"><span title="${escapeHtml(item.inspectedAtUtc || '')}">${escapeHtml(formatHistoryTimestamp(item.captureTimestamp || item.inspectedAtUtc))}</span><strong>${escapeHtml(item.cellId || '-')}</strong><span>${escapeHtml(item.position || '-')}</span><b class="${result==='NG'?'ng':'ok'}">${escapeHtml(result)}</b><span class="vq43-history-tools">${toolText || '-'}</span><button class="vq43-btn" data-vq-action="history-open-image" data-vq-history-image-id="${item.imageId}" ${item.fullPath || (item.tools || []).some((tool)=>tool.overlayPath)?'':'disabled'}>이미지</button></div>`;
     }).join('')}</div>`;
+  }
+
+  function formatHistoryTimestamp(value) {
+    const text = String(value || '').trim();
+    const match = text.match(/^(\d{4}-\d{2}-\d{2})[T ](\d{2}:\d{2}:\d{2})/);
+    return match ? `${match[1]} / ${match[2]}` : (text || '-');
   }
 
   function historyRecordRows(items) {
@@ -3000,7 +3085,7 @@
       const result = String(item.totalResult || '-').toUpperCase();
       const workspace = [item.workspaceType, item.workspaceName].filter(Boolean).join(' · ') || '-';
       const imageEnabled = item.fullPath || (item.tools || []).some((tool) => tool.overlayPath);
-      return '<div class="vq43-history-row" data-vq-history-row="' + item.imageId + '"><span title="' + escapeHtml(item.inspectedAtUtc || '') + '">' + escapeHtml(item.captureTimestamp || item.inspectedAtUtc || '-') + '</span><strong>' + escapeHtml(item.cellId || '-') + '</strong><span>' + escapeHtml(item.position || '-') + '</span><span class="vq43-history-workspace" title="' + escapeHtml(item.workspaceKey || workspace) + '">' + escapeHtml(workspace) + '</span><b class="' + (result === 'NG' ? 'ng' : 'ok') + '">' + escapeHtml(result) + '</b><span class="vq43-history-tools">' + (toolText || '-') + '</span><button class="vq43-btn" data-vq-action="history-open-image" data-vq-history-image-id="' + item.imageId + '" ' + (imageEnabled ? '' : 'disabled') + '>이미지</button></div>';
+      return '<div class="vq43-history-row" data-vq-history-row="' + item.imageId + '"><span title="' + escapeHtml(item.inspectedAtUtc || '') + '">' + escapeHtml(formatHistoryTimestamp(item.captureTimestamp || item.inspectedAtUtc)) + '</span><strong>' + escapeHtml(item.cellId || '-') + '</strong><span>' + escapeHtml(item.position || '-') + '</span><span class="vq43-history-workspace" title="' + escapeHtml(item.workspaceKey || workspace) + '">' + escapeHtml(workspace) + '</span><b class="' + (result === 'NG' ? 'ng' : 'ok') + '">' + escapeHtml(result) + '</b><span class="vq43-history-tools">' + (toolText || '-') + '</span><button class="vq43-btn" data-vq-action="history-open-image" data-vq-history-image-id="' + item.imageId + '" ' + (imageEnabled ? '' : 'disabled') + '>이미지</button></div>';
     }).join('');
     return '<div class="vq43-history-table">' + head + rows + '</div>';
   }
@@ -3024,7 +3109,7 @@
     const f = state.historyFilters;
     const options = data.filterOptions || {};
     const workspaceOptions = historyWorkspacesForType(options.workspaces, f.workspaceType);
-    if (f.workspaceKey && !workspaceOptions.some((item) => String(item?.value ?? item?.key ?? '') === f.workspaceKey)) f.workspaceKey = '';
+    if (!state.historyLoading && f.workspaceKey && !workspaceOptions.some((item) => String(item?.value ?? item?.key ?? '') === f.workspaceKey)) f.workspaceKey = '';
     const totalPages = Math.max(1, Math.ceil(Number(data.totalCount || 0) / Number(f.pageSize || 50)));
     const page = Math.max(1, Math.min(Number(f.page || 1), totalPages));
     const status = state.historyLoading ? 'SQLite 이력 조회 중...' : (state.historyFileImport?.running
@@ -3056,7 +3141,7 @@
   }
 
   async function refreshHistory(resetPage = false, notifyOnError = true) {
-    if (state.historyLoading) return;
+    if (state.historyLoading) { state.historyRefreshPending = true; return; }
     if (resetPage) state.historyFilters.page = 1;
     state.historyAttempted = true;
     state.historyLoading = true;
@@ -3074,6 +3159,7 @@
       if (notifyOnError) showToast(`SQLite 이력 조회 실패: ${state.historyLastError}`, true);
     } finally {
       state.historyLoading = false;
+      if (state.historyRefreshPending) { state.historyRefreshPending = false; refreshHistory(true); }
       if (state.page === 'history') { renderHistory(); bindPageControls(); }
       else if (state.page === 'main') { renderDashboard(); bindPageControls(); }
     }
@@ -3855,7 +3941,7 @@
           ? `Agent ${detectedVersion} 실행 중 · 현재 Web 권장 ${EXPECTED_AGENT_VERSION}. Agent 업데이트를 누르고 설치 파일을 실행하세요.`
           : `${data.runtimeMessage || '실시간 연결됨'} · Engine ${data.engineVersion || '-'}`
       };
-      if (data.state) state.simulationProgress = { ...state.simulationProgress, ...data.state };
+      if (data.state) { state.simulationProgress = { ...state.simulationProgress, ...data.state }; offerSimulationHistorySave(data.state); }
       const newInstance = state.simulationAgent.instanceId || '';
       const restarted = !!previousInstance && !!newInstance && previousInstance !== newInstance;
       if (restarted) {
@@ -3998,6 +4084,30 @@
     return task;
   }
 
+  function offerSimulationHistorySave(update) {
+    const existing = $('#vq43-history-save-prompt');
+    if (existing && (existing.dataset.runId !== String(update?.simulationRunId || '') || update?.historyDecision !== 'pending')) existing.remove();
+    if (update?.running || update?.historyDecision !== 'pending' || !update?.simulationRunId || $('#vq43-history-save-prompt')) return;
+    const runId = String(update.simulationRunId);
+    const panel = document.createElement('section');
+    panel.id = 'vq43-history-save-prompt'; panel.dataset.runId = runId;
+    panel.setAttribute('role','dialog'); panel.setAttribute('aria-label','시뮬레이션 결과 DB 저장');
+    panel.innerHTML = '<div><strong>시뮬레이션 완료 · DB에 올리겠습니까?</strong><p>검사 이력에 결과를 영구 저장합니다. No를 선택해도 CSV와 현재 대시보드는 유지됩니다.</p></div><button class="vq43-btn vq43-btn-green" data-history-decision="save">Yes · 저장</button><button class="vq43-btn" data-history-decision="discard">No · 저장 안 함</button><small role="status"></small>';
+    panel.addEventListener('click', async event => {
+      const button = event.target.closest('[data-history-decision]'); if (!button) return;
+      panel.querySelectorAll('button').forEach(b=>b.disabled=true);
+      try {
+        const response = await agentFetch('/api/simulation/history-decision', {method:'POST',timeout:120000,body:{runId,decision:button.dataset.historyDecision}});
+        if (!response?.ok) throw new Error(response?.error || '저장 선택을 처리하지 못했습니다.');
+        if (state.simulationProgress?.simulationRunId === runId) state.simulationProgress.historyDecision = response.historyDecision;
+        state.historyLoaded = false;
+        panel.remove();
+        showToast(response.historyDecision === 'saved' ? '검사 이력 DB에 저장했습니다.' : '검사 이력 DB에 저장하지 않았습니다. CSV는 유지됩니다.');
+      } catch (error) { panel.querySelector('small').textContent = error.message; panel.querySelectorAll('button').forEach(b=>b.disabled=false); }
+    });
+    document.body.appendChild(panel);
+  }
+
   function connectSimulationEvents() {
     closeSimulationEvents();
     try {
@@ -4006,6 +4116,7 @@
         try {
           const update = JSON.parse(event.data);
           state.simulationProgress = { ...state.simulationProgress, ...update };
+          offerSimulationHistorySave(update);
           const runId = String(update?.simulationRunId || '');
           if (update?.running && runId) state.simulationLiveRunId = runId;
           if (name === 'completed' || name === 'stopped' || name === 'error') {
@@ -4755,6 +4866,13 @@
       return;
     }
     if (state.simulationAgent.status !== 'connected') { launchSimulationAgent(); return; }
+    if (state.simulationProgress?.historyDecision === 'pending') {
+      offerSimulationHistorySave(state.simulationProgress);
+      showToast('이전 Simulation 결과의 DB 저장 여부를 먼저 선택하세요.', true); return;
+    }
+    if (state.simulationAgent.version !== EXPECTED_AGENT_VERSION) {
+      showToast(`완료 후 DB 저장 선택에는 Agent ${EXPECTED_AGENT_VERSION}가 필요합니다. Agent를 업데이트하세요.`, true); return;
+    }
     if (state.simulationAgent.vpdlAvailable === false) { showToast('VPDL이 설치되어 있지 않아 Simulation을 실행할 수 없습니다.', true); return; }
     if (state.simulationWorkspaceLoading) { showToast('Runtime File Load가 끝날 때까지 기다려 주세요.', true); return; }
     state.simulationStartPending = true;
@@ -6524,6 +6642,8 @@
   function installDebugApi() {
     if (!new URLSearchParams(location.search).has('vqDebug') && !window.__VQ_DEBUG_REQUESTED__) return;
     window.__VISIONQC_DEBUG__ = {
+      classificationCellSheets, buildClassificationWorkbook, formatHistoryTimestamp, offerSimulationHistorySave,
+
       reconcileLiveRowsRegression() {
         state.simulationLiveRunId = 'debug-run';
         state.simulationSyncedRunId = '';
