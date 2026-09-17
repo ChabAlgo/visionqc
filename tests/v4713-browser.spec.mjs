@@ -34,7 +34,15 @@ test('classification preserves a right-side focus above 100 percent during norma
   await page.getByTitle('Zoom In').click();
   await expect(page.getByText('120%', { exact:true })).toBeVisible();
   const viewport = page.locator('main .cursor-grab');
-  await viewport.evaluate((element) => { element.scrollLeft = element.scrollWidth - element.clientWidth; element.scrollTop = element.scrollHeight * .35; });
+  await viewport.evaluate(async (element) => {
+    // Wait for zoom layout, then for the browser to deliver the scroll event that saves focus.
+    await new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)));
+    const scrolled = new Promise(resolve => element.addEventListener('scroll', resolve, { once:true }));
+    element.scrollLeft = element.scrollWidth - element.clientWidth;
+    element.scrollTop = element.scrollHeight * .35;
+    await scrolled;
+    await new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)));
+  });
   const before = await normalizedFocus(page);
   expect(before.x).toBeGreaterThan(.75);
 
