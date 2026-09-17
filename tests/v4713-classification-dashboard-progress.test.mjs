@@ -23,7 +23,7 @@ test('classification restores focus only after the current image has loaded', ()
 
 test('daily chart keeps unscaled text with ten fixed slots', () => {
   const js = read('visionqc-extension.js');
-  assert.match(js, /const slots = Math\.max\(10, rows\.length\)/);
+  assert.match(js, /const rows = allRows\.slice\(start,start\+10\), slots = 10/);
   assert.match(js, /history-ten-slots/);
 });
 

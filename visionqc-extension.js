@@ -1,7 +1,7 @@
 (() => {
   'use strict';
 
-  const VERSION = '4.7.43';
+  const VERSION = '4.7.44';
   const DEFAULT_POSITION_DEFS = [
     { key:'CA_TOP', name:'CA(TOP)' },
     { key:'AN_TOP', name:'AN(TOP)' },
@@ -27,9 +27,9 @@
   const NG_POSITION_PREFIX = 'ng-position:';
   const IMG_RE = /\.(png|jpe?g|bmp|gif|webp|tif?f)$/i;
   const LOCAL_AGENT_URL = 'http://127.0.0.1:17891';
-  const EXPECTED_AGENT_VERSION = '1.3.30';
-  const AGENT_INSTALLER_URL = './downloads/VisionQC_Agent_Installer_v1.3.30.exe';
-  const OFFLINE_PACKAGE_URL = './downloads/VisionQC_Offline_v4.7.43.zip';
+  const EXPECTED_AGENT_VERSION = '1.3.31';
+  const AGENT_INSTALLER_URL = './downloads/VisionQC_Agent_Installer_v1.3.31.exe';
+  const OFFLINE_PACKAGE_URL = './downloads/VisionQC_Offline_v4.7.44.zip';
   // SQLite에는 사용자가 명시적으로 남기려는 두 종류의 결과만 표시한다.
   // 이전 버전의 단발 검사(single-inspection) 이력은 보존하되 화면 집계에서는 제외한다.
   const PERSISTED_HISTORY_SOURCE_TYPES = ['simulation', 'csv-import', 'csv-file-stream'];
@@ -774,6 +774,7 @@
       state.dashboardDate = action === 'dashboard-day' ? control.dataset.vqHistoryDay || '' : '';
       rebuildModel();
     }
+    else if (action === 'history-chart-prev' || action === 'history-chart-next' || action === 'history-chart-latest') changeHistoryChartWindow(control.dataset.chartScope, action);
     else if (action === 'history-day') { const day = control.dataset.vqHistoryDay || ''; state.historyFilters.fromDate = day; state.historyFilters.toDate = day; refreshHistory(true); }
     else if (action === 'history-page') changeHistoryPage(Number(control.dataset.vqHistoryPage));
     else if (action === 'history-open-image') openHistoryImage(Number(control.dataset.vqHistoryImageId));
@@ -964,6 +965,11 @@
         event.stopPropagation();
         runAction(control);
       };
+    });
+    $$('[data-history-chart-start]', shell).forEach(input => {
+      input.onclick = () => { try { input.showPicker?.(); } catch (_) {} };
+      input.onkeydown = event => event.stopPropagation();
+      input.onchange = () => changeHistoryChartWindow(input.dataset.historyChartStart, 'date', input.value);
     });
     $$('[data-naming-key="mode"]', shell).forEach(select => {
       select.onchange = () => {
@@ -3061,17 +3067,29 @@
   }
 
   // 날짜별 최고 NG율보다 3%p 높은 범위만 표시해 낮은 NG율의 변화도 선명하게 비교합니다.
+  const historyChartWindows = {};
+  function changeHistoryChartWindow(scope, action, date) {
+    const view = historyChartWindows[scope];
+    if (!view?.rows.length) return;
+    if (action === 'history-chart-latest' || (action === 'date' && !date)) view.anchor = null;
+    else if (action === 'date') view.anchor = date;
+    else {
+      const next = Math.max(0, Math.min(view.rows.length-1, view.start + (action === 'history-chart-prev' ? -10 : 10)));
+      view.anchor = view.rows[next].date;
+    }
+    renderCurrentPage();
+  }
+
   function historyDateBars(daily) {
-    const rows = (Array.isArray(daily) ? daily : []).slice(-90);
-    if (!rows.length) return '<div class="vq43-history-empty">표시할 날짜별 이력이 없습니다.</div>';
-    const height = 220, mainCompact = state.page === 'main';
-    const chartSelector = mainCompact ? '.vq43-main-history-dashboard .vq43-history-line-scroll' : '.vq43-history-page .vq43-history-line-scroll';
-    const previousScroll = document.querySelector(chartSelector)?.scrollLeft || 0;
-    if (previousScroll) requestAnimationFrame(() => {
-      const chart = document.querySelector(chartSelector);
-      if (chart) chart.scrollLeft = previousScroll;
-    });
-    const slots = Math.max(10, rows.length);
+    const allRows = (Array.isArray(daily) ? daily : []).slice().sort((a,b)=>String(a.date).localeCompare(String(b.date)));
+    if (!allRows.length) return '<div class="vq43-history-empty">표시할 날짜별 이력이 없습니다.</div>';
+    const height = 220, mainCompact = state.page === 'main', scope = mainCompact ? 'main' : 'history';
+    const view = historyChartWindows[scope] || (historyChartWindows[scope] = {anchor:null});
+    const found = view.anchor ? allRows.findIndex(row=>row.date >= view.anchor) : -1;
+    const start = view.anchor ? (found < 0 ? allRows.length-1 : found) : Math.max(0,allRows.length-10);
+    view.rows = allRows; view.start = start;
+    const rows = allRows.slice(start,start+10), slots = 10;
+    const controls = `<div class="vq43-history-navigation"><span>그래프 표시 범위 · ${start+1}–${start+rows.length} / ${allRows.length}일</span><div><label>시작 날짜 <input type="date" aria-label="그래프 시작 날짜" data-history-chart-start="${scope}" min="${escapeHtml(allRows[0].date)}" max="${escapeHtml(allRows.at(-1).date)}" value="${escapeHtml(rows[0].date)}"></label><button class="vq43-btn" data-vq-action="history-chart-prev" data-chart-scope="${scope}" ${start===0?'disabled':''}>이전 10개</button><button class="vq43-btn" data-vq-action="history-chart-next" data-chart-scope="${scope}" ${start+10>=allRows.length?'disabled':''}>다음 10개</button><button class="vq43-btn" data-vq-action="history-chart-latest" data-chart-scope="${scope}">최신</button></div></div>`;
     // Percentage x coordinates resize without scaling the text; ten fixed slots per viewport.
     const left = 0, right = 0, top = 30, bottom = 42;
     const plotW = 100 - left - right, plotH = height - top - bottom;
@@ -3083,7 +3101,7 @@
     const y = (rate) => top + plotH * (1 - Math.max(0, Math.min(axisMax, Number(rate || 0))) / axisMax);
     const grid = [0, .25, .5, .75, 1].map((ratio) => {
       const rate = axisMax * ratio;
-      return '<line x1="' + left + '%" x2="' + (100-right) + '%" y1="' + y(rate) + '" y2="' + y(rate) + '"/><text x="' + left + '%" y="' + (y(rate)-5) + '" text-anchor="start">' + Number((rate*100).toFixed(2)) + '%</text>';
+      return '<line x1="0%" x2="100%" y1="' + y(rate) + '" y2="' + y(rate) + '"/>';
     }).join('');
     const segments = rows.slice(1).map((row, index) => '<line class="vq43-history-segment" x1="' + x(index) + '%" x2="' + x(index+1) + '%" y1="' + y(rows[index].ngRate) + '" y2="' + y(row.ngRate) + '"/>').join('');
     const dots = rows.map((row, index) => {
@@ -3092,7 +3110,9 @@
       const dateLabel = '<text class="date" x="' + x(index) + '%" y="' + (height-15) + '" text-anchor="middle">' + escapeHtml(String(row.date || '').slice(5)) + '</text>';
       return '<g class="vq43-history-point" data-vq-action="' + (mainCompact ? 'dashboard-day' : 'history-day') + '" data-vq-history-day="' + date + '" role="button" aria-label="' + date + ' 선택" aria-pressed="' + (mainCompact && state.dashboardDate === row.date) + '" tabindex="0"><title>' + date + ' · 전체 ' + numberText(total) + ' · NG ' + numberText(ng) + ' (' + rateText(rate) + ')</title><rect x="' + hitLeft(index) + '%" y="0" width="' + (hitRight(index) - hitLeft(index)) + '%" height="' + height + '" fill="' + (mainCompact && state.dashboardDate === row.date ? 'rgba(59,130,246,.12)' : 'transparent') + '" pointer-events="all"/><circle cx="' + x(index) + '%" cy="' + y(rate) + '" r="5"/><text class="rate" x="' + x(index) + '%" y="' + Math.max(14,y(rate)-10) + '" text-anchor="middle">' + rateText(rate) + '</text>' + dateLabel + '</g>';
     }).join('');
-    return '<div class="vq43-history-line-scroll vq43-history-ten-slots" tabindex="0" aria-label="날짜별 NG율 · 좌우 스크롤"><svg class="vq43-history-line" height="220" style="--history-width:' + (slots / 10 * 100) + '%;--history-min-width:' + (rows.length > 10 ? slots * 90 : 0) + 'px">' + grid + segments + dots + '</svg></div>';
+    const axis = [0,.25,.5,.75,1].map(ratio=>'<text x="54" y="'+(y(axisMax*ratio)+4)+'" text-anchor="end">'+Number((axisMax*ratio*100).toFixed(2))+'%</text>').join('');
+    return controls + '<div class="vq43-history-line-scroll vq43-history-ten-slots vq43-history-paged"><svg class="vq43-history-axis" width="60" height="220" aria-label="NG율 퍼센트 축">'+axis+'</svg><svg class="vq43-history-line" height="220" style="--history-width:100%;--history-min-width:0px">' + grid + segments + dots + '</svg></div>';
+
   }
 
   function historyRecordRowsLegacy(items) {

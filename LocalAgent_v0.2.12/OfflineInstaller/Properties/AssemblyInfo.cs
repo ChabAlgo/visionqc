@@ -2,5 +2,5 @@ using System.Reflection;
 
 [assembly: AssemblyTitle("VisionQC Agent Installer")]
 [assembly: AssemblyProduct("VisionQC")]
-[assembly: AssemblyVersion("1.3.30.0")]
-[assembly: AssemblyFileVersion("1.3.30.0")]
+[assembly: AssemblyVersion("1.3.31.0")]
+[assembly: AssemblyFileVersion("1.3.31.0")]

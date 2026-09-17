@@ -1,19 +1,19 @@
 {
-  "releaseTag": "visionqc-v4.7.43-agent-v1.3.30",
-  "webVersion": "4.7.43",
-  "agentVersion": "1.3.30",
-  "minimumAgentVersion": "1.3.30",
+  "releaseTag": "visionqc-v4.7.44-agent-v1.3.31",
+  "webVersion": "4.7.44",
+  "agentVersion": "1.3.31",
+  "minimumAgentVersion": "1.3.31",
   "compatibility": {
-    "web": "4.7.43",
-    "agent": "1.3.30"
+    "web": "4.7.44",
+    "agent": "1.3.31"
   },
   "artifacts": {
-    "agentInstaller": "downloads/VisionQC_Agent_Installer_v1.3.30.exe",
-    "offlinePackage": "downloads/VisionQC_Offline_v4.7.43.zip",
+    "agentInstaller": "downloads/VisionQC_Agent_Installer_v1.3.31.exe",
+    "offlinePackage": "downloads/VisionQC_Offline_v4.7.44.zip",
     "sha256": {
-      "agentInstaller": "2679532EA88DF42CB82EC7DE188B8C16DEF264D7021D1900673572885AE7BFB1",
-      "offlinePackage": "20EC7127EDD0EDDFBB244D32A5783FC0980AA3CA41E1AF5B45E656B00F3DFCE1"
+      "agentInstaller": "0F9FD01EF4AF6992F0330B979DFFE2516D98AFCC95D40F96B2A28381DD89EE3B",
+      "offlinePackage": "A90E76400F69A780A7BCDFA4D8B3F9C8C8BD5D19E5123A500ED340A0355FAF8C"
     }
   },
-  "notes": "이미지 분류 라벨 해제 단축키 사용자 설정, 중복 키 차단 및 오프라인 UI 반영."
+  "notes": "Class Settings 여백 정리, 날짜별 NG율 고정 축 및 날짜 선택/10개 단위 탐색."
 }

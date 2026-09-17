@@ -1,6 +1,6 @@
 import { test, expect } from '@playwright/test';
 
-test('date chart centers fixed slots, scrolls after ten, and only joins adjacent dots', async ({page}) => {
+test('date chart centers fixed slots, pages after ten, and only joins adjacent dots', async ({page}) => {
   await page.goto('/index.html?vqDebug=1&browserRegression=1');
   await page.waitForFunction(() => window.__VISIONQC_DEBUG__);
   for (const count of [1, 2, 3, 10, 11, 31]) {
@@ -8,8 +8,8 @@ test('date chart centers fixed slots, scrolls after ten, and only joins adjacent
       cellId:'CELL'+i, position:'AN(TOP)', captureTimestamp:`2026-01-${String(i+1).padStart(2,'0')}T08:00:00`, totalResult:'NG', tools:{}
     }))), count);
     const chart=page.locator('.vq43-main-history-dashboard .vq43-history-line');
-    await expect(chart.locator('circle')).toHaveCount(count);
-    await expect(chart.locator('.vq43-history-segment')).toHaveCount(count-1);
+    await expect(chart.locator('circle')).toHaveCount(Math.min(count,10));
+    await expect(chart.locator('.vq43-history-segment')).toHaveCount(Math.min(count,10)-1);
     const geometry=await chart.evaluate(svg=>{
       const parent=svg.parentElement, dots=[...svg.querySelectorAll('circle')];
       const xs=dots.map(dot=>parseFloat(dot.getAttribute('cx')));
@@ -23,14 +23,11 @@ test('date chart centers fixed slots, scrolls after ten, and only joins adjacent
     if(count<=10) {
       expect((geometry.xs[0]+geometry.xs.at(-1))/2).toBeCloseTo(50);
       if(count>1) expect(geometry.xs[1]-geometry.xs[0]).toBeCloseTo(10);
-    } else expect(geometry.scroll).toBe(true);
+    } else expect(geometry.scroll).toBe(false);
     if(count===3 || count===11) await page.locator('.vq43-main-history-dashboard').screenshot({path:`test-results/date-chart-${count}.png`});
     if(count===31) {
-      const scroller=page.locator('.vq43-main-history-dashboard .vq43-history-line-scroll');
-      await scroller.evaluate(node=>node.scrollLeft=node.scrollWidth);
-      const offset=await scroller.evaluate(node=>node.scrollLeft);
       await chart.locator('.vq43-history-point').last().click();
-      await expect.poll(()=>scroller.evaluate(node=>node.scrollLeft)).toBeCloseTo(offset,0);
+      await expect(chart.locator('circle')).toHaveCount(10);
       expect((await page.evaluate(()=>window.__VISIONQC_DEBUG__.dateSnapshot())).selected).toBe('2026-01-31');
     }
   }
