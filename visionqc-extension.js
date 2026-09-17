@@ -1,7 +1,7 @@
 (() => {
   'use strict';
 
-  const VERSION = '4.7.45';
+  const VERSION = '4.7.46';
   const DEFAULT_POSITION_DEFS = [
     { key:'CA_TOP', name:'CA(TOP)' },
     { key:'AN_TOP', name:'AN(TOP)' },
@@ -27,9 +27,9 @@
   const NG_POSITION_PREFIX = 'ng-position:';
   const IMG_RE = /\.(png|jpe?g|bmp|gif|webp|tif?f)$/i;
   const LOCAL_AGENT_URL = 'http://127.0.0.1:17891';
-  const EXPECTED_AGENT_VERSION = '1.3.32';
-  const AGENT_INSTALLER_URL = './downloads/VisionQC_Agent_Installer_v1.3.32.exe';
-  const OFFLINE_PACKAGE_URL = './downloads/VisionQC_Offline_v4.7.45.zip';
+  const EXPECTED_AGENT_VERSION = '1.3.33';
+  const AGENT_INSTALLER_URL = './downloads/VisionQC_Agent_Installer_v1.3.33.exe';
+  const OFFLINE_PACKAGE_URL = './downloads/VisionQC_Offline_v4.7.46.zip';
   // SQLite에는 사용자가 명시적으로 남기려는 두 종류의 결과만 표시한다.
   // 이전 버전의 단발 검사(single-inspection) 이력은 보존하되 화면 집계에서는 제외한다.
   const PERSISTED_HISTORY_SOURCE_TYPES = ['simulation', 'csv-import', 'csv-file-stream'];
@@ -2298,101 +2298,36 @@
   }
 
   function buildSummaryReportHtml(model, generatedAt = new Date()) {
-    const reportTitle = 'VisionQC 검사 요약 리포트';
-    const positions = positionNames();
-    const positionColors = positionColorMap();
-    const resultFiles = positions.map((position) => state.resultInputs[position]?.fileName ? `${position}: ${state.resultInputs[position].fileName}` : `${position}: 미입력`);
-    const totalPositionRows = model.positionSummaries.reduce((sum, item) => sum + item.total, 0);
-    const totalPositionNg = model.positionSummaries.reduce((sum, item) => sum + item.ng, 0);
-    const totalActual = model.positionSummaries.reduce((sum, item) => sum + item.actualNg, 0);
-    const totalDetected = model.positionSummaries.reduce((sum, item) => sum + item.detected, 0);
-    const totalMisses = model.misses.length;
-    const totalUnmatched = model.positionSummaries.reduce((sum, item) => sum + item.unmatched, 0);
-    const positionNgRate = totalPositionRows ? totalPositionNg / totalPositionRows : 0;
-    const maxPositionRate = Math.max(0.01, ...model.positionSummaries.map((item) => item.ngRate));
-    const escapeAttr = (value) => escapeHtml(String(value)).replace(/"/g, '&quot;');
-    const chunk = (items, size) => Array.from({length: Math.ceil(items.length / size)}, (_, index) => items.slice(index * size, (index + 1) * size));
-    const positionRows = model.positionSummaries.map((item) => `
-      <tr>
-        <td><strong>${escapeHtml(item.position)}</strong></td><td>${numberText(item.total)}</td><td class="ng">${numberText(item.ng)}</td>
-        <td class="ng">${rateText(item.ngRate)}</td><td>${numberText(item.actualNg)}</td><td>${numberText(item.actualNg-item.unmatched)}</td>
-        <td class="ok">${numberText(item.detected)}</td><td class="miss">${numberText(item.misses)}</td><td>${numberText(item.unmatched)}</td>
-      </tr>`).join('');
-    const positionBars = model.positionSummaries.map((item) => {
-      const color = positionColors[item.position];
-      const width = Math.max(0, Math.min(100, item.ngRate / maxPositionRate * 92));
-      return `<div class="bar-row"><b>${escapeHtml(item.position)}</b><div class="bar-track"><i style="width:${width}%;background:${color}"></i></div><strong style="color:${color}">${rateText(item.ngRate)}</strong></div>`;
+    const baseName = value => String(value || '').split(/[\\/]/).pop();
+    const unique = values => [...new Set(values.filter(Boolean))];
+    const positions = model.positionSummaries.filter(item=>item.total || item.actualNg);
+    const metadata = positions.map(item=>{
+      const input = state.resultInputs[item.position] || {};
+      const sources = model.records.filter(record=>record.position===item.position).flatMap(record=>record.sourceRows || []);
+      const sameRun = input.simulationRunId && input.simulationRunId === state.simulationProgress?.simulationRunId;
+      const csv = input.resultCsv || (sameRun ? state.simulationProgress?.resultCsv : '');
+      const files = csv ? [baseName(csv)] : unique([input.fileName,...sources.map(row=>row.sourceFileName)].filter(name=>name && /\.csv$/i.test(name)).map(baseName));
+      const workspaces = unique(sources.map(row=>baseName(row.workspaceName || row.workspaceKey)));
+      return `<tr><td>${escapeHtml(item.position)}</td><td>${files.length ? files.map(escapeHtml).join('<br>') : '저장된 로그 확인 불가'}</td><td>${workspaces.length ? workspaces.map(escapeHtml).join('<br>') : '기록 없음'}</td></tr>`;
     }).join('');
-    const missTotal = Math.max(1, totalMisses);
-    let cursor = 0;
-    const stops = model.positionSummaries.map((item) => {
-      const start = cursor; cursor += item.misses / missTotal * 100;
-      return `${positionColors[item.position]} ${start.toFixed(3)}% ${cursor.toFixed(3)}%`;
-    }).join(',');
-    const missLegend = model.positionSummaries.map((item) => `<div><i style="background:${positionColors[item.position]}"></i><span>${escapeHtml(item.position)}</span><b>${numberText(item.misses)}</b></div>`).join('');
-    const toolCards = model.positionToolSummaries.map((position) => {
-      const color = positionColors[position.position];
-      const rows = position.tools.map((tool) => `<div class="tool-mini-row"><span>${escapeHtml(tool.tool)}</span><i><em style="width:${Math.min(100,tool.rate*100)}%;background:${color}"></em></i><b>${(tool.rate*100).toFixed(1)}%</b></div>`).join('') || '<div class="empty">미입력</div>';
-      return `<section class="tool-mini" style="--accent:${color}"><h3>${escapeHtml(position.position)}</h3>${rows}</section>`;
-    }).join('');
-
-    const detailBlocks = [];
-    positions.forEach((position) => {
-      const misses = model.misses.filter((item) => item.position === position);
-      const chunks = chunk(misses, 90);
-      (chunks.length ? chunks : [[]]).forEach((items, chunkIndex) => {
-        if (!items.length) return;
-        const tools = [...new Set(items.flatMap((item) => Object.keys(item.record.tools)))].sort((a,b)=>a.localeCompare(b,undefined,{numeric:true,sensitivity:'base'}));
-        const averages = tools.map((tool) => {
-          const values = items.map((item)=>item.record.tools[tool]).filter((obs)=>obs?.result==='OK' && Number.isFinite(obs.representativeScore)).map((obs)=>obs.representativeScore);
-          return { tool, value: values.length ? mean(values) : null, count: values.length };
-        }).filter((item)=>Number.isFinite(item.value));
-        const list = items.map((item,index)=>`<li><span>${String(chunkIndex*90+index+1).padStart(2,'0')}</span><b>${escapeHtml(item.cellId)}</b></li>`).join('');
-        const scoreBars = averages.map((item)=>`<div class="score-ref-row"><span>${escapeHtml(item.tool)}</span><i><em style="width:${Math.max(0,Math.min(100,item.value*100))}%;background:${positionColors[position]}"></em></i><b>${item.value.toFixed(4)}</b></div>`).join('') || '<div class="empty">유효한 OK Score 없음</div>';
-        detailBlocks.push({position, color:positionColors[position], chunkIndex, chunkCount:chunks.length, count:misses.length, items, html:`
-          <section class="miss-detail" style="--accent:${positionColors[position]}">
-            <header><div><strong>${escapeHtml(position)}</strong><span>미검 ${numberText(misses.length)}건${chunks.length>1?` · ${chunkIndex+1}/${chunks.length}`:''}</span></div><small>결과 CSV + NG Image 매칭 · Threshold 적용 후 OK</small></header>
-            <div class="miss-detail-body"><ol class="id-list">${list}</ol><aside><h4>미검 시 Tool별 평균 OK Score</h4>${scoreBars}<p>이 페이지에 표시된 미검 ${numberText(items.length)}건 기준</p></aside></div>
-          </section>`});
-      });
-    });
-    const detailPages = chunk(detailBlocks, 2);
-    const totalPages = 1 + detailPages.length;
-    const pageFooter = (pageNo) => `<footer class="page-foot"><strong>VisionQC</strong><span>현재 적용된 Threshold 기준 재계산 결과</span><b>${pageNo} / ${totalPages}</b></footer>`;
-    const detailSummaryBars = model.positionSummaries.map((item)=>`<div class="simple-bar"><b>${escapeHtml(item.position)}</b><i><em style="width:${totalMisses?item.misses/Math.max(...model.positionSummaries.map(x=>x.misses),1)*100:0}%;background:${positionColors[item.position]}"></em></i><strong>${numberText(item.misses)}</strong></div>`).join('');
-    const emptyDetailBlock = `<section class="miss-detail placeholder"><header><div><strong>미검 상세</strong><span>표시 데이터 없음</span></div><small>동일 디자인 유지 영역</small></header><div class="placeholder-body">이 페이지에 추가로 표시할 미검 Cell ID가 없습니다.</div></section>`;
-    const renderDetailPage = (blocks, pageIndex) => {
-      const normalizedBlocks = [...blocks];
-      while (normalizedBlocks.length < 2) normalizedBlocks.push({ html: emptyDetailBlock });
-      return `<section class="report-page detail-page">
-        <header class="page-head"><div><h1>${reportTitle}</h1><p>미검 상세 리포트 ${pageIndex+1}/${detailPages.length}</p></div><div class="meta"><strong>생성 시각</strong> ${reportDateText(generatedAt)}<br><strong>NG 이미지 경로</strong> ${escapeHtml(ngFolderSummary())}</div></header>
-        <div class="detail-charts"><div><h3>Position별 미검 수 비교</h3>${detailSummaryBars}</div><div><h3>미검 구성 비율</h3><div class="small-donut" style="background:conic-gradient(${stops||'#e2e8f0 0 100%'})"><span><b>${numberText(totalMisses)}</b><small>총 미검</small></span></div></div></div>
-        <div class="detail-guide">아래 목록은 결과 CSV와 NG Image 폴더에 동일 Cell ID + Position이 존재하고, 현재 Threshold 적용 후 OK로 판정된 전체 미검 Cell입니다.</div>
-        <div class="detail-blocks">${normalizedBlocks.map((block)=>block.html).join('')}</div>${pageFooter(pageIndex+2)}</section>`;
-    };
-    const detailPageHtml = detailPages.map(renderDetailPage).join('');
-
-    return `<!doctype html><html lang="ko"><head><meta charset="utf-8"><title>${reportFileName(generatedAt)}</title>
-      <style>
-        @page{size:A4 portrait;margin:0}*{box-sizing:border-box}html,body{margin:0;padding:0;background:#e8edf5;color:#10214a;font-family:Arial,"Malgun Gothic","Noto Sans KR",sans-serif;-webkit-print-color-adjust:exact;print-color-adjust:exact}
-        .actions{position:sticky;top:0;z-index:20;display:flex;justify-content:flex-end;gap:8px;padding:10px 14px;background:#081226}.actions button{border:1px solid #334155;border-radius:9px;padding:9px 14px;background:#172033;color:#fff;font-weight:700;cursor:pointer}.actions .primary{background:#2563eb;border-color:#2563eb}
-        .report-page{position:relative;width:210mm;min-height:297mm;margin:10px auto;background:#fff;padding:9mm 9mm 12mm;box-shadow:0 8px 30px rgba(15,23,42,.2);break-after:page;page-break-after:always;overflow:hidden}.report-page:last-child{break-after:auto;page-break-after:auto}
-        .page-head{display:flex;justify-content:space-between;align-items:flex-start;border-bottom:2px solid #173b8f;padding-bottom:5mm}.page-head h1{font-size:26px;margin:0;color:#0c2d73;letter-spacing:-.8px}.page-head p{font-size:12px;margin:4px 0 0;color:#2e4d89;font-weight:700}.meta{font-size:8.5px;line-height:1.55;color:#475569;background:#f8fbff;border:1px solid #b9c9e8;border-radius:8px;padding:6px 9px;max-width:84mm}.meta strong{color:#10214a}
-        .section-title{font-size:14px;margin:6mm 0 2.5mm;color:#10214a;display:flex;align-items:center;gap:7px}.section-title:before{content:"";width:5px;height:18px;border-radius:3px;background:#173b8f}.kpis{display:grid;grid-template-columns:repeat(4,1fr);gap:3mm;margin-top:5mm}.kpi{border:1px solid #c8d5ec;border-radius:10px;padding:4mm;background:linear-gradient(180deg,#fff,#f8fbff)}.kpi span{display:block;font-size:8px;color:#64748b;font-weight:700}.kpi strong{display:block;font-size:23px;margin-top:2mm;color:#123d97}.kpi.ng strong{color:#e31d36}.kpi.miss strong{color:#f47b10}
-        table{width:100%;border-collapse:collapse;font-size:8px}th{background:#123d97;color:#fff;padding:2.2mm 1.2mm;border:1px solid #8ba4d5;text-align:center}td{padding:2.2mm 1.2mm;border:1px solid #c8d5ec;text-align:center}td:first-child{text-align:left}.ng{color:#e31d36;font-weight:700}.ok{color:#059669;font-weight:700}.miss{color:#f47b10;font-weight:700}
-        .chart-grid{display:grid;grid-template-columns:1fr 1fr;gap:4mm;margin-top:4mm}.chart-card{border:1px solid #c8d5ec;border-radius:10px;padding:4mm;min-height:52mm}.chart-card h3{font-size:12px;margin:0 0 4mm}.bar-row{display:grid;grid-template-columns:20mm 1fr 18mm;gap:3mm;align-items:center;margin:3.2mm 0;font-size:8.5px}.bar-track{height:6mm;background:#eef3fa;border-radius:2px;overflow:hidden}.bar-track i{display:block;height:100%}.donut-wrap{display:grid;grid-template-columns:1fr 1fr;align-items:center}.donut{width:42mm;height:42mm;border-radius:50%;margin:auto;display:grid;place-items:center}.donut>span{width:25mm;height:25mm;background:#fff;border-radius:50%;display:grid;place-items:center;text-align:center}.donut b{font-size:17px}.donut small{font-size:7px}.legend div{display:grid;grid-template-columns:4mm 1fr 10mm;gap:2mm;align-items:center;font-size:8px;margin:2.5mm 0}.legend i{width:3mm;height:3mm;border-radius:50%}
-        .tool-grid{display:grid;grid-template-columns:repeat(4,1fr);gap:3mm}.tool-mini{border:1px solid var(--accent);border-radius:9px;padding:3mm}.tool-mini h3{margin:0 0 2mm;color:var(--accent);font-size:11px;text-align:center}.tool-mini-row{display:grid;grid-template-columns:17mm 1fr 10mm;gap:1.5mm;align-items:center;font-size:7px;margin:2mm 0}.tool-mini-row i,.score-ref-row i,.simple-bar i{height:3mm;background:#e8edf5;border-radius:2px;overflow:hidden}.tool-mini-row em,.score-ref-row em,.simple-bar em{display:block;height:100%}
-        .note{margin-top:4mm;border:1px solid #9db5e5;background:#f5f8ff;border-radius:8px;padding:3mm;font-size:8px;line-height:1.45}.page-foot{position:absolute;left:9mm;right:9mm;bottom:6mm;display:grid;grid-template-columns:1fr 2fr auto;align-items:center;border-top:1px solid #173b8f;padding-top:2mm;font-size:8px;color:#536789}.page-foot strong{font-size:12px;color:#173b8f}.page-foot b{font-size:11px;color:#10214a}
-        .detail-charts{display:grid;grid-template-columns:1.45fr .8fr;gap:4mm;margin-top:5mm;border:1px solid #c8d5ec;border-radius:10px;padding:4mm}.detail-charts h3{font-size:11px;margin:0 0 3mm}.simple-bar{display:grid;grid-template-columns:20mm 1fr 10mm;gap:2mm;align-items:center;margin:2mm 0;font-size:7.5px}.small-donut{width:35mm;height:35mm;border-radius:50%;display:grid;place-items:center;margin:auto}.small-donut span{width:21mm;height:21mm;background:#fff;border-radius:50%;display:grid;place-items:center;text-align:center}.small-donut b{font-size:15px}.small-donut small{font-size:6.5px}
-        .detail-guide{margin-top:3mm;border:1px solid #9db5e5;background:#f5f8ff;border-radius:8px;padding:2.5mm 3mm;font-size:7.5px;line-height:1.45;color:#314a79}.detail-blocks{display:grid;grid-template-rows:1fr 1fr;gap:4mm;margin-top:3mm;height:202mm}.miss-detail{border:1px solid var(--accent);border-radius:10px;overflow:hidden;min-height:0}.miss-detail>header{display:flex;justify-content:space-between;align-items:center;padding:2.5mm 3mm;border-bottom:1px solid var(--accent);background:#f8fbff}.miss-detail>header div{display:flex;gap:4mm;align-items:center}.miss-detail>header strong{font-size:13px;color:var(--accent)}.miss-detail>header span{font-size:10px;font-weight:700;color:var(--accent)}.miss-detail>header small{font-size:7px;color:#64748b}.miss-detail-body{display:grid;grid-template-columns:1fr 47mm;gap:3mm;padding:3mm;height:calc(100% - 15mm)}.id-list{columns:3;column-gap:4mm;margin:0;padding:0;list-style:none;font-size:6.8px;line-height:1.35}.id-list li{break-inside:avoid;display:flex;gap:1.5mm}.id-list li span{color:var(--accent);font-weight:700;min-width:5mm}.id-list li b{font-weight:600;color:#10214a}.miss-detail aside{border:1px solid #c8d5ec;border-radius:8px;padding:3mm;background:#fbfdff}.miss-detail aside h4{font-size:9px;margin:0 0 3mm;color:var(--accent)}.score-ref-row{display:grid;grid-template-columns:17mm 1fr 12mm;gap:2mm;align-items:center;font-size:7px;margin:3mm 0}.miss-detail aside p{font-size:6.5px;color:#64748b;margin-top:4mm}.miss-detail.placeholder{border-color:#c8d5ec}.miss-detail.placeholder>header strong,.miss-detail.placeholder>header span{color:#64748b}.placeholder-body{height:calc(100% - 15mm);display:grid;place-items:center;color:#94a3b8;font-size:8px;background:#fbfdff}.empty{font-size:7px;color:#94a3b8}
-        @media print{body{background:#fff}.actions{display:none}.report-page{margin:0;box-shadow:none}}
-      </style></head><body><div class="actions"><button onclick="window.close()">닫기</button><button class="primary" onclick="window.print()">PDF로 저장</button></div>
-      <section class="report-page summary-page"><header class="page-head"><div><h1>${reportTitle}</h1><p>Threshold 적용 시뮬레이션 결과</p></div><div class="meta"><strong>생성 시각</strong> ${reportDateText(generatedAt)}<br><strong>NG 이미지 폴더</strong> ${escapeHtml(ngFolderSummary())}<br><strong>결과 파일</strong><br>${resultFiles.map(escapeHtml).join('<br>')}</div></header>
-      <div class="kpis"><div class="kpi"><span>고유 검사 CELL</span><strong>${numberText(model.uniqueCellCount)}</strong></div><div class="kpi ng"><span>NG CELL</span><strong>${numberText(model.ngCellCount)}</strong></div><div class="kpi"><span>CELL NG율</span><strong>${rateText(model.ngCellRate)}</strong></div><div class="kpi miss"><span>미검 CELL-POSITION</span><strong>${numberText(totalMisses)}</strong></div></div>
-      <h2 class="section-title">Position별 결과</h2><table><thead><tr><th>Position</th><th>검사</th><th>NG</th><th>NG율</th><th>실제 NG</th><th>CSV 매칭</th><th>정상 검출</th><th>미검</th><th>미매칭</th></tr></thead><tbody>${positionRows}<tr><td><strong>합계</strong></td><td>${numberText(totalPositionRows)}</td><td class="ng">${numberText(totalPositionNg)}</td><td class="ng">${rateText(positionNgRate)}</td><td>${numberText(totalActual)}</td><td>${numberText(totalActual-totalUnmatched)}</td><td class="ok">${numberText(totalDetected)}</td><td class="miss">${numberText(totalMisses)}</td><td>${numberText(totalUnmatched)}</td></tr></tbody></table>
-      <div class="chart-grid"><section class="chart-card"><h3>Position별 NG율 비교</h3>${positionBars}</section><section class="chart-card"><h3>미검 구성 비율</h3><div class="donut-wrap"><div class="donut" style="background:conic-gradient(${stops||'#e2e8f0 0 100%'})"><span><b>${numberText(totalMisses)}</b><small>총 미검</small></span></div><div class="legend">${missLegend}</div></div></section></div>
-      <h2 class="section-title">Position별 Tool NG 구성 요약</h2><div class="tool-grid">${toolCards}</div><div class="note"><strong>계산 기준:</strong> Cell NG율 = NG 고유 Cell / 전체 고유 Cell. Position NG율 = Position NG / Position 검사 건수. Tool 비율 = 해당 Tool NG / 해당 Position 최종 NG. 미검 = 결과 CSV와 NG Image에 동일 Cell ID + Position이 존재하고 Threshold 적용 후 최종 OK인 경우입니다. 동일 Cell에서 여러 Tool이 NG일 수 있어 Tool 비율 합계는 100%를 초과할 수 있습니다.</div>${pageFooter(1)}</section>${detailPageHtml}</body></html>`;
+    const tableRows = positions.map(item=>`<tr><td>${escapeHtml(item.position)}</td><td>${numberText(item.total)}</td><td>${numberText(item.ng)}</td><td class="ng">${rateText(item.ngRate)}</td><td>${numberText(item.actualNg)}</td><td>${numberText(item.detected)}</td><td class="miss">${numberText(item.misses)}</td>${positions.some(p=>p.unmatched)?`<td>${numberText(item.unmatched)}</td>`:''}</tr>`).join('');
+    const tools = model.positionToolSummaries.filter(item=>positions.some(p=>p.position===item.position)).map(item=>`<section class="tool-section"><h3>${escapeHtml(item.position)}</h3><table><thead><tr><th>Tool</th><th>Threshold</th><th>NG</th><th>Tool NG / Position NG</th></tr></thead><tbody>${item.tools.map(tool=>`<tr><td>${escapeHtml(tool.tool)}</td><td class="threshold">${Number(tool.threshold ?? getThreshold(item.position,tool.tool)).toFixed(4)}</td><td>${numberText(tool.ng)}</td><td>${rateText(tool.rate)}</td></tr>`).join('')}</tbody></table></section>`).join('');
+    const days = new Map();
+    model.records.forEach(record=>{const date=dashboardDateForRecord(record);if(!date)return;const day=days.get(date)||{date,total:0,ng:0};day.total++;if(record.totalResult==='NG')day.ng++;days.set(date,day);});
+    const daily=[...days.values()].sort((a,b)=>a.date.localeCompare(b.date)).map(day=>({...day,ngRate:day.ng/day.total}));
+    const shown=daily.slice(-10), max=historyNgAxisMax(shown), w=700,h=190,top=25,bottom=35,left=55,plot=630;
+    const x=i=>left+plot/10*((10-shown.length)/2+i+.5),y=r=>top+(h-top-bottom)*(1-r/max);
+    const grid=[0,.25,.5,.75,1].map(r=>`<line x1="${left}" x2="${w-10}" y1="${y(max*r)}" y2="${y(max*r)}" stroke="#d9e2ee"/><text x="${left-8}" y="${y(max*r)+5}" text-anchor="end">${Number((max*r*100).toFixed(2))}%</text>`).join('');
+    const lines=shown.slice(1).map((d,i)=>`<line x1="${x(i)}" x2="${x(i+1)}" y1="${y(shown[i].ngRate)}" y2="${y(d.ngRate)}" stroke="#d9465d" stroke-width="2"/>`).join('');
+    const points=shown.map((d,i)=>`<circle cx="${x(i)}" cy="${y(d.ngRate)}" r="4" fill="#d9465d"/><text x="${x(i)}" y="${Math.max(15,y(d.ngRate)-9)}" text-anchor="middle">${(d.ngRate*100).toFixed(1)}%</text><text x="${x(i)}" y="${h-10}" text-anchor="middle">${escapeHtml(d.date.slice(5))}</text>`).join('');
+    const chart=shown.length?`<section class="chart"><h2>날짜별 NG율 <small>${escapeHtml(shown[0].date)} ~ ${escapeHtml(shown.at(-1).date)}${daily.length>10?' · 최근 10 / '+daily.length+'일':''}</small></h2><svg viewBox="0 0 ${w} ${h}" role="img" aria-label="날짜별 NG율">${grid}${lines}${points}</svg></section>`:'';
+    const missMix=model.misses.length?`<section class="miss-mix"><h2>미검 구성 비율</h2>${positions.filter(p=>p.misses).map(p=>`<div><strong>${escapeHtml(p.position)}</strong><span>${numberText(p.misses)}건 · ${rateText(p.misses/model.misses.length)}</span></div>`).join('')}</section>`:'';
+    const missLists=positions.map(p=>{const ids=unique(model.misses.filter(m=>m.position===p.position).map(m=>m.cellId));return ids.length?`<section class="miss-list"><h2>${escapeHtml(p.position)} · 미검 Cell ID <small>${ids.length}개</small><button class="copy" onclick="navigator.clipboard.writeText(this.parentElement.nextElementSibling.textContent).then(()=>this.textContent='복사 완료').catch(()=>this.textContent='목록을 선택해 복사해 주세요')">Cell ID 복사</button></h2><pre>${escapeHtml(ids.join('\n'))}</pre></section>`:'';}).join('');
+    return `<!doctype html><html lang="ko"><head><meta charset="utf-8"><title>${reportFileName(generatedAt)}</title><style>
+    @page{size:A4 portrait;margin:12mm}*{box-sizing:border-box}body{margin:0;background:#e8edf5;color:#182c45;font:15px/1.5 Arial,"Malgun Gothic",sans-serif;-webkit-print-color-adjust:exact;print-color-adjust:exact}.report{width:186mm;margin:16px auto;padding:0;background:#fff;box-shadow:0 3px 20px #0002}.content{padding:6mm}h1{font-size:27px;margin:0}header{display:flex;align-items:center;justify-content:space-between;border-bottom:2px solid #214d81;padding-bottom:10px}header span{font-size:13px;color:#54657a}h2{font-size:19px;margin:18px 0 8px}h3{font-size:16px;margin:10px 0 6px}small{font-size:13px;font-weight:400;color:#54657a}.kpis{display:grid;grid-template-columns:repeat(4,1fr);gap:10px;margin:16px 0}.kpis div{border:1px solid #c7d5e5;border-radius:8px;padding:10px}.kpis span{display:block;font-size:14px}.kpis b{display:block;font-size:26px;color:#214d81}table{width:100%;border-collapse:collapse;font-size:14px;table-layout:fixed}th,td{border-bottom:1px solid #d6dfeb;padding:8px 6px;text-align:right;overflow-wrap:anywhere}th{background:#edf3fa;font-weight:700}td:first-child,th:first-child{text-align:left}thead{display:table-header-group}tr{break-inside:avoid}.metadata{font-size:13px;margin-top:12px}.metadata th,.metadata td{text-align:left}.metadata th:first-child{width:20%}.ng{color:#bf2643}.miss{color:#ac5707}.threshold{font-weight:bold;color:#214d81}.chart,.tool-section,.miss-mix,.kpis{break-inside:avoid}.chart svg{width:100%;display:block;font-size:14px;fill:#344b65}.miss-mix>div{display:flex;justify-content:space-between;padding:5px 0}.miss-list{break-before:page}.miss-list h2{display:flex;align-items:center;gap:12px}.miss-list pre{font:16px/1.7 Consolas,"Malgun Gothic",monospace;margin:0;white-space:pre-wrap;overflow-wrap:anywhere;user-select:text}.actions{position:sticky;top:0;display:flex;justify-content:flex-end;gap:10px;padding:10px;background:#10213a}button{font:inherit;border:1px solid #6683a8;border-radius:7px;padding:7px 12px;cursor:pointer}.actions button{background:#214d81;color:#fff}.copy{margin-left:auto;font-size:13px;background:#edf3fa;color:#214d81}@media print{body{background:#fff}.actions,.copy{display:none}.report{width:auto;margin:0;box-shadow:none}.content{padding:0}h2,h3{break-after:avoid}}
+    </style></head><body><div class="actions"><button onclick="window.close()">닫기</button><button onclick="window.print()">PDF로 저장</button></div><main class="report"><div class="content"><header><h1>검사 결과</h1><span>${reportDateText(generatedAt)}</span></header><table class="metadata"><thead><tr><th>Position</th><th>결과 파일</th><th>워크스페이스</th></tr></thead><tbody>${metadata}</tbody></table><div class="kpis"><div><span>검사 Cell</span><b>${numberText(model.uniqueCellCount)}</b></div><div><span>NG Cell</span><b>${numberText(model.ngCellCount)}</b></div><div><span>NG율</span><b>${rateText(model.ngCellRate)}</b></div><div><span>미검 Cell·Position</span><b>${numberText(model.misses.length)}</b></div></div><h2>Position별 결과</h2><table><thead><tr><th>Position</th><th>검사</th><th>NG</th><th>NG율</th><th>실제 NG</th><th>검출</th><th>미검</th>${positions.some(p=>p.unmatched)?'<th>미매칭</th>':''}</tr></thead><tbody>${tableRows}</tbody></table>${chart}${missMix}<h2>Tool별 결과 · 적용 Threshold</h2>${tools}${missLists}</div></main></body></html>`;
   }
+
 
   function exportSummaryReport() {
     const model = state.page === 'main' ? state.dashboardModel || state.model : state.model;
@@ -4784,13 +4719,13 @@
     };
   }
 
-  function replaceSimulationAnalysisRecords(records, runId, expectedTotal = null) {
+  function replaceSimulationAnalysisRecords(records, runId, expectedTotal = null, resultCsv = '') {
     const nextInputs = {};
     let accepted = 0;
     (Array.isArray(records) ? records : []).forEach((record) => {
       const row = simulationAnalysisRow(record, accepted + 1);
       if (!row) return;
-      if (!nextInputs[row.position]) nextInputs[row.position] = { position:row.position, simulationRunId:String(runId || ''), fileName:'LIVE Simulation', fileSize:0, rows:[], warnings:[], updatedAt:Date.now() };
+      if (!nextInputs[row.position]) nextInputs[row.position] = { position:row.position, simulationRunId:String(runId || ''), resultCsv:String(resultCsv || ''), fileName:'LIVE Simulation', fileSize:0, rows:[], warnings:[], updatedAt:Date.now() };
       nextInputs[row.position].rows.push(row);
       accepted += 1;
     });
@@ -4889,7 +4824,7 @@
       if (Number.isFinite(processedTotal) && processedTotal >= 0 && processedTotal !== expectedTotal)
         throw new Error(`완료 처리 수와 DB 저장 수가 맞지 않습니다. 처리 ${numberText(processedTotal)}건 / 저장 ${numberText(expectedTotal)}건`);
       if (state.simulationLiveRunId !== runId) return;
-      const accepted = replaceSimulationAnalysisRecords(records, runId, expectedTotal);
+      const accepted = replaceSimulationAnalysisRecords(records, runId, expectedTotal, simulationState?.resultCsv || '');
       state.simulationResultSyncRetryAt = 0;
       state.simulationResultSyncFailureNotifiedRunId = '';
       appendSimulationLog({ level:'INFO', message:`대시보드 완료 결과 재동기화 · ${numberText(accepted)}건` });
@@ -7114,6 +7049,17 @@
       },
       snapshot() { return { page: state.page, menuOpen: state.menuOpen, modalOpen: $('#vq43-modal')?.classList.contains('open'), chartModalOpen: $('#vq43-chart-modal')?.classList.contains('open'), openDropdowns: $$('.vq43-dropdown.open').length, analysisScope: state.analysisScope, analysisPointCount: state.analysisPoints.length }; },
       getThreshold(position, tool) { return getThreshold(position, tool); },
+      seedReportMetadata() {
+        this.seedReport();
+        Object.values(state.resultInputs).forEach(input=>{
+          input.fileName='LIVE Simulation'; input.simulationRunId='report-run'; input.resultCsv='C:\\Output\\Inspection_20260918.csv';
+          input.rows.forEach(row=>row.workspaceName='Quality_Workspace.vrws');
+        });
+        state.ngImages.forEach(image=>image.captureTimestamp=state.resultInputs[image.position].rows.find(row=>row.cellId===image.cellId).captureTimestamp);
+        state.simulationProgress={simulationRunId:'different-run',resultCsv:'C:\\Output\\Wrong.csv'};
+        state.thresholds[thresholdKey(positionNames()[0],'Crack')]=0.65;
+        rebuildModel();
+      },
       buildReportHtml() { return buildSummaryReportHtml(state.model, new Date('2026-07-31T08:37:00')); }
     };
   }

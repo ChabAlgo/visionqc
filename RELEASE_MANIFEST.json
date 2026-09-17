@@ -1,19 +1,19 @@
 {
-  "releaseTag": "visionqc-v4.7.45-agent-v1.3.32",
-  "webVersion": "4.7.45",
-  "agentVersion": "1.3.32",
-  "minimumAgentVersion": "1.3.32",
+  "releaseTag": "visionqc-v4.7.46-agent-v1.3.33",
+  "webVersion": "4.7.46",
+  "agentVersion": "1.3.33",
+  "minimumAgentVersion": "1.3.33",
   "compatibility": {
-    "web": "4.7.45",
-    "agent": "1.3.32"
+    "web": "4.7.46",
+    "agent": "1.3.33"
   },
   "artifacts": {
-    "agentInstaller": "downloads/VisionQC_Agent_Installer_v1.3.32.exe",
-    "offlinePackage": "downloads/VisionQC_Offline_v4.7.45.zip",
+    "agentInstaller": "downloads/VisionQC_Agent_Installer_v1.3.33.exe",
+    "offlinePackage": "downloads/VisionQC_Offline_v4.7.46.zip",
     "sha256": {
-      "agentInstaller": "02FB1529604A9E5100F2A72898670CA496BA0F70B56D54BCB793B118EBECAC07",
-      "offlinePackage": "08B13B8E66ADD393279BDFBA4DB6FFE1501F8446289302796D227D81F64328DE"
+      "agentInstaller": "736483E3FA024359560FADB0FCF78A4D3F84A7CDCEA7DD67CD07FD3875B37095",
+      "offlinePackage": "0C834CD6A47589891C243CD96FF614861636FEA055BAEF536F1CD9BCAD6C2707"
     }
   },
-  "notes": "날짜별 NG율 끝 구간 10개 채움 및 그래프 호버 화살표로 5개 날짜 이동."
+  "notes": "요약 리포트 실제 로그/워크스페이스, Threshold, 날짜 그래프, 큰 글씨 및 순번 없는 미검 Cell ID."
 }

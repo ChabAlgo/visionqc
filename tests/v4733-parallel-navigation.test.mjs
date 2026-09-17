@@ -62,7 +62,7 @@ test('completed Simulation reconciles dropped SSE rows from the exact SQLite run
   assert.match(store, /WHERE run_id=@run_id AND image_id>@after_image_id/);
   assert.doesNotMatch(store.match(/internal SimulationResultPage ReadSimulationResultPage[\s\S]*?return response;\s*\n        }/)?.[0] || '', /BuildDeduplicatedHistoryCte/);
   assert.match(web, /function reconcileSimulationResults/);
-  assert.match(web, /replaceSimulationAnalysisRecords\(records, runId, expectedTotal\)/);
+  assert.match(web, /replaceSimulationAnalysisRecords\(records, runId, expectedTotal, simulationState\?\.resultCsv/);
   assert.match(web, /expectedTotal !== records\.length/);
   assert.match(web, /processedTotal !== expectedTotal/);
   assert.match(web, /accepted !== Number\(expectedTotal\)/);

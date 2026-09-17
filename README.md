@@ -1,12 +1,12 @@
-# VisionQC v4.7.45 / Local Agent v1.3.32
+# VisionQC v4.7.46 / Local Agent v1.3.33
 
 ## 현재 릴리스 안내
 
-- 설치 파일: [VisionQC Agent 1.3.32](downloads/VisionQC_Agent_Installer_v1.3.32.exe)
-- 오프라인 패키지: [VisionQC Offline 4.7.45](downloads/VisionQC_Offline_v4.7.45.zip)
+- 설치 파일: [VisionQC Agent 1.3.33](downloads/VisionQC_Agent_Installer_v1.3.33.exe)
+- 오프라인 패키지: [VisionQC Offline 4.7.46](downloads/VisionQC_Offline_v4.7.46.zip)
 - SQLite 이력, 대용량 CSV 직접 적재, 파일명 Position 기반 AI Green 검사, 원본/Heatmap Viewer를 제공합니다.
-- 최신 변경·검증: [v4.7.45 릴리스 노트](RELEASE_NOTES_v4.7.45_KR.md). 기존 설계는 `ARCHITECTURE_V4.7.0_KR.md` 참고.
-- 소스 폴더 `LocalAgent_v0.2.12`는 유지된 경로명입니다. 실제 배포 Agent 버전은 1.3.32이며 `RELEASE_MANIFEST.json`과 EXE 파일 버전으로 확인합니다.
+- 최신 변경·검증: [v4.7.46 릴리스 노트](RELEASE_NOTES_v4.7.46_KR.md). 기존 설계는 `ARCHITECTURE_V4.7.0_KR.md` 참고.
+- 소스 폴더 `LocalAgent_v0.2.12`는 유지된 경로명입니다. 실제 배포 Agent 버전은 1.3.33이며 `RELEASE_MANIFEST.json`과 EXE 파일 버전으로 확인합니다.
 
 - 이번 배포: 같은 날짜의 동일 Cell ID·Position만 중복으로 묶고, 날짜가 다른 검사는 전체보기에서 별도 건으로 합산합니다.
 - 전체보기·날짜 선택·실시간 증분·검사 이력 DB·CSV 내보내기의 날짜 식별 기준을 맞췄습니다.
