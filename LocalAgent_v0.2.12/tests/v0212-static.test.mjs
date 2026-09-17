@@ -15,11 +15,11 @@ const coreServer = read('CoreWorker/CoreAgentServer.cs');
 const coreProject = read('CoreWorker/VisionQC.CoreWorker.csproj');
 const workerBuild = read('BUILD_VPDL_WORKERS.ps1');
 
-test('Agent v1.3.28 version is consistent', () => {
-  assert.match(program, /AgentVersion = "1\.3\.28"/);
-  assert.match(read('CoreWorker/Program.cs'), /AgentVersion = "1\.3\.28"/);
-  assert.match(read('Properties/AssemblyInfo.cs'), /AssemblyVersion\("1\.3\.28\.0"\)/);
-  assert.match(read('BUILD_RELEASE_x64.cmd'), /v1\.3\.28/);
+test('Agent v1.3.29 version is consistent', () => {
+  assert.match(program, /AgentVersion = "1\.3\.29"/);
+  assert.match(read('CoreWorker/Program.cs'), /AgentVersion = "1\.3\.29"/);
+  assert.match(read('Properties/AssemblyInfo.cs'), /AssemblyVersion\("1\.3\.29\.0"\)/);
+  assert.match(read('BUILD_RELEASE_x64.cmd'), /v1\.3\.29/);
 });
 
 test('HTTP server delegates picker lifecycle to the isolated picker service', () => {
@@ -248,6 +248,7 @@ test('AI Suggest reuses the loaded Runtime and never writes a single inspection 
   assert.match(read('AgentDtos.cs'), /bool heatmapImageSave/);
 });
 
- test('silent installer starts Agent without taking browser focus', () => {
-  assert.match(read('OfflineInstaller/Program.cs'), /Arguments = silent \? "" : "--offline"/);
+ test('interactive and silent installer start Agent without opening another browser', () => {
+  assert.match(read('OfflineInstaller/Program.cs'), /Process.Start\(new ProcessStartInfo \{ FileName = agentPath, Arguments = ""/);
+  assert.match(read('OfflineInstaller/Program.cs'), /shortcut.Arguments = "--offline"/);
 });

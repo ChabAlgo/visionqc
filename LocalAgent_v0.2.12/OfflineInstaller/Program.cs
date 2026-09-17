@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Diagnostics;
 using System.IO;
 using System.IO.Compression;
@@ -16,7 +16,7 @@ namespace VisionQC.AgentInstaller
     internal static class Program
     {
         private const string AgentExe = "VisionQC.LocalAgent.exe";
-        private const string ProductVersion = "1.3.28";
+        private const string ProductVersion = "1.3.29";
         private static readonly PayloadFile[] Payload =
         {
             new PayloadFile("VisionQC.AgentInstaller.Payload.Launcher.VisionQC.LocalAgent.exe", AgentExe),
@@ -55,12 +55,12 @@ namespace VisionQC.AgentInstaller
                 string agentPath = Path.Combine(installDir, AgentExe);
                 RunAndWait(agentPath, "--register", 10000);
                 CreateOfflineShortcut(installDir, agentPath);
-                Process.Start(new ProcessStartInfo { FileName = agentPath, Arguments = silent ? "" : "--offline", WorkingDirectory = installDir, UseShellExecute = true });
+                Process.Start(new ProcessStartInfo { FileName = agentPath, Arguments = "", WorkingDirectory = installDir, UseShellExecute = true });
 
                 if (!silent)
                 {
                     string runtimeWarning = HasVpdlRuntime() ? "" : "\r\n\r\n참고: Cognex VPDL Runtime은 라이선스 제품이므로 설치 패키지에 포함되지 않습니다. 이 PC에 VPDL이 설치되어 있어야 시뮬레이션을 실행할 수 있습니다.";
-                    MessageBox.Show("VisionQC Agent v" + ProductVersion + " 설치가 완료되었습니다.\r\n프로토콜 등록과 오프라인 UI 실행도 자동으로 처리했습니다.\r\n\r\n설치 위치: " + installDir + runtimeWarning,
+                    MessageBox.Show("VisionQC Agent v" + ProductVersion + " 설치가 완료되었습니다.\r\n프로토콜 등록과 Agent 시작을 완료했습니다. 기존 웹 화면을 새로고침하세요. 오프라인 화면은 바탕화면 바로가기로 열 수 있습니다.\r\n\r\n설치 위치: " + installDir + runtimeWarning,
                         "VisionQC 설치 완료", MessageBoxButtons.OK, MessageBoxIcon.Information);
                 }
                 return 0;

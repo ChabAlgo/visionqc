@@ -2009,9 +2009,9 @@ namespace VisionQC.LocalAgent
                 if (runId != _lastSimulationRunId || string.IsNullOrEmpty(runId) || _simulationHistorySession != null)
                     return new { ok = false, error = "완료된 현재 Simulation만 저장할 수 있습니다." };
                 if (decision != "save" && decision != "discard") return new { ok = false, error = "저장 선택을 확인하세요." };
-                if (_simulationHistoryDecision == "saved" || _simulationHistoryDecision == "declined")
+                if (_simulationHistoryDecision == "saved" || (_simulationHistoryDecision == "declined" && decision == "discard"))
                     return new { ok = true, historyDecision = _simulationHistoryDecision };
-                if (_simulationHistoryDecision != "pending") return new { ok = false, error = "저장 가능한 완료 결과가 없습니다." };
+                if (_simulationHistoryDecision != "pending" && _simulationHistoryDecision != "declined") return new { ok = false, error = "저장 가능한 완료 결과가 없습니다." };
                 if (decision == "save") _historyStore.CopyCompletedRunFrom(_simulationStore.DatabasePath, runId);
                 lock (_sync) _simulationHistoryDecision = decision == "save" ? "saved" : "declined";
                 return new { ok = true, historyDecision = _simulationHistoryDecision };

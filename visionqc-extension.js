@@ -1,7 +1,7 @@
 (() => {
   'use strict';
 
-  const VERSION = '4.7.41';
+  const VERSION = '4.7.42';
   const DEFAULT_POSITION_DEFS = [
     { key:'CA_TOP', name:'CA(TOP)' },
     { key:'AN_TOP', name:'AN(TOP)' },
@@ -27,9 +27,9 @@
   const NG_POSITION_PREFIX = 'ng-position:';
   const IMG_RE = /\.(png|jpe?g|bmp|gif|webp|tif?f)$/i;
   const LOCAL_AGENT_URL = 'http://127.0.0.1:17891';
-  const EXPECTED_AGENT_VERSION = '1.3.28';
-  const AGENT_INSTALLER_URL = './downloads/VisionQC_Agent_Installer_v1.3.28.exe';
-  const OFFLINE_PACKAGE_URL = './downloads/VisionQC_Offline_v4.7.41.zip';
+  const EXPECTED_AGENT_VERSION = '1.3.29';
+  const AGENT_INSTALLER_URL = './downloads/VisionQC_Agent_Installer_v1.3.29.exe';
+  const OFFLINE_PACKAGE_URL = './downloads/VisionQC_Offline_v4.7.42.zip';
   // SQLite에는 사용자가 명시적으로 남기려는 두 종류의 결과만 표시한다.
   // 이전 버전의 단발 검사(single-inspection) 이력은 보존하되 화면 집계에서는 제외한다.
   const PERSISTED_HISTORY_SOURCE_TYPES = ['simulation', 'csv-import', 'csv-file-stream'];
@@ -796,6 +796,7 @@
     } else if (action === 'open-miss') {
       openMissModal(control.closest('[data-vq-key]')?.dataset.vqKey);
     } else if (action === 'download-misses') downloadMissCsv(state.selectedMissPosition);
+    else if (action === 'save-dashboard-history') saveDashboardHistory();
     else if (action === 'download-all-results') downloadAllResultsCsv();
     else if (action === 'export-summary-report') exportSummaryReport();
     else if (action === 'download-score-filter') downloadScoreFilterCsv();
@@ -1585,6 +1586,37 @@
     renderSettings();
   }
 
+  function dashboardHistoryContext() {
+    const inputs = Object.values(state.resultInputs || {}).filter(input=>input?.rows?.length);
+    const runId = inputs[0]?.simulationRunId || '';
+    const exactRun = !!runId && inputs.every(input=>input.simulationRunId === runId) && state.simulationProgress?.simulationRunId === runId;
+    const savedInputs = state.historySavedInputs || [];
+    const saved = (exactRun && state.simulationProgress.historyDecision === 'saved') || (inputs.length > 0 && savedInputs.length === inputs.length && inputs.every(input=>savedInputs.some(s=>s.input === input && s.rows === input.rows && s.count === input.rows.length)));
+    const incomplete = inputs.some(input=>input.fileName === 'LIVE Simulation' && !input.simulationRunId);
+    return {inputs,runId:exactRun ? runId : '',saved,disabled:!inputs.length || state.simulationProgress?.running || state.historyImporting || saved || incomplete};
+  }
+
+  function dashboardHistorySaveButton() {
+    const context = dashboardHistoryContext();
+    return `<button class="vq43-btn vq43-btn-green" data-vq-action="save-dashboard-history" ${context.disabled?'disabled':''}>${state.historyImporting?'DB 저장 중…':context.saved?'DB 저장 완료':'현재 결과 DB 저장'}</button>`;
+  }
+
+  async function saveDashboardHistory() {
+    const context = dashboardHistoryContext();
+    if (context.disabled) return;
+    if (!context.runId) return saveCsvAnalysisHistory();
+    state.historyImporting = true; renderCurrentPage();
+    try {
+      const response = await agentFetch('/api/simulation/history-decision',{method:'POST',timeout:120000,body:{runId:context.runId,decision:'save'}});
+      if (!response?.ok || response.historyDecision !== 'saved') throw new Error(response?.error || 'Agent 업데이트 후 다시 저장하세요.');
+      if (state.simulationProgress?.simulationRunId === context.runId) state.simulationProgress.historyDecision = 'saved';
+      state.historyLoaded = false;
+      offerSimulationHistorySave(state.simulationProgress);
+      showToast('현재 시뮬레이션 결과를 검사 이력 DB에 저장했습니다.');
+    } catch (error) { showToast(`DB 저장 실패: ${error.message}`,true); }
+    finally { state.historyImporting = false; renderCurrentPage(); }
+  }
+
   async function saveCsvAnalysisHistory() {
     if (state.historyImporting) return;
     const inputs = Object.values(state.resultInputs || {}).filter((input) => Array.isArray(input?.rows) && input.rows.length);
@@ -1603,7 +1635,7 @@
     let saved = 0;
     let started = false;
     state.historyImporting = true;
-    renderSettings();
+    renderCurrentPage();
     try {
       let batch = [];
       const send = async (records, complete = false) => {
@@ -1623,13 +1655,14 @@
       }
       await send(batch, true);
       state.historyLoaded = false;
+      state.historySavedInputs = inputs.map(input=>({input,rows:input.rows,count:input.rows.length}));
       showToast(`CSV 분석 이력 ${numberText(saved)}행을 SQLite에 저장했습니다. 원본 이미지는 복사하지 않고 경로만 기록합니다.`);
     } catch (error) {
       console.error(error);
       showToast(`SQLite 이력 저장 실패: ${error.message || error}`, true);
     } finally {
       state.historyImporting = false;
-      renderSettings();
+      renderCurrentPage();
     }
   }
 
@@ -2387,7 +2420,7 @@
     $('#vq43-page').innerHTML = `
       <div class="vq43-content">
         ${persistedHistory}
-        <div class="vq43-topline"><div><div class="vq43-eyebrow">Main Dashboard</div><h1 class="vq43-title">시뮬레이션 결과 전체 View</h1><p class="vq43-subtitle">Tool별 Threshold를 적용해 Position·Cell NG율과 실제 NG 기준 미검을 다시 계산합니다.</p></div><div class="vq43-top-actions">${packageDownloadActionsHtml()}<button class="vq43-btn vq43-btn-blue" data-vq-action="export-summary-report">요약 PDF 리포트</button><button class="vq43-btn vq43-btn-green" data-vq-action="download-all-results">전체 결과 CSV 저장</button><button class="vq43-btn" data-vq-action="open-settings">Input 변경</button></div></div>
+        <div class="vq43-topline"><div><div class="vq43-eyebrow">Main Dashboard</div><h1 class="vq43-title">시뮬레이션 결과 전체 View</h1><p class="vq43-subtitle">Tool별 Threshold를 적용해 Position·Cell NG율과 실제 NG 기준 미검을 다시 계산합니다.</p></div><div class="vq43-top-actions">${packageDownloadActionsHtml()}${dashboardHistorySaveButton()}<button class="vq43-btn vq43-btn-blue" data-vq-action="export-summary-report">요약 PDF 리포트</button><button class="vq43-btn vq43-btn-green" data-vq-action="download-all-results">전체 결과 CSV 저장</button><button class="vq43-btn" data-vq-action="open-settings">Input 변경</button></div></div>
         <section class="vq43-section"><div class="vq43-section-title"><span class="vq43-step">1</span><div><h3>Cell별 NG</h3><p>입력 Position 중 한 곳이라도 Threshold 적용 후 NG인 Cell</p></div></div><div class="vq43-kpi-grid">
           ${kpi('검사 Cell', numberText(model.uniqueCellCount), `Position ${inputCount}개 입력`)}
           ${kpi('NG Cell', numberText(model.ngCellCount), '한 Position 이상 NG', 'red')}
@@ -4102,6 +4135,7 @@
         if (state.simulationProgress?.simulationRunId === runId) state.simulationProgress.historyDecision = response.historyDecision;
         state.historyLoaded = false;
         panel.remove();
+        if (state.page === 'main') { renderDashboard(); bindPageControls(); }
         showToast(response.historyDecision === 'saved' ? '검사 이력 DB에 저장했습니다.' : '검사 이력 DB에 저장하지 않았습니다. CSV는 유지됩니다.');
       } catch (error) { panel.querySelector('small').textContent = error.message; panel.querySelectorAll('button').forEach(b=>b.disabled=false); }
     });
@@ -4734,7 +4768,7 @@
     (Array.isArray(records) ? records : []).forEach((record) => {
       const row = simulationAnalysisRow(record, accepted + 1);
       if (!row) return;
-      if (!nextInputs[row.position]) nextInputs[row.position] = { position:row.position, fileName:'LIVE Simulation', fileSize:0, rows:[], warnings:[], updatedAt:Date.now() };
+      if (!nextInputs[row.position]) nextInputs[row.position] = { position:row.position, simulationRunId:String(runId || ''), fileName:'LIVE Simulation', fileSize:0, rows:[], warnings:[], updatedAt:Date.now() };
       nextInputs[row.position].rows.push(row);
       accepted += 1;
     });
@@ -6643,6 +6677,8 @@
     if (!new URLSearchParams(location.search).has('vqDebug') && !window.__VQ_DEBUG_REQUESTED__) return;
     window.__VISIONQC_DEBUG__ = {
       classificationCellSheets, buildClassificationWorkbook, formatHistoryTimestamp, offerSimulationHistorySave,
+      setPage,
+      seedDeclinedDashboard() { this.seedDashboard(); Object.values(state.resultInputs).forEach(input=>input.simulationRunId="debug-declined"); state.simulationProgress={running:false,simulationRunId:"debug-declined",historyDecision:"declined"}; renderDashboard(); bindPageControls(); },
 
       reconcileLiveRowsRegression() {
         state.simulationLiveRunId = 'debug-run';

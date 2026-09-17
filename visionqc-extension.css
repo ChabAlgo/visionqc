@@ -831,7 +831,7 @@ body.vq43-theme-light #vq43-shell .vq43-workspace-tool.red{color:#be123c!importa
 .vq43-history-ten-slots .vq43-history-line line.vq43-history-segment{stroke:#f97367;stroke-width:2}
 
 /* Completion choice is independent of page navigation and dashboard rendering. */
-#vq43-history-save-prompt { position:fixed; bottom:70px; right:24px; z-index:12000; max-width:min(680px,calc(100vw - 48px)); padding:20px; display:flex; flex-wrap:wrap; gap:12px; border:1px solid #3b82f6; border-radius:14px; background:var(--vq-panel,#0d192a); color:var(--vq-text,#e6edf6); box-shadow:0 12px 40px #0006; }
+#vq43-history-save-prompt { position:fixed; bottom:70px; right:24px; z-index:2147483647!important; pointer-events:auto!important; max-width:min(680px,calc(100vw - 48px)); padding:20px; display:flex; flex-wrap:wrap; gap:12px; border:1px solid #3b82f6; border-radius:14px; background:var(--vq-panel,#0d192a); color:var(--vq-text,#e6edf6); box-shadow:0 12px 40px #0006; }
 #vq43-history-save-prompt div {flex:1 1 100%;} #vq43-history-save-prompt p {margin:8px 0 0;font-size:14px;} #vq43-history-save-prompt small {flex:1 1 100%;color:#f87171;}
 .vq43-actions-grid #vq43-export-label-cells { grid-column:auto; white-space:nowrap; }
 
