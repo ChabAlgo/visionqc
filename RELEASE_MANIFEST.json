@@ -1,19 +1,19 @@
 {
-  "releaseTag": "visionqc-v4.7.38-agent-v1.3.25",
-  "webVersion": "4.7.38",
-  "agentVersion": "1.3.25",
-  "minimumAgentVersion": "1.3.25",
+  "releaseTag": "visionqc-v4.7.39-agent-v1.3.26",
+  "webVersion": "4.7.39",
+  "agentVersion": "1.3.26",
+  "minimumAgentVersion": "1.3.26",
   "compatibility": {
-    "web": "4.7.38",
-    "agent": "1.3.25"
+    "web": "4.7.39",
+    "agent": "1.3.26"
   },
   "artifacts": {
-    "agentInstaller": "downloads/VisionQC_Agent_Installer_v1.3.25.exe",
-    "offlinePackage": "downloads/VisionQC_Offline_v4.7.38.zip",
+    "agentInstaller": "downloads/VisionQC_Agent_Installer_v1.3.26.exe",
+    "offlinePackage": "downloads/VisionQC_Offline_v4.7.39.zip",
     "sha256": {
-      "agentInstaller": "5909848EAEE40AC2B3E1F68188677C8DCE1A6219E4E5A1FAB2A83BCA90CBCB9E",
-      "offlinePackage": "5CA73A8486D7176BC772F112D9ADF8ACAE24A158ED2E941ACB8ABD8D831C5BF8"
+      "agentInstaller": "55BC5E0A512C1C08AAD7193602C5FC8956173749E7FF64E3552EA603F424E1C1",
+      "offlinePackage": "BF9DFF5DC0566E54C76C3187CE37AD4B81418B08C84EBB93D814DEBA3C5CE9DB"
     }
   },
-  "notes": "전체보기와 날짜 선택이 날짜별 Cell ID·Position 기준으로 동일한 검사·NG 합계를 사용합니다."
+  "notes": "날짜 그래프 10개 고정 간격·큰 글자·좌우 스크롤, 실제 미검 Cell 기준 Tool Score."
 }

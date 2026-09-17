@@ -7,6 +7,18 @@ import test from 'node:test';
 const root = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const js = readFileSync(resolve(root, 'visionqc-extension.js'), 'utf8');
 
+test('missed-cell Score scope uses final Cell result and retains threshold-filtered raw NG scores', () => {
+  const make=(key,totalResult,result,score)=>({key,cellId:key,position:'AN(TOP)',totalResult,sourceRows:[{tools:{Crack:{result,score}}}]});
+  const records=[make('detected-by-other-tool','NG','OK',.8),make('miss','OK','OK',.9),make('threshold-miss','OK','NG',.6),make('no-actual-image','OK','OK',.7),make('unknown','UNKNOWN','OK',.8)];
+  const state={model:{records,actualMap:new Map(records.filter(r=>r.key!=='no-actual-image').map(r=>[r.key,[]]))}};
+  const source=js.slice(js.indexOf('function scorePoints('),js.indexOf('function analysisScorePointOptions('));
+  const scorePoints=new Function('state','recordOtherToolNgScores',source+';return scorePoints;')(state,()=>[]);
+  const points=scorePoints('Crack','ACTUAL_NG_TOOL_OK','ALL');
+  assert.deepEqual(points.map(p=>[p.cellId,p.score,p.result]),[['miss',.9,'OK'],['threshold-miss',.6,'NG']]);
+  assert.equal(scorePoints('Crack','ACTUAL_NG_TOOL_OK','CA(TOP)').length,0);
+  assert.equal(scorePoints('Crack','TOOL_OK','ALL').length,4);
+});
+
 test('CSV FullPath is retained and used before manually selected Actual NG images', () => {
   assert.match(js, /function csvFullPathValue/);
   assert.match(js, /function findFullPathColumn/);

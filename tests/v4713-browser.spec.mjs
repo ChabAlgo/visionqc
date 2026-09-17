@@ -63,14 +63,13 @@ test('dashboard chart, Position cards, misses and Threshold inputs fit the reque
   await page.evaluate(() => window.__VISIONQC_DEBUG__.seedReport());
   const result = await page.evaluate(() => {
     const svg = document.querySelector('.vq43-main-history-dashboard .vq43-history-line');
-    const polyline = svg?.querySelector('polyline');
+    const dots = svg?.querySelectorAll('circle');
     const positionGrid = document.querySelector('.vq43-main-position .vq43-position-grid');
     const threshold = document.querySelector('.vq43-main-tools .vq43-threshold-input');
     const labels = [...document.querySelectorAll('.vq43-main-position .vq43-mini-grid span')].slice(0,4).map((node) => node.textContent);
-    const svgRect = svg?.getBoundingClientRect();
-    const polyRect = polyline?.getBoundingClientRect();
     return {
-      chartFill:svgRect && polyRect ? polyRect.width / svgRect.width : 0,
+      points:dots?.length || 0,
+      segments:svg?.querySelectorAll('.vq43-history-segment').length || 0,
       positionColumns:getComputedStyle(positionGrid).gridTemplateColumns.split(' ').length,
       labels,
       missesNested:document.querySelector('.vq43-main-misses')?.parentElement?.classList.contains('vq43-main-column-left'),
@@ -78,7 +77,8 @@ test('dashboard chart, Position cards, misses and Threshold inputs fit the reque
       thresholdFont:parseFloat(getComputedStyle(threshold).fontSize)
     };
   });
-  expect(result.chartFill).toBeGreaterThan(.9);
+  expect(result.points).toBeGreaterThan(0);
+  expect(result.segments).toBe(result.points-1);
   expect(result.positionColumns).toBe(2);
   expect(result.labels).toEqual(['실제 NG','CSV 매칭','정상 검출','미검']);
   expect(result.missesNested).toBe(true);
@@ -116,7 +116,7 @@ test('analysis uses the requested left-right order and readable compact light te
 });
 
 test('running Simulation progress remains fixed while moving between menus', async ({ page }) => {
-  await page.route('**/api/status', route => route.fulfill({ status:200, contentType:'application/json', body:JSON.stringify({ ok:true, agentVersion:'1.3.25', vpdlAvailable:true }) }));
+  await page.route('**/api/status', route => route.fulfill({ status:200, contentType:'application/json', body:JSON.stringify({ ok:true, agentVersion:'1.3.26', vpdlAvailable:true }) }));
   await open(page);
   await page.evaluate(() => window.__VISIONQC_DEBUG__.seedRunningProgress());
   const progress = page.locator('#vq43-global-sim-progress');

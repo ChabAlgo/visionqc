@@ -21,11 +21,10 @@ test('classification restores focus only after the current image has loaded', ()
   assert.match(base, /VQ42_loadedImageId\.current=i\.id,P\(\{width:ge\.currentTarget\.naturalWidth/);
 });
 
-test('daily chart derives its viewBox width from the rendered dashboard geometry', () => {
+test('daily chart keeps unscaled text with ten fixed slots', () => {
   const js = read('visionqc-extension.js');
-  assert.match(js, /renderedHeight = mainCompact \? 136 : 220/);
-  assert.match(js, /availableWidth \* height \/ renderedHeight/);
-  assert.match(js, /const left = 28, right = 6/);
+  assert.match(js, /const slots = Math\.max\(10, rows\.length\)/);
+  assert.match(js, /history-ten-slots/);
 });
 
 test('main dashboard uses two Position columns and nests misses below Position NG', () => {

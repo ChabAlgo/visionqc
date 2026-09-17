@@ -16,12 +16,12 @@ test('daily NG points keep margins at both ends of the plot', async ({ page }) =
     window.__VISIONQC_DEBUG__.seedRows(rows);
   });
   const geometry = await page.locator('.vq43-main-history-dashboard .vq43-history-line').evaluate((svg) => {
-    const circles = [...svg.querySelectorAll('.vq43-history-point circle')].map(node => Number(node.getAttribute('cx')));
-    const viewWidth = Number(svg.viewBox.baseVal.width);
+    const circles = [...svg.querySelectorAll('.vq43-history-point circle')].map(node => parseFloat(node.getAttribute('cx')));
+    const viewWidth = 100;
     return { first:circles[0], last:circles.at(-1), viewWidth };
   });
-  expect(geometry.first).toBeGreaterThan(28);
-  expect(geometry.last).toBeLessThan(geometry.viewWidth - 6);
+  expect(geometry.first).toBeGreaterThan(5);
+  expect(geometry.last).toBeLessThan(geometry.viewWidth - 1);
 });
 
 test('Runtime-discovered Edge is added once and sent to the Agent', async ({ page }) => {

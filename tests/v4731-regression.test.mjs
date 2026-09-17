@@ -14,7 +14,7 @@ test('analysis viewer stores the same ascending Score order rendered by the grap
 
 test('daily NG chart reserves visual insets while retaining full-width hit targets', () => {
   const chart = js.slice(js.indexOf('function historyDateBars'), js.indexOf('function historyRecordRowsLegacy'));
-  assert.match(chart, /const pointInset = rows\.length <= 1/);
+  assert.match(chart, /const slots = Math\.max\(10, rows\.length\)/);
   assert.match(chart, /const hitLeft =/);
   assert.match(chart, /const hitRight =/);
 });
