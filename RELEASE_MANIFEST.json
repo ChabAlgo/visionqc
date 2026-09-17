@@ -1,19 +1,19 @@
 {
-  "releaseTag": "visionqc-v4.7.42-agent-v1.3.29",
-  "webVersion": "4.7.42",
-  "agentVersion": "1.3.29",
-  "minimumAgentVersion": "1.3.29",
+  "releaseTag": "visionqc-v4.7.43-agent-v1.3.30",
+  "webVersion": "4.7.43",
+  "agentVersion": "1.3.30",
+  "minimumAgentVersion": "1.3.30",
   "compatibility": {
-    "web": "4.7.42",
-    "agent": "1.3.29"
+    "web": "4.7.43",
+    "agent": "1.3.30"
   },
   "artifacts": {
-    "agentInstaller": "downloads/VisionQC_Agent_Installer_v1.3.29.exe",
-    "offlinePackage": "downloads/VisionQC_Offline_v4.7.42.zip",
+    "agentInstaller": "downloads/VisionQC_Agent_Installer_v1.3.30.exe",
+    "offlinePackage": "downloads/VisionQC_Offline_v4.7.43.zip",
     "sha256": {
-      "agentInstaller": "39F8BCB3FC27F438BFD235C1F0B9A5B46AC003D72C64600CA5E0B0D15D2C86AC",
-      "offlinePackage": "725C78E6A92095C67A089E4F37DBDE9E63F8C0378428B463CBB37A75D11FE0A7"
+      "agentInstaller": "2679532EA88DF42CB82EC7DE188B8C16DEF264D7021D1900673572885AE7BFB1",
+      "offlinePackage": "20EC7127EDD0EDDFBB244D32A5783FC0980AA3CA41E1AF5B45E656B00F3DFCE1"
     }
   },
-  "notes": "설치 후 로컬 창 자동 실행 제거, 전체 화면 DB 저장 팝업, No 이후 대시보드 DB 저장."
+  "notes": "이미지 분류 라벨 해제 단축키 사용자 설정, 중복 키 차단 및 오프라인 UI 반영."
 }
