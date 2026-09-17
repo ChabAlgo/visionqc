@@ -1,19 +1,19 @@
 {
-  "releaseTag": "visionqc-v4.7.44-agent-v1.3.31",
-  "webVersion": "4.7.44",
-  "agentVersion": "1.3.31",
-  "minimumAgentVersion": "1.3.31",
+  "releaseTag": "visionqc-v4.7.45-agent-v1.3.32",
+  "webVersion": "4.7.45",
+  "agentVersion": "1.3.32",
+  "minimumAgentVersion": "1.3.32",
   "compatibility": {
-    "web": "4.7.44",
-    "agent": "1.3.31"
+    "web": "4.7.45",
+    "agent": "1.3.32"
   },
   "artifacts": {
-    "agentInstaller": "downloads/VisionQC_Agent_Installer_v1.3.31.exe",
-    "offlinePackage": "downloads/VisionQC_Offline_v4.7.44.zip",
+    "agentInstaller": "downloads/VisionQC_Agent_Installer_v1.3.32.exe",
+    "offlinePackage": "downloads/VisionQC_Offline_v4.7.45.zip",
     "sha256": {
-      "agentInstaller": "0F9FD01EF4AF6992F0330B979DFFE2516D98AFCC95D40F96B2A28381DD89EE3B",
-      "offlinePackage": "A90E76400F69A780A7BCDFA4D8B3F9C8C8BD5D19E5123A500ED340A0355FAF8C"
+      "agentInstaller": "02FB1529604A9E5100F2A72898670CA496BA0F70B56D54BCB793B118EBECAC07",
+      "offlinePackage": "08B13B8E66ADD393279BDFBA4DB6FFE1501F8446289302796D227D81F64328DE"
     }
   },
-  "notes": "Class Settings 여백 정리, 날짜별 NG율 고정 축 및 날짜 선택/10개 단위 탐색."
+  "notes": "날짜별 NG율 끝 구간 10개 채움 및 그래프 호버 화살표로 5개 날짜 이동."
 }

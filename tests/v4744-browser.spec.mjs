@@ -17,7 +17,7 @@ test('300 dates navigate in ten-date windows without filtering counts or moving 
  const after=await section.locator('.vq43-history-axis').boundingBox();expect(after.x).toBe(axis.x);expect(after.width).toBe(axis.width);
  await points.first().click();expect((await page.evaluate(()=>window.__VISIONQC_DEBUG__.dateSnapshot())).selected).toBe(dates[10]);await expect(input).toHaveValue(dates[10]);
  await section.getByRole('button',{name:'전체보기',exact:true}).click();
- await input.fill(dates[299]);await input.dispatchEvent('change');await expect(points).toHaveCount(1);await expect(section.locator('.vq43-history-segment')).toHaveCount(0);
+ await input.fill(dates[299]);await input.dispatchEvent('change');await expect(points).toHaveCount(10);await expect(input).toHaveValue(dates[290]);await expect(section.locator('.vq43-history-segment')).toHaveCount(9);
  await section.getByRole('button',{name:'최신',exact:true}).click();await expect(input).toHaveValue(dates[290]);await expect(points).toHaveCount(10);
  await expect(section.getByRole('button',{name:'다음 10개',exact:true})).toBeDisabled();
  await section.screenshot({path:'C:/Temp/vq4744-date-navigation.png'});
