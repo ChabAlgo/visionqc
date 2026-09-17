@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 
 namespace VpdlGreenHeatmapOverlay
@@ -13,6 +13,9 @@ namespace VpdlGreenHeatmapOverlay
 
     internal sealed class LiveAnalysisRecord
     {
+        public string WorkspaceType { get; set; }
+        public string WorkspaceName { get; set; }
+        public string WorkspaceKey { get; set; }
         public string CaptureTimestamp { get; set; }
         public string FileName { get; set; }
         public string FullPath { get; set; }

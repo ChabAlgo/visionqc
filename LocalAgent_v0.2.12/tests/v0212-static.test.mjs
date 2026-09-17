@@ -15,11 +15,11 @@ const coreServer = read('CoreWorker/CoreAgentServer.cs');
 const coreProject = read('CoreWorker/VisionQC.CoreWorker.csproj');
 const workerBuild = read('BUILD_VPDL_WORKERS.ps1');
 
-test('Agent v1.3.26 version is consistent', () => {
-  assert.match(program, /AgentVersion = "1\.3\.26"/);
-  assert.match(read('CoreWorker/Program.cs'), /AgentVersion = "1\.3\.26"/);
-  assert.match(read('Properties/AssemblyInfo.cs'), /AssemblyVersion\("1\.3\.26\.0"\)/);
-  assert.match(read('BUILD_RELEASE_x64.cmd'), /v1\.3\.26/);
+test('Agent v1.3.27 version is consistent', () => {
+  assert.match(program, /AgentVersion = "1\.3\.27"/);
+  assert.match(read('CoreWorker/Program.cs'), /AgentVersion = "1\.3\.27"/);
+  assert.match(read('Properties/AssemblyInfo.cs'), /AssemblyVersion\("1\.3\.27\.0"\)/);
+  assert.match(read('BUILD_RELEASE_x64.cmd'), /v1\.3\.27/);
 });
 
 test('HTTP server delegates picker lifecycle to the isolated picker service', () => {
@@ -220,7 +220,7 @@ test('large CSV history import and server-side history search stay outside Agent
   const store = read('Persistence/SqliteRunStore.cs');
   assert.match(history, /Task\.Run\(\(\) => RunFileImport/);
   assert.match(importer, /StreamReader/);
-  assert.match(importer, /ReadLine\(\)/);
+  assert.match(importer, /ResultCsv\.ReadRecord\(reader\)/);
   assert.match(importer, /CaptureTimestamp/);
   for (const column of ['ProcessedPath', 'WorkspaceType', 'WorkspaceName', 'WorkspaceKey']) assert.match(importer, new RegExp(column));
   assert.match(history, /DELETE_ALL_HISTORY/);

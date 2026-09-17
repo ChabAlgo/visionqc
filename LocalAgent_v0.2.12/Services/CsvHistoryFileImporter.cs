@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.Globalization;
 using System.IO;
@@ -46,19 +46,17 @@ namespace VisionQC.LocalAgent.Services
 
                 using (var reader = new StreamReader(filePath, Encoding.Default, true, 1024 * 128))
                 {
-                    string headerLine = reader.ReadLine();
-                    if (headerLine == null) throw new InvalidDataException("CSV 헤더가 없습니다.");
-                    List<string> headers = ParseCsvLine(headerLine);
+                    List<string> headers = ResultCsv.ReadHeader(reader);
                     CsvColumnMap columns = CsvColumnMap.Create(headers);
                     if (columns.CellId < 0 && columns.FullPath < 0) throw new InvalidDataException("CSV에서 Cell ID 또는 FullPath 열을 찾지 못했습니다.");
 
-                    string line;
+                    List<string> values;
                     int sourceRowNumber = 1;
-                    while ((line = reader.ReadLine()) != null)
+                    while ((values = ResultCsv.ReadRecord(reader)) != null)
                     {
                         sourceRowNumber++;
-                        if (line.Length == 0) continue;
-                        List<string> values = ParseCsvLine(line);
+                        if (values.Count == 1 && values[0].Length == 0) continue;
+                        if (values.Count != headers.Count) throw new InvalidDataException("CSV 열 수 불일치: " + sourceRowNumber);
                         if (values.All(string.IsNullOrWhiteSpace)) continue;
                         var record = new AgentHistoryRecordRequest
                         {
@@ -88,7 +86,7 @@ namespace VisionQC.LocalAgent.Services
             }
             catch
             {
-                if (session != null && !session.Closed) _store.Complete(session, "failed", "대용량 CSV 스트리밍 저장 실패");
+                if (session != null) _store.DiscardFailedImport(session);
                 throw;
             }
             finally
@@ -183,8 +181,7 @@ namespace VisionQC.LocalAgent.Services
                 {
                     string result = Value(values, column.Result);
                     string scoreText = Value(values, column.Score);
-                    double score;
-                    double? parsedScore = double.TryParse(scoreText, NumberStyles.Float, CultureInfo.InvariantCulture, out score) ? (double?)score : null;
+                    double? parsedScore = ResultCsv.ParseScore(scoreText);
                     if (string.IsNullOrWhiteSpace(result) && !parsedScore.HasValue) continue;
                     output.Add(new AgentHistoryToolResultRequest { tool = column.Name, result = result, score = parsedScore });
                 }

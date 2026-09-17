@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.Drawing;
 using System.Linq;
@@ -178,6 +178,9 @@ namespace VpdlGreenHeatmapOverlay
 
     internal class LiveAnalysisRecord
     {
+        public string WorkspaceType { get; set; }
+        public string WorkspaceName { get; set; }
+        public string WorkspaceKey { get; set; }
         public string CaptureTimestamp { get; set; }
         public string FileName { get; set; }
         // FullPath는 사용자가 선택한 원본 이미지 경로이다. 통합 시뮬레이션의 Green 입력은

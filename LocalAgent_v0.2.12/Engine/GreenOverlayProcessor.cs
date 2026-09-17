@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.Diagnostics;
 using System.IO;
@@ -318,7 +318,7 @@ namespace VpdlGreenHeatmapOverlay
                 if (result.ToolResults.TryGetValue(toolName, out tr))
                 {
                     row.Add(tr.Decision);
-                    row.Add(double.IsNaN(tr.Score) ? "" : tr.Score.ToString("0.######"));
+                    row.Add(double.IsNaN(tr.Score) ? "" : tr.Score.ToString("R", System.Globalization.CultureInfo.InvariantCulture));
                 }
                 else
                 {
@@ -336,6 +336,7 @@ namespace VpdlGreenHeatmapOverlay
             var live = new LiveAnalysisRecord
             {
                 FileName = result.FileName,
+                WorkspaceType = result.WorkspaceType, WorkspaceName = result.WorkspaceName, WorkspaceKey = result.WorkspaceKey,
                 CaptureTimestamp = result.CaptureTimestamp,
                 FullPath = result.FullPath,
                 ProcessingPath = result.ProcessingPath,
@@ -715,9 +716,9 @@ namespace VpdlGreenHeatmapOverlay
                                 sourceBitmap = CloneBitmapFromUnknown(GetPropertyValue(vidiImage, "Bitmap"));
                             if (sourceBitmap != null)
                             {
-                                SD.Rectangle? overlayRoi = ResolveRuntimeOverlayRoi(tool, overlayView, heatmapBmp, sourceBitmap.Width, sourceBitmap.Height);
-                                if (overlayRoi.HasValue)
-                                    overlayPath = SaveOverlayImage(config, context.Slot, job, cfg.ToolName, sourceBitmap, heatmapBmp, overlayRoi.Value);
+                                SD.PointF[] overlayRoi = ReadOverlayCorners(overlayView);
+                                if (overlayRoi != null)
+                                    overlayPath = SaveOverlayImage(config, context.Slot, job, cfg.ToolName, sourceBitmap, heatmapBmp, overlayRoi);
                                 else
                                     SaveRoiReadFailDiagnostic(config, context.Slot, job, cfg.ToolName, sourceBitmap, heatmapBmp, tool, overlayView);
                             }
@@ -1152,6 +1153,17 @@ namespace VpdlGreenHeatmapOverlay
             return null;
         }
 
+        private static SD.PointF[] ReadOverlayCorners(IView view)
+        {
+            object pose = GetPropertyValue(view, "Pose"), size = GetPropertyValue(view, "Size");
+            var values = new[] { TryReadDoubleProperty(pose, "M11"), TryReadDoubleProperty(pose, "M12"),
+                TryReadDoubleProperty(pose, "M21"), TryReadDoubleProperty(pose, "M22"),
+                TryReadDoubleProperty(pose, "OffsetX"), TryReadDoubleProperty(pose, "OffsetY"),
+                TryReadDoubleProperty(size, "Width"), TryReadDoubleProperty(size, "Height") };
+            if (values.Any(v => !v.HasValue)) return null;
+            return OverlayGeometry.Corners(values.Select(v => v.Value).ToArray());
+        }
+
         private static SD.Rectangle? TryReadRoiFromGreenView(IView view, SD.Bitmap heatmap, int imageWidth, int imageHeight)
         {
             if (view == null) return null;
@@ -1538,17 +1550,16 @@ namespace VpdlGreenHeatmapOverlay
             }
         }
 
-        private static string SaveOverlayImage(AppConfig config, WorkspaceSlotConfig slot, ImageJob job, string toolName, SD.Bitmap source, SD.Bitmap heatmap, SD.Rectangle roi)
+        private static string SaveOverlayImage(AppConfig config, WorkspaceSlotConfig slot, ImageJob job, string toolName, SD.Bitmap source, SD.Bitmap heatmap, SD.PointF[] corners)
         {
-            var safeRoi = ClampRoi(roi, source.Width, source.Height);
-            if (safeRoi.Width <= 0 || safeRoi.Height <= 0) return null;
+            if (corners == null || corners.Length != 3) return null;
 
             using (var outBmp = (SD.Bitmap)source.Clone())
-            using (var heatResized = new SD.Bitmap(heatmap, new SD.Size(safeRoi.Width, safeRoi.Height)))
-            using (var overlay = BuildHeatmapOverlay_KeepColorOrJet_NoUnsafe(heatResized, config.HeatmapAlpha, config.HeatmapAlphaCut, config.ForceJetWhenGrayscale))
+            using (var overlay = BuildHeatmapOverlay_KeepColorOrJet_NoUnsafe(heatmap, config.HeatmapAlpha, config.HeatmapAlphaCut, config.ForceJetWhenGrayscale))
             using (var g = SD.Graphics.FromImage(outBmp))
             {
-                g.DrawImage(overlay, safeRoi);
+                // Draw the whole heatmap through the view transform; Graphics clips without stretching the visible fragment.
+                g.DrawImage(overlay, corners, new SD.RectangleF(0, 0, overlay.Width, overlay.Height), SD.GraphicsUnit.Pixel);
                 string relDir = GetOutputRelativeDirectory(config, job);
                 string saveDir = Path.Combine(GetSlotOutputDir(config, slot), toolName, relDir);
                 Directory.CreateDirectory(saveDir);

@@ -1,4 +1,4 @@
-<?xml version="1.0" encoding="utf-8"?>
+﻿<?xml version="1.0" encoding="utf-8"?>
 <Project ToolsVersion="15.0" xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
   <Import Project="$(MSBuildExtensionsPath)\$(MSBuildToolsVersion)\Microsoft.Common.props" Condition="Exists('$(MSBuildExtensionsPath)\$(MSBuildToolsVersion)\Microsoft.Common.props')" />
   <PropertyGroup>
@@ -54,6 +54,7 @@
     <Compile Include="..\Services\VpdlWorkerLocator.cs"><Link>Services\VpdlWorkerLocator.cs</Link></Compile>
     <Compile Include="..\Services\HistoryService.cs"><Link>Services\HistoryService.cs</Link></Compile>
     <Compile Include="..\Services\CsvHistoryFileImporter.cs"><Link>Services\CsvHistoryFileImporter.cs</Link></Compile>
+    <Compile Include="..\Services\ResultCsv.cs"><Link>Services\ResultCsv.cs</Link></Compile>
     <Compile Include="..\Persistence\SqliteRunStore.cs"><Link>Persistence\SqliteRunStore.cs</Link></Compile>
   </ItemGroup>
   <ItemGroup><None Include="..\App.config"><Link>App.config</Link></None></ItemGroup>

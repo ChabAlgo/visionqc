@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.Data.SQLite;
 using System.Globalization;
@@ -171,6 +171,25 @@ DELETE FROM sqlite_sequence WHERE name IN ('images','tool_results');";
                     deletedImages = imageCount,
                     deletedToolResults = toolCount
                 };
+            }
+        }
+
+        internal void DiscardFailedImport(RunStoreSession session)
+        {
+            if (session == null) return;
+            Complete(session, "failed", "CSV 저장 실패: 이 작업에서 입력한 행을 취소합니다.");
+            using (var connection = new SQLiteConnection("Data Source=" + _databasePath + ";Version=3;Foreign Keys=True;"))
+            {
+                connection.Open();
+                using (var transaction = connection.BeginTransaction())
+                using (var command = connection.CreateCommand())
+                {
+                    command.Transaction = transaction;
+                    command.CommandText = "DELETE FROM tool_results WHERE run_id=@run_id; DELETE FROM images WHERE run_id=@run_id; UPDATE runs SET record_count=0 WHERE run_id=@run_id;";
+                    Add(command, "@run_id", session.RunId);
+                    command.ExecuteNonQuery();
+                    transaction.Commit();
+                }
             }
         }
 
@@ -405,7 +424,7 @@ LIMIT @limit OFFSET @offset;";
                 using (var command = connection.CreateCommand())
                 {
                     command.CommandText = @"SELECT image_id, source_file_name, full_path, processed_path, cell_id, position_key,
- total_result, judgement, capture_timestamp
+ total_result, judgement, capture_timestamp, workspace_type, workspace_name, workspace_key
 FROM images WHERE run_id=@run_id AND image_id>@after_image_id
 ORDER BY image_id ASC LIMIT @limit;";
                     Add(command, "@run_id", runId);
@@ -425,7 +444,8 @@ ORDER BY image_id ASC LIMIT @limit;";
                                 Position = ReadString(reader, 5),
                                 TotalResult = ReadString(reader, 6),
                                 Judgement = ReadString(reader, 7),
-                                CaptureTimestamp = ReadString(reader, 8)
+                                CaptureTimestamp = ReadString(reader, 8),
+                                WorkspaceType = ReadString(reader, 9), WorkspaceName = ReadString(reader, 10), WorkspaceKey = ReadString(reader, 11)
                             };
                             recordsByImageId[imageId] = record;
                             response.records.Add(record);
@@ -508,7 +528,7 @@ ORDER BY image_id ASC LIMIT @limit;";
 
         private static string BuildSearchWhere(SQLiteCommand command, AgentHistorySearchRequest request)
         {
-            var conditions = new List<string> { "1=1" };
+            var conditions = new List<string> { "NOT EXISTS (SELECT 1 FROM runs import_run WHERE import_run.run_id=i.run_id AND import_run.source_type IN ('csv-file-stream','csv-import') AND import_run.status<>'completed')" };
             string fromDate = NormalizeDate(request.fromDate);
             string toDate = NormalizeDate(request.toDate);
             string dateExpression = "substr(COALESCE(NULLIF(i.capture_timestamp,''), i.inspected_at_utc),1,10)";

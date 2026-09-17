@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
@@ -42,7 +42,7 @@ namespace VisionQC.LocalAgent.Services
                     SqliteRunStore.RunStoreSession session;
                     if (request.begin)
                     {
-                        if (_browserImports.TryGetValue(importId, out session)) _store.Complete(session, "replaced", "새 CSV 저장 요청으로 교체됨");
+                        if (_browserImports.TryGetValue(importId, out session)) _store.DiscardFailedImport(session);
                         session = _store.Start(new SqliteRunStore.RunStoreStart
                         {
                             SourceType = "csv-import",
@@ -74,6 +74,14 @@ namespace VisionQC.LocalAgent.Services
             }
             catch (Exception ex)
             {
+                lock (_sync)
+                {
+                    SqliteRunStore.RunStoreSession failed;
+                    if (_browserImports.TryGetValue(importId, out failed))
+                    {
+                        try { _store.DiscardFailedImport(failed); } finally { _browserImports.Remove(importId); }
+                    }
+                }
                 return new { ok = false, error = "SQLite CSV 이력 저장 실패: " + ex.Message };
             }
         }

@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections;
 using System.Collections.Generic;
 using System.Diagnostics;
@@ -1007,8 +1007,8 @@ namespace VisionQC.LocalAgent
             foreach (var p in EnabledPositions(req).OrderBy(x => x.key, StringComparer.OrdinalIgnoreCase))
             {
                 sb.Append('|').Append(p.key ?? "");
-                if (mode != "blue") sb.Append("|G:").Append(NormalizeRuntimePath(FirstNonEmpty(p.greenWorkspacePath, p.workspacePath)));
-                if (mode != "green") sb.Append("|B:").Append(NormalizeRuntimePath(FirstNonEmpty(p.blueWorkspacePath, p.workspacePath)));
+                if (mode != "blue") sb.Append("|G:").Append(WorkspaceFingerprint(FirstNonEmpty(p.greenWorkspacePath, p.workspacePath)));
+                if (mode != "green") sb.Append("|B:").Append(WorkspaceFingerprint(FirstNonEmpty(p.blueWorkspacePath, p.workspacePath)));
             }
             return sb.ToString();
         }
@@ -1049,9 +1049,23 @@ namespace VisionQC.LocalAgent
             foreach (var p in EnabledPositions(req).OrderBy(x => x.key, StringComparer.OrdinalIgnoreCase))
             {
                 sb.Append('|').Append(p.key ?? "");
-                sb.Append("|G:").Append(NormalizeRuntimePath(FirstNonEmpty(p.greenWorkspacePath, p.workspacePath)));
+                sb.Append("|G:").Append(WorkspaceFingerprint(FirstNonEmpty(p.greenWorkspacePath, p.workspacePath)));
             }
             return sb.ToString();
+        }
+
+        private string GreenSignatureFromLoadedSignature(AgentStartRequest req, string signature)
+        {
+            var result = new StringBuilder();
+            foreach (var p in EnabledPositions(req).OrderBy(x => x.key, StringComparer.OrdinalIgnoreCase))
+            {
+                string marker = "|" + (p.key ?? "") + "|G:";
+                int start = signature.IndexOf(marker, StringComparison.Ordinal);
+                if (start < 0) continue;
+                int end = signature.IndexOf('|', start + marker.Length);
+                result.Append(end < 0 ? signature.Substring(start) : signature.Substring(start, end - start));
+            }
+            return result.ToString();
         }
 
         private bool HasCompatiblePreloadedRuntime(AgentStartRequest req, string requestedSignature)
@@ -1066,8 +1080,10 @@ namespace VisionQC.LocalAgent
                 && string.Equals(_preloadedGreenWorkspaceSignature, BuildGreenWorkspaceSignature(req), StringComparison.Ordinal);
         }
 
-        private void RememberPreloadedRuntimeLocked(LocalRuntime.Control control, AgentStartRequest req, string signature)
+        private void RememberPreloadedRuntimeLocked(LocalRuntime.Control control, AgentStartRequest req, string signature, bool verifyFiles = true)
         {
+            if (verifyFiles && !string.Equals(signature, BuildRuntimePreloadSignature(req), StringComparison.Ordinal))
+                throw new SysInvalidOperationException("Workspace 파일이 로드 중 변경되었습니다. Runtime File Load를 다시 실행하세요.");
             _preloadedPositionWorkers.Clear();
             _preloadedPositionGpuAssignments.Clear();
             _preloadedRuntimeControl = control;
@@ -1075,11 +1091,13 @@ namespace VisionQC.LocalAgent
             _preloadedRuntimeToken = Guid.NewGuid().ToString("N");
             _preloadedRuntimeMode = (req.mode ?? "green").Trim().ToLowerInvariant();
             _preloadedRuntimeControlSignature = BuildRuntimeControlSignature(req);
-            _preloadedGreenWorkspaceSignature = BuildGreenWorkspaceSignature(req);
+            _preloadedGreenWorkspaceSignature = GreenSignatureFromLoadedSignature(req, signature);
         }
 
-        private void RememberPreloadedPositionWorkersLocked(Dictionary<string, PositionWorkerClient> workers, Dictionary<string, string> assignments, AgentStartRequest req, string signature)
+        private void RememberPreloadedPositionWorkersLocked(Dictionary<string, PositionWorkerClient> workers, Dictionary<string, string> assignments, AgentStartRequest req, string signature, bool verifyFiles = true)
         {
+            if (verifyFiles && !string.Equals(signature, BuildRuntimePreloadSignature(req), StringComparison.Ordinal))
+                throw new SysInvalidOperationException("Workspace 파일이 로드 중 변경되었습니다. Runtime File Load를 다시 실행하세요.");
             _preloadedRuntimeControl = null;
             _preloadedPositionWorkers.Clear();
             foreach (var item in workers) _preloadedPositionWorkers[item.Key] = item.Value;
@@ -1089,12 +1107,17 @@ namespace VisionQC.LocalAgent
             _preloadedRuntimeToken = Guid.NewGuid().ToString("N");
             _preloadedRuntimeMode = (req.mode ?? "green").Trim().ToLowerInvariant();
             _preloadedRuntimeControlSignature = BuildRuntimeControlSignature(req);
-            _preloadedGreenWorkspaceSignature = BuildGreenWorkspaceSignature(req);
+            _preloadedGreenWorkspaceSignature = GreenSignatureFromLoadedSignature(req, signature);
         }
 
         private bool HasAnyPreloadedRuntimeLocked()
         {
             return _preloadedRuntimeControl != null || _preloadedPositionWorkers.Count > 0;
+        }
+
+        private static string WorkspaceFingerprint(string path)
+        {
+            return WorkspaceIdentity.Fingerprint(path);
         }
 
         private static string NormalizeRuntimePath(string path)
@@ -1464,6 +1487,7 @@ namespace VisionQC.LocalAgent
             if (!string.IsNullOrEmpty(validation)) return new { ok = false, error = validation };
 
             LocalRuntime.Control simulationControl;
+            string simulationSignature;
             Dictionary<string, PositionWorkerClient> positionWorkers = null;
             Dictionary<string, string> positionGpuAssignments = null;
             lock (_vpdlSync)
@@ -1473,6 +1497,7 @@ namespace VisionQC.LocalAgent
                 string signature = BuildRuntimePreloadSignature(req);
                 if (!HasCompatiblePreloadedRuntime(req, signature))
                     return new { ok = false, error = "현재 설정에 맞는 Runtime 사전 로드가 없습니다. Workspace Runtime Structure의 Runtime File Load를 다시 실행하세요." };
+                simulationSignature = signature;
                 _vpdlReservedForSimulation = true;
                 simulationControl = _preloadedRuntimeControl;
                 if (_preloadedPositionWorkers.Count > 0)
@@ -1515,7 +1540,7 @@ namespace VisionQC.LocalAgent
                 StartSimulationHistory(req);
                 AppendAgentLog("START", "Simulation 시작 | Mode=" + _state.mode + " | Batch=" + _liveBatchSize + " | Output=" + (req.outputRoot ?? ""));
                 Broadcast("progress", Snapshot(), true);
-                _simulationTask = Task.Run(() => RunSimulation(req, simulationControl, positionWorkers, positionGpuAssignments, _simulationCts.Token));
+                _simulationTask = Task.Run(() => RunSimulation(req, simulationControl, positionWorkers, positionGpuAssignments, simulationSignature, _simulationCts.Token));
                 return new { ok = true, state = Snapshot() };
             }
             catch (SysException ex)
@@ -1559,7 +1584,7 @@ namespace VisionQC.LocalAgent
             return new { ok = true };
         }
 
-        private void RunSimulation(AgentStartRequest req, LocalRuntime.Control simulationControl, Dictionary<string, PositionWorkerClient> positionWorkers, Dictionary<string, string> positionGpuAssignments, CancellationToken token)
+        private void RunSimulation(AgentStartRequest req, LocalRuntime.Control simulationControl, Dictionary<string, PositionWorkerClient> positionWorkers, Dictionary<string, string> positionGpuAssignments, string simulationSignature, CancellationToken token)
         {
             bool runtimeReusable = true;
             try
@@ -1691,12 +1716,13 @@ namespace VisionQC.LocalAgent
             finally
             {
                 if (positionWorkers != null && positionWorkers.Count > 1) CleanupParallelTemporaryCrops(req);
+                runtimeReusable = runtimeReusable && string.Equals(simulationSignature, BuildRuntimePreloadSignature(req), StringComparison.Ordinal);
                 lock (_vpdlSync)
                 {
                     if (runtimeReusable && simulationControl != null)
                     {
                         DisposePreloadedRuntimeLocked();
-                        RememberPreloadedRuntimeLocked(simulationControl, req, BuildRuntimePreloadSignature(req));
+                        RememberPreloadedRuntimeLocked(simulationControl, req, simulationSignature, false);
                         _licenseStatus = "Runtime Ready";
                         _runtimeMessage = "Simulation 완료 · 사전 로드 Runtime 재사용 가능";
                         simulationControl = null;
@@ -1704,7 +1730,7 @@ namespace VisionQC.LocalAgent
                     else if (runtimeReusable && positionWorkers != null && positionWorkers.Count > 0)
                     {
                         DisposePreloadedRuntimeLocked();
-                        RememberPreloadedPositionWorkersLocked(positionWorkers, positionGpuAssignments ?? new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase), req, BuildRuntimePreloadSignature(req));
+                        RememberPreloadedPositionWorkersLocked(positionWorkers, positionGpuAssignments ?? new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase), req, simulationSignature, false);
                         _licenseStatus = "Runtime Ready";
                         _runtimeMessage = "병렬 Simulation 완료 · Position Runtime 재사용 가능";
                         positionWorkers = null;
@@ -1957,25 +1983,7 @@ namespace VisionQC.LocalAgent
 
         private static string MergePositionResultCsv(string outputRoot, IEnumerable<string> paths)
         {
-            var inputs = paths.Where(path => !string.IsNullOrWhiteSpace(path) && File.Exists(path)).ToList();
-            if (inputs.Count == 0) return "";
-            if (inputs.Count == 1) return inputs[0];
-            string output = Path.Combine(outputRoot, "results_" + DateTime.Now.ToString("yyyyMMdd_HHmmss") + "_parallel.csv");
-            using (var writer = new StreamWriter(output, false, new UTF8Encoding(true)))
-            {
-                bool headerWritten = false;
-                foreach (string input in inputs)
-                {
-                    using (var reader = new StreamReader(input, true))
-                    {
-                        string header = reader.ReadLine();
-                        if (!headerWritten && header != null) { writer.WriteLine(header); headerWritten = true; }
-                        string line;
-                        while ((line = reader.ReadLine()) != null) writer.WriteLine(line);
-                    }
-                }
-            }
-            return output;
+            return ResultCsv.Merge(outputRoot, paths);
         }
 
         private void StartSimulationHistory(AgentStartRequest request)

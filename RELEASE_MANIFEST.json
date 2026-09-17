@@ -1,19 +1,19 @@
 {
-  "releaseTag": "visionqc-v4.7.39-agent-v1.3.26",
-  "webVersion": "4.7.39",
-  "agentVersion": "1.3.26",
-  "minimumAgentVersion": "1.3.26",
+  "releaseTag": "visionqc-v4.7.40-agent-v1.3.27",
+  "webVersion": "4.7.40",
+  "agentVersion": "1.3.27",
+  "minimumAgentVersion": "1.3.27",
   "compatibility": {
-    "web": "4.7.39",
-    "agent": "1.3.26"
+    "web": "4.7.40",
+    "agent": "1.3.27"
   },
   "artifacts": {
-    "agentInstaller": "downloads/VisionQC_Agent_Installer_v1.3.26.exe",
-    "offlinePackage": "downloads/VisionQC_Offline_v4.7.39.zip",
+    "agentInstaller": "downloads/VisionQC_Agent_Installer_v1.3.27.exe",
+    "offlinePackage": "downloads/VisionQC_Offline_v4.7.40.zip",
     "sha256": {
-      "agentInstaller": "55BC5E0A512C1C08AAD7193602C5FC8956173749E7FF64E3552EA603F424E1C1",
-      "offlinePackage": "BF9DFF5DC0566E54C76C3187CE37AD4B81418B08C84EBB93D814DEBA3C5CE9DB"
+      "agentInstaller": "5DDF964F3CF19F8F5421E23B08345883DD53562980D1C2574C4262F71AD25018",
+      "offlinePackage": "ED81526D50FCA88D1EA3C1716CC49D60B34FB62819AE36A355076823F2F72706"
     }
   },
-  "notes": "날짜 그래프 10개 고정 간격·큰 글자·좌우 스크롤, 실제 미검 Cell 기준 Tool Score."
+  "notes": "원본 검사 행·이미지·Score 연결 및 CSV/SQLite 정합성, Workspace 변경 감지, 실제 NG 다중 이미지 보존, Heatmap 좌표 보완."
 }

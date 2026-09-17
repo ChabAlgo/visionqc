@@ -13,14 +13,14 @@ const cleanCss = read('visionqc-v4433-clean.css');
 const html = read('index.html');
 const server = read('LocalAgent_v0.2.12/AgentServer.cs');
 
-test('v4.7.39 Web cache and Agent download targets are declared', () => {
-  assert.match(read('VERSION.txt'), /v4\.7\.39/);
-  assert.match(html, /visionqc-extension\.js\?v=4\.7\.39/);
+test('v4.7.40 Web cache and Agent download targets are declared', () => {
+  assert.match(read('VERSION.txt'), /v4\.7\.40/);
+  assert.match(html, /visionqc-extension\.js\?v=4\.7\.40/);
   assert.match(html, /visionqc-v470\.css\?v=4\.7\.9/);
-  assert.match(js, /const VERSION = '4\.7\.39'/);
-  assert.match(js, /const EXPECTED_AGENT_VERSION = '1\.3\.26'/);
-  assert.match(js, /VisionQC_Agent_Installer_v1\.3\.26\.exe/);
-  assert.match(js, /VisionQC_Offline_v4\.7\.39\.zip/);
+  assert.match(js, /const VERSION = '4\.7\.40'/);
+  assert.match(js, /const EXPECTED_AGENT_VERSION = '1\.3\.27'/);
+  assert.match(js, /VisionQC_Agent_Installer_v1\.3\.27\.exe/);
+  assert.match(js, /VisionQC_Offline_v4\.7\.40\.zip/);
 });
 
 test('persistent History page has filters, server-side pagination, daily NG chart and image viewer', () => {
@@ -112,7 +112,7 @@ test('light image and enlarged-score popups use bright chrome outside the shell'
   assert.match(js, /function simulationGreenWorkspaceSignature\(/);
   assert.match(js, /runtimePreloadMode === 'integrated'/);
   assert.match(js, /runtimePreloadControlSignature === simulationRuntimeControlSignature\(request\)/);
-  assert.match(js, /runtimePreloadGreenWorkspaceSignature === simulationGreenWorkspaceSignature\(request\)/);
+  assert.match(js, /runtimePreloadGreenWorkspaceSignature\) === simulationGreenWorkspaceSignature\(request\)/);
 });
 
 test('inline Cell score points open images and settings use compact two-column light layout', () => {

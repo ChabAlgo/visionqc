@@ -1,7 +1,7 @@
 (() => {
   'use strict';
 
-  const VERSION = '4.7.39';
+  const VERSION = '4.7.40';
   const DEFAULT_POSITION_DEFS = [
     { key:'CA_TOP', name:'CA(TOP)' },
     { key:'AN_TOP', name:'AN(TOP)' },
@@ -27,9 +27,9 @@
   const NG_POSITION_PREFIX = 'ng-position:';
   const IMG_RE = /\.(png|jpe?g|bmp|gif|webp|tif?f)$/i;
   const LOCAL_AGENT_URL = 'http://127.0.0.1:17891';
-  const EXPECTED_AGENT_VERSION = '1.3.26';
-  const AGENT_INSTALLER_URL = './downloads/VisionQC_Agent_Installer_v1.3.26.exe';
-  const OFFLINE_PACKAGE_URL = './downloads/VisionQC_Offline_v4.7.39.zip';
+  const EXPECTED_AGENT_VERSION = '1.3.27';
+  const AGENT_INSTALLER_URL = './downloads/VisionQC_Agent_Installer_v1.3.27.exe';
+  const OFFLINE_PACKAGE_URL = './downloads/VisionQC_Offline_v4.7.40.zip';
   // SQLite에는 사용자가 명시적으로 남기려는 두 종류의 결과만 표시한다.
   // 이전 버전의 단발 검사(single-inspection) 이력은 보존하되 화면 집계에서는 제외한다.
   const PERSISTED_HISTORY_SOURCE_TYPES = ['simulation', 'csv-import', 'csv-file-stream'];
@@ -262,6 +262,15 @@
     return Number.isFinite(parsed) ? parsed : null;
   };
   const mean = (values) => values.length ? values.reduce((sum, value) => sum + value, 0) / values.length : null;
+  function parseCsvScore(value) {
+    const text = String(value ?? '').trim();
+    if (!text) return null;
+    // Older Agents wrote decimal commas under some Windows cultures.
+    const normalized = /^[-+]?\d+,\d+(?:e[-+]?\d+)?$/i.test(text) ? text.replace(',', '.') : text;
+    const score = Number(normalized);
+    if (!Number.isFinite(score) || score < 0 || score > 1) throw new Error(`유효하지 않은 Score: ${text}`);
+    return score;
+  }
   const median = (values) => {
     if (!values.length) return null;
     const sorted = [...values].sort((a, b) => a - b);
@@ -1350,21 +1359,29 @@
 
   function parseCsv(text) {
     const rows = [];
-    let row = [], cell = '', quoted = false;
+    let row = [], cell = '', quoted = false, closed = false;
     for (let i = 0; i < text.length; i += 1) {
       const char = text[i], next = text[i + 1];
       if (char === '"') {
         if (quoted && next === '"') { cell += '"'; i += 1; }
-        else quoted = !quoted;
+        else if (quoted) { quoted = false; closed = true; }
+        else {
+          if (closed || cell.length) throw new Error('CSV 따옴표 형식이 잘못되었습니다.');
+          quoted = true;
+        }
       } else if (!quoted && char === ',') {
-        row.push(cell); cell = '';
+        row.push(cell); cell = ''; closed = false;
       } else if (!quoted && (char === '\n' || char === '\r')) {
         if (char === '\r' && next === '\n') i += 1;
-        row.push(cell); cell = '';
+        row.push(cell); cell = ''; closed = false;
         if (row.some((item) => String(item).trim())) rows.push(row);
         row = [];
-      } else cell += char;
+      } else {
+        if (closed) throw new Error('CSV 닫는 따옴표 뒤의 문자가 잘못되었습니다.');
+        cell += char;
+      }
     }
+    if (quoted) throw new Error('CSV 따옴표가 닫히지 않았습니다.');
     row.push(cell);
     if (row.some((item) => String(item).trim())) rows.push(row);
     return rows;
@@ -1460,6 +1477,7 @@
     if (headerRow < 0) throw new Error('Cell ID와 Total_result 열을 찾지 못했습니다.');
     const headers = table[headerRow].map(normalizeHeader);
     const keys = headers.map(normalizeHeaderKey);
+    if (new Set(keys).size !== keys.length) throw new Error('CSV/XLSX 열 이름이 중복되었습니다.');
     const cellIndex = keys.indexOf('cellid');
     const positionIndex = keys.indexOf('position');
     const totalIndex = keys.indexOf('total_result');
@@ -1482,6 +1500,7 @@
     const rows = [];
     table.slice(headerRow + 1).forEach((row, offset) => {
       if (!row.some((value) => String(value ?? '').trim())) return;
+      if (/\.csv$/i.test(file.name) && row.length !== headers.length) throw new Error(`CSV ${headerRow + offset + 2}행의 열 수가 일치하지 않습니다.`);
       const cellId = extractCellId(row[cellIndex]);
       if (!cellId) { invalidCell += 1; return; }
       const inFilePosition = positionIndex >= 0 ? normalizePosition(row[positionIndex]) : null;
@@ -1489,14 +1508,19 @@
       const tools = {};
       resultColumns.forEach((column) => {
         const scoreIndex = scoreMap.get(column.tool.toLowerCase());
-        tools[column.tool] = { tool: column.tool, result: normalizeResult(row[column.index]), score: scoreIndex === undefined ? null : parseNumber(row[scoreIndex]) };
+        tools[column.tool] = { tool: column.tool, result: normalizeResult(row[column.index]), score: scoreIndex === undefined ? null : parseCsvScore(row[scoreIndex]) };
       });
       const dateValue = dateIndex >= 0 ? String(row[dateIndex] || '').trim() : '';
       const timeValue = timeIndex >= 0 ? String(row[timeIndex] || '').trim() : '';
       const captureTimestamp = strictCaptureTimestamp(timestampIndex >= 0 ? row[timestampIndex] : '') ||
         (fullPathIndex >= 0 && csvFullPathValue(row[fullPathIndex]) ? '' :
           strictCaptureTimestamp(dateValue && timeValue ? dateValue + (dateValue.includes('-') ? 'T' : '_') + timeValue : dateValue));
-      rows.push({ captureTimestamp, sourceFileName: file.name, sourceRowNumber: headerRow + offset + 2, fullPath: fullPathIndex >= 0 ? csvFullPathValue(row[fullPathIndex]) : '', processedPath: processedPathIndex >= 0 ? csvFullPathValue(row[processedPathIndex]) : '', cellId, position: selectedPosition, totalResult: normalizeResult(row[totalIndex]), tools });
+      const metadata = {};
+      for (const [field, column] of Object.entries({ workspaceType:'workspacetype', workspaceName:'workspacename', workspaceKey:'workspacekey' })) {
+        const index = keys.indexOf(column);
+        metadata[field] = index >= 0 ? String(row[index] ?? '') : '';
+      }
+      rows.push({ ...metadata, captureTimestamp, sourceFileName: file.name, sourceRowNumber: headerRow + offset + 2, fullPath: fullPathIndex >= 0 ? csvFullPathValue(row[fullPathIndex]) : '', processedPath: processedPathIndex >= 0 ? csvFullPathValue(row[processedPathIndex]) : '', cellId, position: selectedPosition, totalResult: normalizeResult(row[totalIndex]), tools });
     });
     if (invalidCell) warnings.push(`Cell ID 추출 실패 ${numberText(invalidCell)}행 제외`);
     if (mismatch) warnings.push(`Position 불일치 ${numberText(mismatch)}행을 ${selectedPosition}으로 처리`);
@@ -1564,6 +1588,7 @@
       sourceFileName:String(row.sourceFileName || ''), sourceRowNumber:Number(row.sourceRowNumber || 0),
       fullPath:String(row.fullPath || ''), processedPath:String(row.processedPath || ''), cellId:String(row.cellId || ''), position:String(row.position || ''),
       totalResult:String(row.totalResult || ''), judgement:String(row.judgement || ''),
+      captureTimestamp:String(row.captureTimestamp || ''), workspaceType:String(row.workspaceType || ''), workspaceName:String(row.workspaceName || ''), workspaceKey:String(row.workspaceKey || ''),
       tools:Object.values(row.tools || {}).map((tool) => ({ tool:String(tool.tool || ''), result:String(tool.result || ''), score:Number.isFinite(tool.score) ? tool.score : null, overlayPath:String(tool.overlayPath || '') }))
     });
     let saved = 0;
@@ -1577,6 +1602,7 @@
           method:'POST', timeout:60000,
           body:{ importId, begin:!started, complete, sourceName, mode:'csv-analysis', webVersion:VERSION, namingProfile:state.namingProfile, records }
         });
+        if (!response?.ok) throw new Error(response?.error || 'CSV 이력 저장 응답을 확인하지 못했습니다.');
         started = true;
         saved = Number(response.saved || saved + records.length);
       };
@@ -1639,14 +1665,13 @@
       if (permission !== 'granted') throw new Error('실제 NG 폴더 접근 권한이 없습니다.');
     }
     const images = [], warnings = [];
-    // 결과 CSV가 먼저 준비되어 있으면 필요한 Cell ID만 색인하고, 모두 찾으면 즉시 순회를 끝낸다.
+    // Index matching Cell IDs without reading image bytes; retain every date and image.
     // 실제 NG 원본을 미리 getFile()로 읽지 않아 대용량 루트의 메모리/지연을 크게 줄인다.
     const pendingTargets = actualNgTargetKeys();
     const limitToLoadedResults = pendingTargets.size > 0;
     let invalidCell = 0, unknownPosition = 0;
     async function walk(directory, parts) {
       for await (const [name, handle] of directory.entries()) {
-        if (limitToLoadedResults && pendingTargets.size === 0) return;
         const next = [...parts, name];
         if (handle.kind === 'directory') {
           if (name.toUpperCase() === 'DELET') continue;
@@ -1661,7 +1686,6 @@
           if (limitToLoadedResults && !pendingTargets.has(targetKey)) continue;
           const relativePath = normalizePath(next.join('/'));
           images.push({ key: `${position}|${cellId}|${relativePath.toLowerCase()}`, position, cellId, fileHandle:handle, relativePath });
-          if (limitToLoadedResults) pendingTargets.delete(targetKey);
         }
       }
     }
@@ -1688,7 +1712,6 @@
     let invalidCell = 0;
     async function walk(directory, parts) {
       for await (const [name, handle] of directory.entries()) {
-        if (limitToLoadedResults && pendingTargets.size === 0) return;
         const next = [...parts, name];
         if (handle.kind === 'directory') {
           if (name.toUpperCase() === 'DELET') continue;
@@ -1701,7 +1724,6 @@
           if (limitToLoadedResults && !pendingTargets.has(targetKey)) continue;
           const relativePath = normalizePath(next.join('/'));
           images.push({ key:`${position}|${cellId}|${relativePath.toLowerCase()}`, position, cellId, fileHandle:handle, relativePath });
-          if (limitToLoadedResults) pendingTargets.delete(targetKey);
         }
       }
     }
@@ -2553,7 +2575,7 @@
     const tools = [...new Set(misses.flatMap((miss) => Object.keys(miss.record.tools)))].sort();
     const headers = ['CaptureTimestamp', 'Cell ID', 'Position', 'Simulated_Total_result'];
     tools.forEach((tool) => headers.push(`${tool}_result`, `${tool}_score`, `${tool}_threshold`));
-    headers.push('Actual_Image_Count', 'Actual_Image_Path');
+    headers.push('Actual_Image_Count', 'Actual_Image_Path', 'Summary_Date', 'Source_Row_Count', 'Source_Paths');
     const lines = [headers.map(csvCell).join(',')];
     misses.forEach((miss) => {
       const source = miss.record.sourceRows?.[0] || {};
@@ -2563,7 +2585,7 @@
         const observation = miss.record.tools[tool];
         row.push(observation?.result || '', Number.isFinite(observation?.representativeScore) ? observation.representativeScore.toFixed(4) : '', observation ? observation.threshold.toFixed(2) : '');
       });
-      row.push(miss.images.length, miss.images.map((image) => image.relativePath).join(' | '));
+      row.push(miss.images.length, miss.images.map((image) => image.relativePath).join(' | '), dashboardDateForRecord(miss.record), miss.record.sourceRows.length, miss.record.sourceRows.map(source => source.fullPath || '').join(' | '));
       lines.push(row.map(csvCell).join(','));
     });
     saveCsvFile(`VisionQC_${position.replace(/[^A-Z]/g, '_')}_미검_${misses.length}건.csv`, lines, `${position} 미검 ${numberText(misses.length)}건 CSV 저장 완료`);
@@ -2573,22 +2595,21 @@
     const model = state.model;
     if (!model?.records.length) return showToast('저장할 결과 데이터가 없습니다.', true);
     const tools = model.tools;
-    const headers = ['CaptureTimestamp', 'Cell ID', 'Position', 'Total_result', 'FullPath', 'ProcessedPath', 'Source_File', 'Source_Row'];
+    const headers = ['CaptureTimestamp', 'Cell ID', 'Position', 'Total_result', 'FullPath', 'ProcessedPath', 'Source_File', 'Source_Row', 'WorkspaceType', 'WorkspaceName', 'WorkspaceKey'];
     tools.forEach((tool) => headers.push(`${tool}_result`, `${tool}_score`));
     const lines = [headers.map(csvCell).join(',')];
     const positions = positionNames();
     const sorted = [...model.records].sort((a, b) => dashboardDateForRecord(a).localeCompare(dashboardDateForRecord(b)) || positions.indexOf(a.position) - positions.indexOf(b.position) || a.cellId.localeCompare(b.cellId));
-    sorted.forEach((record) => {
-      const source = record.sourceRows?.[0] || {};
-      const timestamp = source.captureTimestamp || (dashboardDateForRecord(record) ? `${dashboardDateForRecord(record)}T00:00:00` : '');
-      const row = [timestamp, record.cellId, record.position, record.baseTotalResult, source.fullPath || '', source.processedPath || '', source.sourceFileName || '', source.sourceRowNumber || ''];
+    sorted.forEach((record) => (record.sourceRows || []).forEach((source) => {
+      const timestamp = source.captureTimestamp || '';
+      const row = [timestamp, record.cellId, record.position, source.totalResult, source.originalFullPath || source.fullPath || '', source.processedPath || '', source.sourceFileName || '', source.sourceRowNumber || '', source.workspaceType || '', source.workspaceName || '', source.workspaceKey || ''];
       tools.forEach((toolName) => {
-        const tool = record.tools[toolName];
-        row.push(tool?.baseResult || '', Number.isFinite(tool?.representativeScore) ? tool.representativeScore.toFixed(4) : '');
+        const tool = source.tools[toolName];
+        row.push(tool?.result || '', Number.isFinite(tool?.score) ? String(tool.score) : '');
       });
       lines.push(row.map(csvCell).join(','));
-    });
-    saveCsvFile(`VisionQC_전체_Position_결과_${sorted.length}건.csv`, lines, `전체 Position 결과 ${numberText(sorted.length)}건 CSV 저장 완료`);
+    }));
+    saveCsvFile(`VisionQC_전체_Position_결과_${lines.length - 1}건.csv`, lines, `전체 Position 원본 결과 ${numberText(lines.length - 1)}행 CSV 저장 완료`);
   }
 
   function resetThresholds() {
@@ -2650,7 +2671,7 @@
         if (scope === 'ACTUAL_NG_TOOL_NG' && observation.result !== 'NG') return;
         const key = `${record.key}|${tool}|${index}`;
         const otherToolNgScores = recordOtherToolNgScores(record, tool);
-        const point = { key, recordKey: record.key, cellId: record.cellId, position: record.position, result: observation.result, score: observation.score, hasActualImage, hasCsvImage:!!row.fullPath, fullPath:row.fullPath || '', sourceFileName: row.sourceFileName || '', sourceRowNumber: row.sourceRowNumber || '', otherToolNgScores };
+        const point = { key, recordKey: record.key, sourceRowIndex:index, cellId: record.cellId, position: record.position, result: observation.result, score: observation.score, hasActualImage, hasCsvImage:!!row.fullPath, fullPath:row.fullPath || '', sourceFileName: row.sourceFileName || '', sourceRowNumber: row.sourceRowNumber || '', otherToolNgScores };
         if (excludeOtherToolNg && scope === 'ACTUAL_NG_TOOL_NG' && actualNgDetectedExclusion(point, clampScore(otherToolNgScoreThreshold, 0.80))) return;
         points.push(point);
       });
@@ -4500,12 +4521,14 @@
 
   function isCompatiblePreloadedRuntime(request, runtime = state.simulationAgent) {
     if (!runtime?.runtimePreloaded) return false;
+    // Browser checks configuration only; Agent validates the actual file hashes before reuse.
+    const configurationSignature = value => String(value || '').replace(/#[A-Fa-f0-9]{64}(?=\||$)/g, '');
     const expectedSignature = simulationRuntimeSignature(request);
-    if (runtime.runtimePreloadSignature === expectedSignature) return true;
+    if (configurationSignature(runtime.runtimePreloadSignature) === expectedSignature) return true;
     return String(request?.mode || '').toLowerCase() === 'green'
       && runtime.runtimePreloadMode === 'integrated'
       && runtime.runtimePreloadControlSignature === simulationRuntimeControlSignature(request)
-      && runtime.runtimePreloadGreenWorkspaceSignature === simulationGreenWorkspaceSignature(request);
+      && configurationSignature(runtime.runtimePreloadGreenWorkspaceSignature) === simulationGreenWorkspaceSignature(request);
   }
 
   function clearSimulationRuntimeReadiness() {
@@ -4583,6 +4606,9 @@
         sourceFileName:String(record.FileName ?? record.fileName ?? 'LIVE'),
         sourceRowNumber,
         captureTimestamp:String(record.CaptureTimestamp ?? record.captureTimestamp ?? ''),
+        workspaceType:String(record.WorkspaceType ?? record.workspaceType ?? ''),
+        workspaceName:String(record.WorkspaceName ?? record.workspaceName ?? ''),
+        workspaceKey:String(record.WorkspaceKey ?? record.workspaceKey ?? ''),
         fullPath:String(record.FullPath ?? record.fullPath ?? ''),
         processedPath:String(record.ProcessingPath ?? record.processingPath ?? record.ProcessedPath ?? record.processedPath ?? ''),
         cellId, position,
@@ -6002,7 +6028,8 @@
         const existingView = existing?.viewKind === 'crop' ? 'crop' : 'source';
         if (existingView !== candidateView) return false;
         const existingPath = viewerImagePathKey(existing);
-        return !!candidatePath && (existingPath === candidatePath || (!!candidateName && viewerImageBaseName(existing) === candidateName));
+        const bothAbsolute = csvFullPathValue(existingPath) && csvFullPathValue(candidatePath);
+        return !!candidatePath && (existingPath === candidatePath || (!bothAbsolute && !!candidateName && viewerImageBaseName(existing) === candidateName));
       });
       if (index < 0) {
         merged.push({ ...candidate, viewKind:candidateView });
@@ -6028,10 +6055,16 @@
   }
 
   function scorePointMedia(point) {
-    const record = state.model?.recordMap.get(point?.recordKey);
-    if (!record) return null;
+    const grouped = state.model?.recordMap.get(point?.recordKey);
+    if (!grouped) return null;
+    const source = grouped.sourceRows?.[point.sourceRowIndex];
+    if (!source) return null;
+    // A plotted observation must never borrow another image's score or overlay.
+    const record = { ...grouped, sourceRows:[source], tools:source.tools, totalResult:source.totalResult };
     const csvImages = csvImagesForRecord(record);
-    const actualImages = state.model?.actualMap.get(point.recordKey) || [];
+    const candidates = state.model?.actualMap.get(point.recordKey) || [];
+    const actualImages = candidates.filter(image => csvImages.some(csv => viewerImagePathKey(csv) === viewerImagePathKey(image)) ||
+      (grouped.sourceRows.length === 1 && candidates.length === 1 && (!csvImages.length || viewerImageBaseName(csvImages[0]) === viewerImageBaseName(image))));
     return {
       record,
       csvImages,
@@ -6146,13 +6179,23 @@
     const image = csvImagesForRecord(record)[0];
     const fullPath = image?.historyLookupPath || image?.fullPath || '';
     if (!fullPath) return;
+    const source = record.sourceRows?.length === 1 ? record.sourceRows[0] : null;
+    const captureDate = source ? dashboardDateForRow(source) : '';
     try {
       const data = await agentFetch('/api/history/search', {
         method:'POST', timeout:30000,
-        body:{ fullPath, sourceTypes:PERSISTED_HISTORY_SOURCE_TYPES, page:1, pageSize:10 }
+        body:{ fullPath, position:record.position || '', workspaceKey:source?.workspaceKey || '', fromDate:captureDate, toDate:captureDate, sourceTypes:PERSISTED_HISTORY_SOURCE_TYPES, page:1, pageSize:10 }
       });
       if (!data?.ok || state.modalItem?.key !== modalKey) return;
-      const item = (data.items || []).find((candidate) => String(candidate.fullPath || '').toLowerCase() === fullPath.toLowerCase());
+      const item = (data.items || []).find((candidate) => {
+        if (String(candidate.fullPath || '').toLowerCase() !== fullPath.toLowerCase()) return false;
+        // Same path can have results from several Workspaces/runs. Never attach a different observation's overlay.
+        return !source || Object.values(source.tools || {}).every(tool => {
+          if (!Number.isFinite(tool.score)) return true;
+          const saved = (candidate.tools || []).find(other => other.tool === tool.tool);
+          return saved && Number.isFinite(saved.score) && Math.abs(saved.score - tool.score) <= 0.000001 && normalizeResult(saved.result) === tool.result;
+        });
+      });
       const overlays = (item?.tools || []).filter((tool) => tool.overlayPath).map((tool) => ({
         fullPath:String(tool.overlayPath), relativePath:String(tool.overlayPath), name:`${tool.tool} Heatmap Overlay`, kind:'Heatmap Overlay', toolName:String(tool.tool || 'Green Tool')
       }));
@@ -6584,6 +6627,14 @@
         }
         return { count, batchSize, elapsedMs:performance.now() - started, liveRows:state.simulationLiveRows, dashboardTotal:state.dashboardModel.records.length };
       },
+      openIntegrityPoint(index) {
+        state.analysisTool='Crack'; state.analysisScope='TOOL_NG'; state.analysisPosition='ALL'; setPage('analysis');
+        openScorePointImage(state.analysisPoints[index].key);
+        return {path:state.modalItem.images[0]?.fullPath, score:state.modalItem.record.tools.Crack.score, images:state.modalItem.images.length};
+      },
+      exportAllResults:downloadAllResultsCsv,
+      scanIntegrityFolder:scanNgDirectoryForPosition,
+      integrityRows() { return state.model.records.flatMap(record=>record.sourceRows); },
       seedRows(rows) {
         state.resultInputs = Object.fromEntries(positionNames().map(position => [position,{rows:rows.filter(r=>r.position===position),fileName:'debug.csv',warnings:[]} ]));
         state.ngImages=[]; state.dashboardDate=''; state.initialized=true; rebuildModel(false); setPage('main');
