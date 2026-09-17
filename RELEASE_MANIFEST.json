@@ -1,19 +1,19 @@
 {
-  "releaseTag": "visionqc-v4.7.47-agent-v1.3.34",
-  "webVersion": "4.7.47",
-  "agentVersion": "1.3.34",
-  "minimumAgentVersion": "1.3.34",
+  "releaseTag": "visionqc-v4.7.48-agent-v1.3.35",
+  "webVersion": "4.7.48",
+  "agentVersion": "1.3.35",
+  "minimumAgentVersion": "1.3.35",
   "compatibility": {
-    "web": "4.7.47",
-    "agent": "1.3.34"
+    "web": "4.7.48",
+    "agent": "1.3.35"
   },
   "artifacts": {
-    "agentInstaller": "downloads/VisionQC_Agent_Installer_v1.3.34.exe",
-    "offlinePackage": "downloads/VisionQC_Offline_v4.7.47.zip",
+    "agentInstaller": "downloads/VisionQC_Agent_Installer_v1.3.35.exe",
+    "offlinePackage": "downloads/VisionQC_Offline_v4.7.48.zip",
     "sha256": {
-      "agentInstaller": "BB4D46FFD171DB9C494214862C9533D66A5473FC9D4FFA76BC7A8C5EE3B274A6",
-      "offlinePackage": "4C13EBCF49B59391F59EFE7B4ABD7FDAA706AFEB1B9386720A01F23D985C6AF9"
+      "agentInstaller": "5ABB1A3C4B3ADF414EC9FFE639A50B0BCC53AF31EC947B1B67A2E37C51C288BB",
+      "offlinePackage": "A98C6D6B6D495D5FDFFEA9422A760997569DEA18E43968F7AF8CCB678F2ACF47"
     }
   },
-  "notes": "승인된 PDF 시안 적용: Position별 워크스페이스, 검사 표/그래프, 날짜별 NG율, Tool Threshold, 미검 Cell ID."
+  "notes": "PDF 리포트 반복 제목과 정보 영역 제거. 맨 위에 한 번만 표시."
 }

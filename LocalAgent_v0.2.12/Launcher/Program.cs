@@ -12,7 +12,7 @@ namespace VisionQC.LocalAgent.Launcher
 {
     internal static class Program
     {
-        private const string LauncherVersion = "1.3.34";
+        private const string LauncherVersion = "1.3.35";
 
         [STAThread]
         private static void Main(string[] args)

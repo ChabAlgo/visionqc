@@ -24,6 +24,7 @@ test('approved report groups position charts before dates and keeps workspace ma
  await page.goto('/index.html?vqDebug=1&browserRegression=1');await page.waitForFunction(()=>window.__VISIONQC_DEBUG__);
  const html=await page.evaluate(()=>{window.__VISIONQC_DEBUG__.seedApprovedReport();return window.__VISIONQC_DEBUG__.buildReportHtml();});
  const report=await context.newPage();await report.setContent(html);
+ await expect(report.locator('h1')).toHaveCount(1);await expect(report.locator('.metadata')).toHaveCount(1);
  await expect(report.locator('.position-results .position-bars')).toBeVisible();await expect(report.locator('.position-results .miss-mix')).toBeVisible();
  expect(await report.locator('.position-results').evaluate(el=>el.nextElementSibling.classList.contains('chart'))).toBe(true);
  const rows=await report.locator('.metadata').first().locator('tbody tr').allTextContents();expect(rows.join(' ')).toContain('CA_TOP__Model.vrws');expect(rows.join(' ')).toContain('AN_BOT__Model.vrws');
