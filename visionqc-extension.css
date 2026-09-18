@@ -567,7 +567,7 @@ body[data-vq-page="classification"] #root>div>header.vq43-host-header{display:fl
 .vq43-position-add-row{display:flex;gap:9px;align-items:center;margin-top:12px}
 .vq43-position-add-row input{flex:1}
 .vq43-ng-position-row{
-  display:grid;grid-template-columns:minmax(110px,160px) 1fr 120px 40px;gap:10px;align-items:center;
+  display:grid;grid-template-columns:minmax(110px,160px) minmax(0,1fr) 120px 120px 40px;gap:10px;align-items:center;
   border:1px solid #263750;border-radius:10px;padding:10px;background:#091426;
 }
 .vq43-sim-position-enable{display:flex!important;align-items:center;gap:8px;min-width:0}
