@@ -11,8 +11,8 @@
     "agentInstaller": "downloads/VisionQC_Agent_Installer_v1.4.2.exe",
     "offlinePackage": "downloads/VisionQC_Offline_v4.8.2.zip",
     "sha256": {
-      "agentInstaller": "525BE46217E2FFE3605CA0B58869ED7D23163A480C430C860125954BCE75FC15",
-      "offlinePackage": "5EF4E55338554CE1860B9E19914D204B75F9FEBF80FCF96A011B001EDDD488A9"
+      "agentInstaller": "951FB195F03E7797F64925AEC3305ABFB57515283D2ADBA7399CB6A8E8C4F200",
+      "offlinePackage": "0D828EBD3BCDDCBF235F78702E7BAD932854015CBEA40FDB3C9FBD634C1C5CED"
     }
   },
   "notes": "Tool NG·날짜·Position 선택 CSV, 검사 이력 전체 조건 CSV, Output 입력 가독성 개선"

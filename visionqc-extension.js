@@ -3031,7 +3031,8 @@
     if(state.historyExporting)return;
     if(state.simulationAgent.analysisApiVersion<2)return showToast('검사 이력 CSV 저장에는 새 Agent 업데이트가 필요합니다.',true);
     // Freeze the search before opening the folder picker; subsequent UI changes cannot alter this export.
-    const filters=JSON.parse(JSON.stringify({...state.historyFilters,sourceTypes:PERSISTED_HISTORY_SOURCE_TYPES}));
+    if(state.historyLoading)return showToast('검사 이력 조회가 끝난 뒤 저장하세요.',true);
+    const filters=JSON.parse(JSON.stringify(state.historyAppliedFilters||{...state.historyFilters,sourceTypes:PERSISTED_HISTORY_SOURCE_TYPES}));
     state.historyExporting=true;
     try{
       const form=ensureSimulationForm();
@@ -3658,9 +3659,11 @@
     state.historyLoading = true;
     if (state.page === 'history') renderHistory();
     try {
-      const data = await agentFetch('/api/history/search', { method:'POST', timeout:30000, body:{ ...state.historyFilters, sourceTypes:PERSISTED_HISTORY_SOURCE_TYPES } });
+      const requestedFilters=JSON.parse(JSON.stringify({ ...state.historyFilters, sourceTypes:PERSISTED_HISTORY_SOURCE_TYPES }));
+      const data = await agentFetch('/api/history/search', { method:'POST', timeout:30000, body:requestedFilters });
       if (!data.ok) throw new Error(data.error || 'SQLite 이력 조회 실패');
       state.historyData = data;
+      state.historyAppliedFilters = requestedFilters;
       state.historyLoaded = true;
       state.historyLastError = '';
       const maxPage = Math.max(1, Math.ceil(Number(data.totalCount || 0) / Number(state.historyFilters.pageSize || 50)));

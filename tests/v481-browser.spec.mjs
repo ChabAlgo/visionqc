@@ -72,6 +72,9 @@ test('Scoped Agent CSV requests preserve date, Tool and Position filters; histor
  await page.locator('[data-chart-position="CA(TOP)"]').uncheck();
  await expect.poll(()=>requests.filter(r=>r.path==='/api/history/search').at(-1)?.body.positions).toEqual(['AN(TOP)']);
  await page.locator('[data-vq-action="history-day"]').click();
+ await expect.poll(()=>requests.filter(r=>r.path==='/api/history/search').at(-1)?.body.fromDate).toBe(days[2].date);
+ await expect(page.locator('[data-vq-action="history-refresh"]')).toBeEnabled();
+ await page.locator('[data-history-field="fromDate"]').fill('2026-02-01');
  await page.locator('[data-vq-action="download-chart-csv"]').click();
  await expect.poll(()=>requests.filter(r=>r.path==='/api/history/export/start').length).toBe(1);
  expect(requests.find(r=>r.path==='/api/history/export/start').body.filters).toMatchObject({positions:['AN(TOP)'],fromDate:days[2].date,toDate:days[2].date});
