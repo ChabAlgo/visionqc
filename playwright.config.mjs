@@ -1,4 +1,5 @@
 import { defineConfig } from '@playwright/test';
+const baseURL = `http://127.0.0.1:${Number(process.env.VISIONQC_TEST_PORT || 4173)}`;
 
 export default defineConfig({
   testDir: './tests',
@@ -8,7 +9,7 @@ export default defineConfig({
   retries: process.env.CI ? 1 : 0,
   reporter: [['line'], ['html', { outputFolder: 'playwright-report', open: 'never' }]],
   use: {
-    baseURL: 'http://127.0.0.1:4173',
+    baseURL,
     browserName: 'chromium',
     viewport: { width: 1920, height: 1080 },
     deviceScaleFactor: 1,
@@ -18,7 +19,7 @@ export default defineConfig({
   },
   webServer: {
     command: 'node tests/static-server.mjs',
-    url: 'http://127.0.0.1:4173/index.html',
+    url: `${baseURL}/index.html`,
     reuseExistingServer: !process.env.CI,
     timeout: 120000
   }

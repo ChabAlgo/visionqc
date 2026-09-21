@@ -19,5 +19,5 @@ const server = createServer((request, response) => {
   } catch (_) { response.writeHead(404); response.end('Not found'); }
 });
 
-server.listen(4173, '127.0.0.1');
+server.listen(Number(process.env.VISIONQC_TEST_PORT || 4173), '127.0.0.1');
 for (const signal of ['SIGINT', 'SIGTERM']) process.once(signal, () => process.exit(0));
