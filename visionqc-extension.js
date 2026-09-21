@@ -1,7 +1,7 @@
 (() => {
   'use strict';
 
-  const VERSION = '4.8.1';
+  const VERSION = '4.8.2';
   const DEFAULT_POSITION_DEFS = [
     { key:'CA_TOP', name:'CA(TOP)' },
     { key:'AN_TOP', name:'AN(TOP)' },
@@ -27,9 +27,9 @@
   const NG_POSITION_PREFIX = 'ng-position:';
   const IMG_RE = /\.(png|jpe?g|bmp|gif|webp|tif?f)$/i;
   const LOCAL_AGENT_URL = 'http://127.0.0.1:17891';
-  const EXPECTED_AGENT_VERSION = '1.4.1';
-  const AGENT_INSTALLER_URL = './downloads/VisionQC_Agent_Installer_v1.4.1.exe';
-  const OFFLINE_PACKAGE_URL = './downloads/VisionQC_Offline_v4.8.1.zip';
+  const EXPECTED_AGENT_VERSION = '1.4.2';
+  const AGENT_INSTALLER_URL = './downloads/VisionQC_Agent_Installer_v1.4.2.exe';
+  const OFFLINE_PACKAGE_URL = './downloads/VisionQC_Offline_v4.8.2.zip';
   // SQLite에는 사용자가 명시적으로 남기려는 두 종류의 결과만 표시한다.
   // 이전 버전의 단발 검사(single-inspection) 이력은 보존하되 화면 집계에서는 제외한다.
   const PERSISTED_HISTORY_SOURCE_TYPES = ['simulation', 'csv-import', 'csv-file-stream'];
@@ -114,6 +114,7 @@
     namingProfile: initialNamingProfile,
     namingPreview: null,
     dashboardDate: '',
+    dashboardPositions: null,
     dashboardModel: null,
     namingPreviewError: '',
     menuOpen: false,
@@ -805,6 +806,8 @@
     else if (action === 'download-misses') downloadMissCsv(state.selectedMissPosition);
     else if (action === 'save-dashboard-history') saveDashboardHistory();
     else if (action === 'download-all-results') downloadAllResultsCsv();
+    else if (action === 'download-tool-ng') downloadSelectedResults(control.dataset.position,control.dataset.tool);
+    else if (action === 'download-chart-csv') control.dataset.chartScope==='history'?exportHistoryCsv():downloadSelectedResults();
     else if (action === 'export-summary-report') exportSummaryReport();
     else if (action === 'download-score-filter') downloadScoreFilterCsv();
     else if (action === 'reset-thresholds') resetThresholds();
@@ -976,6 +979,21 @@
       input.onclick = () => { try { input.showPicker?.(); } catch (_) {} };
       input.onkeydown = event => event.stopPropagation();
       input.onchange = () => changeHistoryChartWindow(input.dataset.historyChartStart, 'date', input.value);
+    });
+    $$('[data-chart-position]', shell).forEach(input => {
+      input.onchange = async () => {
+        if((state.remoteAnalysis||input.dataset.chartScope==='history') && state.simulationAgent.analysisApiVersion<2){input.checked=!input.checked;return showToast('Position 선택에는 새 Agent 업데이트가 필요합니다.',true);}
+        const scope=input.dataset.chartScope;
+        const selected=$$('[data-chart-position]',shell).filter(el=>el.dataset.chartScope===scope&&el.checked).map(el=>el.dataset.chartPosition);
+        if(scope==='history'){
+          Object.assign(state.historyFilters,{positions:selected,position:'',workspaceType:'',workspaceKey:'',tool:''});
+          await refreshHistory(true);
+        }else{
+          state.dashboardPositions=selected;
+          if(state.remoteAnalysis)await refreshAgentDashboard({actual:false,thresholds:false});else renderCurrentPage();
+          scheduleAnalysisSnapshot();
+        }
+      };
     });
     $$('[data-naming-key="mode"]', shell).forEach(select => {
       select.onchange = () => {
@@ -1335,7 +1353,7 @@
     const reference=remote ? {analysisId:remote.analysisId,runId:remote.runId,inputs:remote.inputs,filePaths:remote.filePaths,excludedPositions:remote.excludedPositions,saved:!!remote.saved,live:!!remote.live} : null;
     const data = structuredClone({ remoteAnalysis:reference,resultInputs:state.resultInputs, ngImages:state.ngImages,
       ngRootName:state.ngRootName, ngFolderNames:state.ngFolderNames, ngWarnings:state.ngWarnings,
-      thresholds:state.thresholds, dashboardDate:state.dashboardDate, page:state.page });
+      thresholds:state.thresholds, dashboardDate:state.dashboardDate, dashboardPositions:state.dashboardPositions, page:state.page });
     const write = snapshotWrites.catch(()=>{}).then(()=>saveHandle(ANALYSIS_SNAPSHOT_KEY, data));
     snapshotWrites = write;
     return write;
@@ -1656,7 +1674,7 @@
         position:p.position,remote:true,rowCount:p.rawRows ?? p.total,rows:[],warnings:[],fileName:filePaths.map(p=>p.split(/[\\/]/).pop()).join(', '),updatedAt:Date.now()
       }]));
       state.dashboardDate='';state.model=model;state.dashboardModel=model;
-      state.remoteAnalysis.dateWindow=(await analysisApi('dates',{analysisId:imported.analysisId})).page;
+      state.remoteAnalysis.dateWindow=(await analysisApi('dates',{analysisId:imported.analysisId,positions:state.dashboardPositions,date:state.dashboardDate})).page;
       if(!model.tools.includes(state.analysisTool))state.analysisTool=model.tools[0]||'';
       await loadAgentMissPage();
       scheduleAnalysisSnapshot();
@@ -1737,7 +1755,7 @@
         const selected=state.dashboardDate?await fetchAgentDashboard(remote.analysisId,state.dashboardDate):full;
         if(revision!==remote.revision)continue;
         state.model=full;state.dashboardModel=selected;if(!full.tools.includes(state.analysisTool))state.analysisTool=full.tools[0]||'';await loadAgentMissPage();applied=revision;remote.needsRestore=false;
-        remote.dateWindow=(await analysisApi('dates',{analysisId:remote.analysisId,dateStart:remote.dateWindow?.start ?? -1})).page;
+        remote.dateWindow=(await analysisApi('dates',{analysisId:remote.analysisId,positions:state.dashboardPositions,date:state.dashboardDate,dateStart:remote.dateWindow?.start ?? -1})).page;
         scheduleAnalysisSnapshot();if(state.page!=='classification')renderCurrentPage();
       }
     })().catch(error=>{remote.error=error.message;showToast(`분석 갱신 실패: ${error.message}`,true);}).finally(()=>{remote.refreshing=null;if(state.remoteAnalysis===remote&&state.page==='analysis'&&!remote.error)renderCurrentPage();});
@@ -2760,11 +2778,12 @@
   function currentAnalysisDashboardData() {
     if(state.remoteAnalysis && state.model?.remote){
       const model=state.dashboardModel || state.model;
-      return {totalCount:model.recordCount,ngCount:model.totalNg,uniqueCellCount:model.recordCount,daily:state.model.daily,unknown:model.unknownRows};
+      const summary=state.remoteAnalysis.dateWindow?.summary;
+      return {totalCount:summary?.totalCount??model.recordCount,ngCount:summary?.ngCount??model.totalNg,uniqueCellCount:summary?.totalCount??model.recordCount,daily:state.model.daily,unknown:summary?.unknown??model.unknownRows};
     }
-    const records = Array.isArray(state.dashboardModel?.records) ? state.dashboardModel.records : (state.model?.records || []);
+    const records = (Array.isArray(state.dashboardModel?.records) ? state.dashboardModel.records : (state.model?.records || [])).filter(r=>state.dashboardPositions===null||state.dashboardPositions.includes(r.position));
     const live = state.simulationLiveAccumulator;
-    if (live && !state.dashboardDate) {
+    if (live && !state.dashboardDate && state.dashboardPositions===null) {
       const daily = [...live.dashboardDates.entries()]
         .map(([date, bucket]) => ({ date, total:bucket.total, ng:bucket.ng, ngRate:bucket.total ? bucket.ng / bucket.total : 0 }))
         .sort((a, b) => a.date.localeCompare(b.date));
@@ -2776,7 +2795,7 @@
         unknown:Number(live.dashboardUnknownRows || 0)
       };
     }
-    const allRows = positionNames().flatMap(position => state.resultInputs[position]?.rows || []);
+    const allRows = positionNames().filter(p=>state.dashboardPositions===null||state.dashboardPositions.includes(p)).flatMap(position => state.resultInputs[position]?.rows || []);
     const dailyRows = new Map();
     allRows.forEach(row => { const date = dashboardDateForRow(row); if (date) {
       if (!dailyRows.has(date)) dailyRows.set(date, []); dailyRows.get(date).push(row);
@@ -2791,9 +2810,16 @@
     return { totalCount:records.length, ngCount, uniqueCellCount:records.length, daily, unknown:allRows.filter(row=>!dashboardDateForRow(row)).length };
   }
 
+  function chartPositionControls(scope) {
+    const history=scope==='history';
+    const positions=history?(state.historyData?.filterOptions?.positions||[]):(state.model?.positionSummaries||[]).filter(p=>p.input).map(p=>p.position);
+    const selected=history?(state.historyFilters.positions??(state.historyFilters.position?[state.historyFilters.position]:null)):state.dashboardPositions;
+    return `<div class="vq482-chart-selection"><div aria-label="그래프 Position 선택">${positions.map(p=>`<label><input type="checkbox" data-chart-scope="${scope}" data-chart-position="${escapeHtml(p)}" ${(selected==null||selected.includes(p))?'checked':''}>${escapeHtml(p)}</label>`).join('')}</div><button class="vq43-btn vq43-btn-green" data-vq-action="download-chart-csv" data-chart-scope="${scope}" ${state.historyExporting&&history?'disabled':''}>${state.historyExporting&&history?'저장 중…':'CSV Download'}</button></div>`;
+  }
+
   function mainHistoryDashboardPanel() {
     const data = currentAnalysisDashboardData();
-    return `<section class="vq43-section vq43-main-history-dashboard"><div class="vq43-section-title"><span class="vq43-step blue">H</span><div><h3>날짜별 검사 NG율 · 현재 분석 결과</h3><p>현재 실행한 시뮬레이션 또는 현재 불러온 CSV 분석 결과만 집계합니다. 같은 날짜의 Cell ID + Position 중복은 한 번만 계산하고, 날짜가 다르면 별도 검사 건으로 계산합니다. 날짜를 누르면 메인 대시보드 전체가 해당 날짜로 집계됩니다. 전체보기로 모든 날짜 결과를 합산합니다.</p></div><button class="vq43-btn" data-vq-action="dashboard-all">전체보기</button><button class="vq43-btn vq43-btn-blue" data-vq-action="history-open">검사 이력 열기</button></div><div class="vq43-main-history-kpis"><span>검사 Cell·Position <b>${numberText(data.totalCount)}</b></span><span class="ng">NG Cell·Position <b>${numberText(data.ngCount)}</b></span><span>고유 Cell·Position <b>${numberText(data.uniqueCellCount)}</b></span><span class="ng">NG율 <b>${rateText(data.totalCount ? data.ngCount / data.totalCount : 0)}</b></span></div>${state.dashboardDate ? '<p class="vq43-note">선택 날짜: '+escapeHtml(state.dashboardDate)+'</p>' : ''}${data.unknown ? '<p class="vq43-note">날짜 미인식 '+numberText(data.unknown)+'행: 전체 집계에는 포함되며 날짜 그래프에서는 제외됩니다. 파일명 규칙을 확인하세요.</p>' : ''}${historyDateBars(data.daily)}</section>`;
+    return `<section class="vq43-section vq43-main-history-dashboard"><div class="vq43-section-title"><span class="vq43-step blue">H</span><div><h3>날짜별 검사 NG율 · 현재 분석 결과</h3><p>현재 실행한 시뮬레이션 또는 현재 불러온 CSV 분석 결과만 집계합니다. 같은 날짜의 Cell ID + Position 중복은 한 번만 계산하고, 날짜가 다르면 별도 검사 건으로 계산합니다. 날짜를 누르면 메인 대시보드 전체가 해당 날짜로 집계됩니다. 전체보기로 모든 날짜 결과를 합산합니다.</p></div><button class="vq43-btn" data-vq-action="dashboard-all">전체보기</button><button class="vq43-btn vq43-btn-blue" data-vq-action="history-open">검사 이력 열기</button></div><div class="vq43-main-history-kpis"><span>검사 Cell·Position <b>${numberText(data.totalCount)}</b></span><span class="ng">NG Cell·Position <b>${numberText(data.ngCount)}</b></span><span>고유 Cell·Position <b>${numberText(data.uniqueCellCount)}</b></span><span class="ng">NG율 <b>${rateText(data.totalCount ? data.ngCount / data.totalCount : 0)}</b></span></div>${state.dashboardDate ? '<p class="vq43-note">선택 날짜: '+escapeHtml(state.dashboardDate)+'</p>' : ''}${data.unknown ? '<p class="vq43-note">날짜 미인식 '+numberText(data.unknown)+'행: 전체 집계에는 포함되며 날짜 그래프에서는 제외됩니다. 파일명 규칙을 확인하세요.</p>' : ''}${chartPositionControls('main')}${historyDateBars(data.daily)}</section>`;
   }
 
 
@@ -2823,7 +2849,7 @@
 
   function toolDonut(position, tool, isMax = false) {
     const percent = Math.max(0, Math.min(100, tool.rate * 100));
-    return `<div class="vq43-tool-donut-item ${isMax ? 'is-max' : ''}">${isMax ? '<span class="vq43-max-badge">최고</span>' : ''}<div class="vq43-donut" style="--vq-rate:${percent.toFixed(2)}"><div><strong>${percent.toFixed(1)}%</strong><span>${numberText(tool.ng)} / ${numberText(tool.denominator)}</span></div></div><b>${escapeHtml(tool.tool)}</b><div class="vq43-tool-score-meta"><span>실제 NG 최소 <strong>${scoreText(tool.minNgScore)}</strong></span><label>Threshold<input class="vq43-threshold-input" type="number" inputmode="decimal" min="0.50" max="1.00" step="0.01" value="${tool.threshold.toFixed(2)}" data-position="${escapeHtml(position)}" data-tool="${escapeHtml(tool.tool)}" aria-label="${escapeHtml(position)} ${escapeHtml(tool.tool)} Threshold"></label></div></div>`;
+    return `<div class="vq43-tool-donut-item ${isMax ? 'is-max' : ''}">${isMax ? '<span class="vq43-max-badge">최고</span>' : ''}<div class="vq43-donut" style="--vq-rate:${percent.toFixed(2)}"><div><strong>${percent.toFixed(1)}%</strong><span>${numberText(tool.ng)} / ${numberText(tool.denominator)}</span></div></div><b>${escapeHtml(tool.tool)}</b><div class="vq43-tool-score-meta"><span>실제 NG 최소 <strong>${scoreText(tool.minNgScore)}</strong></span><label>Threshold<input class="vq43-threshold-input" type="number" inputmode="decimal" min="0.50" max="1.00" step="0.01" value="${tool.threshold.toFixed(2)}" data-position="${escapeHtml(position)}" data-tool="${escapeHtml(tool.tool)}" aria-label="${escapeHtml(position)} ${escapeHtml(tool.tool)} Threshold"></label><button class="vq482-tool-csv" data-vq-action="download-tool-ng" data-position="${escapeHtml(position)}" data-tool="${escapeHtml(tool.tool)}" aria-label="${escapeHtml(position)} ${escapeHtml(tool.tool)} NG CSV Download">CSV<br>Download</button></div></div>`;
   }
 
   function matchDiagnostic(model) {
@@ -2980,13 +3006,59 @@
     finally{state.historyImporting=false;renderCurrentPage();}
   }
 
-  async function exportAgentAnalysis(kind='all',position='') {
+  async function downloadSelectedResults(position='',tool='') {
+    if(state.remoteAnalysis){
+      if(state.simulationAgent.analysisApiVersion<2)return showToast('선택 CSV 저장에는 새 Agent 업데이트가 필요합니다.',true);
+      return exportAgentAnalysis(tool?'tool-ng':'selection',position,{tool,positions:state.dashboardPositions});
+    }
+    const records=(state.dashboardModel?.records||[]).filter(record=>tool
+      ?record.position===position&&record.tools[tool]?.result==='NG'
+      :state.dashboardPositions==null||state.dashboardPositions.includes(record.position));
+    const tools=state.model?.tools||[];
+    const headers=['Date','Time','Cell ID','Position','Total_result','Source_Row_Count'];
+    tools.forEach(name=>headers.push(`${name}_result`,`${name}_score`,`${name}_threshold`));
+    const lines=[headers.map(csvCell).join(',')];
+    for(const record of records){
+      const row=[dashboardDateForRecord(record),'',record.cellId,record.position,record.totalResult,record.sourceRows?.length||1];
+      for(const name of tools){const observation=record.tools[name];row.push(observation?.result||'',Number.isFinite(observation?.representativeScore)?String(observation.representativeScore):'',observation?.threshold??'');}
+      lines.push(row.map(csvCell).join(','));
+    }
+    const name=`VisionQC_${tool?position+'_'+tool+'_NG':'selection'}_${state.dashboardDate||'all'}_${records.length}.csv`.replace(/[<>:"/\\|?*]/g,'_');
+    return saveCsvFile(name,lines,`${numberText(records.length)}개 Cell 결과 CSV 저장 완료`);
+  }
+
+  async function exportHistoryCsv() {
+    if(state.historyExporting)return;
+    if(state.simulationAgent.analysisApiVersion<2)return showToast('검사 이력 CSV 저장에는 새 Agent 업데이트가 필요합니다.',true);
+    // Freeze the search before opening the folder picker; subsequent UI changes cannot alter this export.
+    const filters=JSON.parse(JSON.stringify({...state.historyFilters,sourceTypes:PERSISTED_HISTORY_SOURCE_TYPES}));
+    state.historyExporting=true;
+    try{
+      const form=ensureSimulationForm();
+      const picked=await requestSimulationPicker('/api/pick/folder',{initialPath:form.outputRoot||''});
+      if(!picked?.ok||!picked.path)return;
+      if(state.page==='history'){renderHistory();bindPageControls();}
+      let job=await agentFetch('/api/history/export/start',{method:'POST',body:{filters,outputDirectory:picked.path,maxRows:form.csvMaxRows,splitByDate:form.csvSplitByDate}});
+      if(!job.ok)throw new Error(job.error||'CSV 저장 시작 실패');
+      const jobId=job.jobId;
+      do{
+        await new Promise(resolve=>setTimeout(resolve,500));
+        job=await agentFetch('/api/history/export/status',{method:'POST',body:{jobId}});
+        if(!job.ok)throw new Error(job.error||'CSV 저장 실패');
+      }while(job.running);
+      if(!job.completed)throw new Error('CSV 저장이 완료되지 않았습니다.');
+      showToast(`${numberText(job.result.count)}행 · ${job.result.files.length}개 CSV 저장 완료: ${picked.path}`);
+    }catch(error){showToast(`CSV 저장 실패: ${error.message}`,true);}
+    finally{state.historyExporting=false;if(state.page==='history'){renderHistory();bindPageControls();}}
+  }
+
+  async function exportAgentAnalysis(kind='all',position='',extra={}) {
     const remote=state.remoteAnalysis;if(!remote)return;
     try {
       const picked=await requestSimulationPicker('/api/pick/folder',{initialPath:ensureSimulationForm().outputRoot || ''});
       if(!picked?.ok||!picked.path)return;
       const form=ensureSimulationForm();
-      const body={analysisId:remote.analysisId,outputDirectory:picked.path,maxRows:form.csvMaxRows,splitByDate:form.csvSplitByDate,kind,position,date:state.dashboardDate};
+      const body={analysisId:remote.analysisId,outputDirectory:picked.path,maxRows:form.csvMaxRows,splitByDate:form.csvSplitByDate,kind,position,date:state.dashboardDate,...extra};
       if(kind==='score')Object.assign(body,agentScoreRequest(),{cutoff:clampScore($('#vq43-score-cutoff')?.value ?? state.analysisScoreCutoff,.8),compare:state.analysisScoreCompare});
       const done=await agentAnalysisOperation('export',body);
       showToast(`${numberText(done.result.count)}행 · ${done.result.files.length}개 CSV 저장 완료: ${picked.path}`);
@@ -3395,7 +3467,7 @@
       input.onchange = () => {
         sync();
         if (['position','workspaceType','workspaceKey'].includes(field)) {
-          if (field === 'position') state.historyFilters.workspaceType = '';
+          if (field === 'position') { state.historyFilters.workspaceType = ''; state.historyFilters.positions=null; }
           if (field !== 'workspaceKey') state.historyFilters.workspaceKey = '';
           if (state.historyData?.filterOptions) {
             state.historyData.filterOptions.tools = [];
@@ -3446,7 +3518,7 @@
     if(scope==='main' && state.remoteAnalysis){
       const remote=state.remoteAnalysis;
       const start=action==='history-chart-latest'||(action==='date'&&!date)?-1:action==='date'?0:(remote.dateWindow?.start||0)+(action==='history-chart-prev'?-step:step);
-      analysisApi('dates',{analysisId:remote.analysisId,dateStart:action==='history-chart-latest'||(action==='date'&&!date)?-1:Math.max(0,start),dateAnchor:action==='date'?date:''}).then(response=>{
+      analysisApi('dates',{analysisId:remote.analysisId,positions:state.dashboardPositions,date:state.dashboardDate,dateStart:action==='history-chart-latest'||(action==='date'&&!date)?-1:Math.max(0,start),dateAnchor:action==='date'?date:''}).then(response=>{
         if(state.remoteAnalysis===remote&&response.page){remote.dateWindow=response.page;renderCurrentPage();}
       }).catch(error=>showToast(error.message,true));return;
     }
@@ -3570,7 +3642,7 @@
     const historyBusy = state.historyLoading || state.historyFileImport?.running;
     const top = '<div class="vq43-topline"><div><div class="vq43-eyebrow">Persistent Inspection History</div><h1 class="vq43-title">검사 이력 · 날짜별 NG율</h1><p class="vq43-subtitle">Cell ID를 최대 10,000개까지 한 번에 조회하고, DB에 저장된 Position·Tool·Workspace 조건으로 결과를 구분합니다. Simulation 통합 results CSV는 Position·Workspace·Tool 정보를 포함해 대용량 CSV 직접 저장에 그대로 사용할 수 있습니다.</p></div><div class="vq43-top-actions"><button class="vq43-btn vq43-btn-blue" data-vq-action="history-refresh" ' + (state.historyLoading ? 'disabled' : '') + '>' + (state.historyLoading ? '조회 중...' : '조회') + '</button><button class="vq43-btn vq43-btn-green" data-vq-action="history-import-file" ' + (state.historyFileImport?.running ? 'disabled' : '') + '>대용량 CSV 직접 저장</button><button class="vq43-btn vq43-btn-red" data-vq-action="history-delete-all" ' + (historyBusy ? 'disabled' : '') + '>DB 전체 삭제</button></div></div>';
     const kpis = '<section class="vq43-history-kpis"><div><span>검사 Cell·Position</span><strong>' + numberText(data.totalCount) + '</strong></div><div class="ng"><span>NG Cell·Position</span><strong>' + numberText(data.ngCount) + '</strong></div><div><span>고유 Cell·Position</span><strong>' + numberText(data.uniqueCellCount) + '</strong></div><div class="ng"><span>NG율</span><strong>' + rateText(data.totalCount ? data.ngCount / data.totalCount : 0) + '</strong></div></section>';
-    const chart = '<section class="vq43-section vq43-history-chart"><div class="vq43-section-title"><div><h3>날짜별 NG율</h3><p>촬영 시각이 없으면 검사 시각을 사용합니다. 세로축은 최고 NG율에 3%p 여유를 더해 자동 확대되며, 각 점에 NG율을 직접 표시합니다.</p></div></div>' + historyDateBars(data.daily) + '</section>';
+    const chart = '<section class="vq43-section vq43-history-chart"><div class="vq43-section-title"><div><h3>날짜별 NG율</h3><p>촬영 시각이 없으면 검사 시각을 사용합니다. 세로축은 최고 NG율에 3%p 여유를 더해 자동 확대되며, 각 점에 NG율을 직접 표시합니다.</p></div></div>' + chartPositionControls('history') + historyDateBars(data.daily) + '</section>';
     const records = '<section class="vq43-section vq43-history-records"><div class="vq43-section-title"><div><h3>Cell 이미지 탐색</h3><p>원본 FullPath와 검사 때 저장된 Green Tool Heatmap Overlay를 같은 Viewer에서 전환합니다.</p></div><span>' + numberText(data.totalCount) + '건 · ' + page + ' / ' + totalPages + ' 페이지</span></div>' + historyRecordRows(data.items) + '<div class="vq43-history-pagination"><button class="vq43-btn" data-vq-action="history-page" data-vq-history-page="' + (page-1) + '" ' + (page <= 1 ? 'disabled' : '') + '>이전</button><span>' + page + ' / ' + totalPages + '</span><button class="vq43-btn" data-vq-action="history-page" data-vq-history-page="' + (page+1) + '" ' + (page >= totalPages ? 'disabled' : '') + '>다음</button></div></section>';
     const cellDialog = state.historyCellDialogOpen
       ? '<div class="vq43-history-cell-modal"><div class="vq43-history-cell-card"><header><div><strong>Cell ID 다중 검색</strong><small>줄바꿈·쉼표·공백으로 구분 · 최대 10,000개</small></div><button data-vq-action="history-cell-ids-cancel">×</button></header><textarea id="vq43-history-cell-id-draft" placeholder="P163GG23M2100004&#10;P163GG23M2100005">' + escapeHtml(state.historyCellIdDraft) + '</textarea><footer><button class="vq43-btn" data-vq-action="history-cell-ids-clear">초기화</button><button class="vq43-btn vq43-btn-blue" data-vq-action="history-cell-ids-apply">적용</button></footer></div></div>'
@@ -7224,13 +7296,13 @@
       classificationCellSheets, buildClassificationWorkbook, formatHistoryTimestamp, offerSimulationHistorySave,
       setPage,
       async syncAgentLiveTest(processed,final=false,mode='green'){
-        state.simulationAgent={...state.simulationAgent,status:'connected',version:EXPECTED_AGENT_VERSION,analysisApiVersion:1};
+        state.simulationAgent={...state.simulationAgent,status:'connected',version:EXPECTED_AGENT_VERSION,analysisApiVersion:2};
         state.simulationLiveRunId='test-run';state.simulationLiveActive=!final;state.agentLiveNextAt=0;
         await syncAgentSimulation({mode,simulationRunId:'test-run',processed,resultCsv:'C:\\output\\results_001.csv'},final);
         return {synced:state.simulationSyncedRunId,rawRows:state.simulationLiveRows,rows:Object.values(state.resultInputs).reduce((count,input)=>count+input.rows.length,0)};
       },
       async seedAgentAnalysis(id='test-analysis') {
-        state.simulationAgent={...state.simulationAgent,status:'connected',version:EXPECTED_AGENT_VERSION,analysisApiVersion:1};
+        state.simulationAgent={...state.simulationAgent,status:'connected',version:EXPECTED_AGENT_VERSION,analysisApiVersion:2};
         state.remoteAnalysis={analysisId:id,runId:'test-run',inputs:{},filePaths:[]};
         state.resultInputs={'AN(TOP)':{position:'AN(TOP)',remote:true,rows:[],warnings:[],rowCount:4000000,fileName:'results.csv'}};
         state.dashboardDate='';state.selectedMissPosition='AN(TOP)';state.analysisTool='Crack';state.analysisPosition='ALL';state.analysisScope='TOOL_NG';

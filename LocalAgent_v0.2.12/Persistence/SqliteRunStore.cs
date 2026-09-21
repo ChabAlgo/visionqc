@@ -4,6 +4,7 @@ using System.Data.SQLite;
 using System.Globalization;
 using System.IO;
 using System.Linq;
+using System.Threading;
 using VisionQC.LocalAgent;
 using VisionQC.LocalAgent.Domain;
 using VisionQC.LocalAgent.Services;
@@ -582,9 +583,66 @@ ORDER BY image_id ASC LIMIT @limit;";
 )";
         }
 
+        private static string PositionSelection(SQLiteCommand command, List<string> positions)
+        {
+            if (positions == null) return "1=1";
+            if (positions.Count > 1000) throw new ArgumentException("Position은 최대 1,000개입니다.");
+            if (positions.Count == 0) return "0=1";
+            var names = new List<string>();
+            for (int i=0;i<positions.Count;i++) { string name="@selectedPosition"+i; names.Add(name); Add(command,name,positions[i]??""); }
+            return "i.position_key IN ("+string.Join(",",names)+")";
+        }
+
+        // Uses the same filter-before-deduplication contract as Search; streams one image at a time.
+        internal object ExportSearch(AgentHistorySearchRequest request, string outputDirectory, long maxRows, bool splitByDate, CancellationToken cancellation)
+        {
+            EnsureSchema();
+            string root=Path.GetFullPath(outputDirectory);
+            if(!Directory.Exists(root))throw new DirectoryNotFoundException(root);
+            string token=Guid.NewGuid().ToString("N"),stage=Path.Combine(root,".VisionQC-export-"+token);
+            Directory.CreateDirectory(stage);var published=new List<string>();long count=0;
+            try
+            {
+                using(var connection=new SQLiteConnection("Data Source="+_databasePath+";Version=3;Read Only=False;"))
+                {
+                    connection.Open();PrepareCellIdFilter(connection,request);
+                    var tools=ReadDistinctStrings(connection,"SELECT DISTINCT tool_name FROM tool_results ORDER BY tool_name");
+                    var headers=new List<string>{"Date","Time","Cell ID","Position","Total_result","FullPath","ProcessedPath","WorkspaceType","WorkspaceName","WorkspaceKey","Source_File","Source_Row"};
+                    foreach(string tool in tools)headers.AddRange(new[]{tool+"_result",tool+"_score"});
+                    var indexes=tools.Select((name,index)=>new{name,index}).ToDictionary(x=>x.name,x=>12+x.index*2);
+                    using(var writer=new PartitionedCsvWriter(Path.Combine(stage,"VisionQC_history_"+token.Substring(0,8)+".csv"),maxRows,splitByDate))
+                    using(var command=connection.CreateCommand())
+                    using(cancellation.Register(()=>command.Cancel()))
+                    {
+                        command.CommandText=BuildDeduplicatedHistoryCte(BuildSearchWhere(command,request))+@"
+SELECT d.image_id,COALESCE(NULLIF(d.capture_timestamp,''),d.inspected_at_utc),d.cell_id,d.position_key,d.total_result,d.full_path,d.processed_path,d.workspace_type,d.workspace_name,d.workspace_key,d.source_file_name,d.source_row_number,t.tool_name,t.result,t.score
+FROM deduped_images d LEFT JOIN tool_results t ON t.image_id=d.image_id ORDER BY d.image_id,t.tool_name";
+                        writer.WriteLine(ResultCsv.WriteRecord(headers));
+                        using(var reader=command.ExecuteReader())
+                        {
+                            long last=-1;string[] values=null;
+                            Action flush=()=>{if(values!=null){writer.WriteLine(ResultCsv.WriteRecord(values));count++;}};
+                            while(reader.Read())
+                            {
+                                cancellation.ThrowIfCancellationRequested();long id=ReadLong(reader,0);
+                                if(id!=last){flush();values=new string[headers.Count];var stamp=ResultCsv.SplitCaptureTimestamp(ReadString(reader,1));values[0]=stamp[0];values[1]=stamp[1];for(int i=2;i<12;i++)values[i]=ReadString(reader,i);last=id;}
+                                if(!reader.IsDBNull(12)){int index=indexes[ReadString(reader,12)];values[index]=ReadString(reader,13);values[index+1]=reader.IsDBNull(14)?"":Convert.ToDouble(reader[14]).ToString("R",CultureInfo.InvariantCulture);}
+                            }
+                            flush();
+                        }
+                    }
+                }
+                foreach(string file in Directory.GetFiles(stage)){cancellation.ThrowIfCancellationRequested();string target=Path.Combine(root,Path.GetFileName(file));File.Move(file,target);published.Add(target);}
+                return new {count,files=published.Where(p=>p.EndsWith(".csv",StringComparison.OrdinalIgnoreCase)).ToArray()};
+            }
+            catch{foreach(string file in published)File.Delete(file);throw;}
+            finally{Directory.Delete(stage,true);}
+        }
+
         private static string BuildSearchWhere(SQLiteCommand command, AgentHistorySearchRequest request)
         {
             var conditions = new List<string> { "NOT EXISTS (SELECT 1 FROM runs import_run WHERE import_run.run_id=i.run_id AND import_run.source_type IN ('csv-file-stream','csv-import') AND import_run.status<>'completed')" };
+            conditions.Add(PositionSelection(command, request.positions));
             string fromDate = NormalizeDate(request.fromDate);
             string toDate = NormalizeDate(request.toDate);
             string dateExpression = "substr(COALESCE(NULLIF(i.capture_timestamp,''), i.inspected_at_utc),1,10)";
@@ -658,7 +716,7 @@ ORDER BY image_id ASC LIMIT @limit;";
                 Add(command, "@position", request.position ?? "");
                 Add(command, "@type", request.workspaceType ?? "");
                 Add(command, "@workspace", request.workspaceKey ?? "");
-                string position = "(@position='' OR i.position_key=@position)";
+                string position = "(@position='' OR i.position_key=@position) AND " + PositionSelection(command, request.positions);
                 string type = " AND (@type='' OR i.workspace_type=@type)";
                 string workspace = " AND (@workspace='' OR i.workspace_key=@workspace)";
                 command.CommandText = "SELECT DISTINCT workspace_type FROM images i WHERE " + position + " AND TRIM(IFNULL(workspace_type,''))<>'' ORDER BY workspace_type";

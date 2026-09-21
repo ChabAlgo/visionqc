@@ -99,7 +99,7 @@ test('Actual NG folders defer original-file reads and exclude high-score other-T
 });
 
 test('main date dashboard stays in the current analysis set and Auto Scroll reacts only to new log lines', () => {
-  const code = js.slice(js.indexOf('function currentAnalysisDashboardData'), js.indexOf('function mainHistoryDashboardPanel'));
+  const code = js.slice(js.indexOf('function currentAnalysisDashboardData'), js.indexOf('function chartPositionControls'));
   assert.doesNotMatch(code, /state.history|agentFetch/);
   assert.match(code, /state.resultInputs/);
   assert.match(code, /state.dashboardModel/);

@@ -1,19 +1,19 @@
 {
-  "releaseTag": "visionqc-v4.8.1-agent-v1.4.1",
-  "webVersion": "4.8.1",
-  "agentVersion": "1.4.1",
-  "minimumAgentVersion": "1.4.1",
+  "releaseTag": "visionqc-v4.8.2-agent-v1.4.2",
+  "webVersion": "4.8.2",
+  "agentVersion": "1.4.2",
+  "minimumAgentVersion": "1.4.2",
   "compatibility": {
-    "web": "4.8.1",
-    "agent": "1.4.1"
+    "web": "4.8.2",
+    "agent": "1.4.2"
   },
   "artifacts": {
-    "agentInstaller": "downloads/VisionQC_Agent_Installer_v1.4.1.exe",
-    "offlinePackage": "downloads/VisionQC_Offline_v4.8.1.zip",
+    "agentInstaller": "downloads/VisionQC_Agent_Installer_v1.4.2.exe",
+    "offlinePackage": "downloads/VisionQC_Offline_v4.8.2.zip",
     "sha256": {
-      "agentInstaller": "8E0D8E5905CE9C20B3CFA4437D6BBF1BCCB795AB77461EE2F8915546509B2D6D",
-      "offlinePackage": "01BFD42C6958C03F7AA8E659B01CDA8884CD265D14F6498D11BD0CCDBC4B9469"
+      "agentInstaller": "525BE46217E2FFE3605CA0B58869ED7D23163A480C430C860125954BCE75FC15",
+      "offlinePackage": "5EF4E55338554CE1860B9E19914D204B75F9FEBF80FCF96A011B001EDDD488A9"
     }
   },
-  "notes": "대용량 Agent SQLite 분석, CSV 다중 입력·행 수/날짜 분할, Date/Time 분리, 분석 복원, Class Presets JSON 백업"
+  "notes": "Tool NG·날짜·Position 선택 CSV, 검사 이력 전체 조건 CSV, Output 입력 가독성 개선"
 }

@@ -17,7 +17,7 @@ config.positions.forEach(p=>{p.greenImageRoot=input;p.greenImageRoots=[input];})
 config.green.keywordMode=false;config.green.keywordInputRoots=[];config.green.cellIdCsvPath='';
 config.green.detailedDiagnostics=false;config.green.heatmapImageSave=false;
 config.outputRoot=join(root,'output');config.csvMaxRows=2;config.csvSplitByDate=true;config.agentAnalysis=mode==='candidate';
-config.webVersion='4.8.1';
+config.webVersion='4.8.2';
 const expected=images.length*config.positions.filter(p=>p.enabled!==false).length;
 let child;const report={root,mode,expected,simulations:[]};
 const request=async(path,body,timeout=30000)=>{

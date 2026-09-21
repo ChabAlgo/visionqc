@@ -38,6 +38,7 @@ namespace VisionQC.LocalAgent.Services
             public int dateOffset { get; set; }
             public string tool {get;set;}
             public string position {get;set;}
+            public string[] positions {get;set;}
             public string scope {get;set;}="TOOL_NG";
             public double afterScore {get;set;}=-1;
             public long afterId {get;set;}
@@ -168,8 +169,11 @@ namespace VisionQC.LocalAgent.Services
             lock(_sync)
             {
                 var job=Resolve(request.analysisId);if(job.Running)return new {ok=false,busy=true,error="분석 갱신 중입니다."};
-                if(request.kind!="all"&&request.kind!="score"&&request.kind!="misses")throw new InvalidDataException("지원하지 않는 내보내기 형식입니다.");
-                StartOperation(job,()=>job.Result=request.kind=="all"
+                if(request.kind!="all"&&request.kind!="score"&&request.kind!="misses"&&request.kind!="selection"&&request.kind!="tool-ng")throw new InvalidDataException("지원하지 않는 내보내기 형식입니다.");
+                if(request.kind=="tool-ng"&&(string.IsNullOrWhiteSpace(request.tool)||string.IsNullOrWhiteSpace(request.position)))throw new InvalidDataException("Position과 Tool을 선택하세요.");
+                StartOperation(job,()=>job.Result=request.kind=="selection"||request.kind=="tool-ng"
+                    ?job.Projection.ExportSelection(request.outputDirectory,request.maxRows,request.splitByDate,request.date,request.kind=="tool-ng"?new[]{request.position}:request.positions,request.kind=="tool-ng"?request.tool:"",job.Cancellation.Token)
+                    :request.kind=="all"
                     ?job.Projection.ExportRaw(request.outputDirectory,request.maxRows,request.splitByDate,job.Cancellation.Token,null)
                     :job.Projection.ExportFiltered(request.outputDirectory,request.maxRows,request.splitByDate,request.kind,request.date,request.position,request.tool,request.scope,request.excludeOtherToolNg,request.exclusionThreshold,request.compare,request.cutoff,job.Cancellation.Token));return StatusObject(job);
             }
@@ -226,7 +230,7 @@ namespace VisionQC.LocalAgent.Services
             lock(_sync)
             {
                 var job=Resolve(request.analysisId);if(job.Running||!job.Completed)return StatusObject(job);
-                return new {ok=true,analysisId=job.Id,page=job.Projection.DateWindow(request.dateStart,request.dateAnchor,job.Cancellation.Token)};
+                return new {ok=true,analysisId=job.Id,page=job.Projection.DateWindow(request.dateStart,request.dateAnchor,job.Cancellation.Token,request.positions,request.date)};
             }
         }
         internal object ActualNg(string body)

@@ -1,3 +1,11 @@
+# VisionQC 4.8.2 / Agent 1.4.2
+
+- Output CSV 행 수 입력의 테마 대비 수정.
+- Tool별 최종 NG Cell CSV 및 날짜·선택 Position CSV 저장.
+- 날짜별 그래프/검사 이력의 Position 체크박스와 전체 검색 결과 CSV 내보내기.
+- 대용량 CSV는 Agent에서 스트리밍 저장하며 기존 행 수·날짜 분할 설정 적용.
+- [변경 내역 및 집계 기준](RELEASE_NOTES_v4.8.2_KR.md).
+
 # Class Settings 추가 변경 (4.8.1 준비)
 
 - Class 1~5 프리셋과 현재 편집 중인 설정을 JSON 한 파일로 내보내기/가져오기.

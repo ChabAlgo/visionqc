@@ -45,6 +45,39 @@ async function setup(page){
  return requests;
 }
 
+test('Scoped Agent CSV requests preserve date, Tool and Position filters; history exports all matches',async({page})=>{
+ const requests=await setup(page);
+ await page.route('http://127.0.0.1:*/api/pick/start',route=>route.fulfill({json:{ok:true,path:'C:\\Exports'}}));
+ await page.route('http://127.0.0.1:*/api/analysis/export',async route=>{
+  requests.push({path:'/api/analysis/export',body:route.request().postDataJSON()});await route.fulfill({json:done({count:17,files:['export.csv']})});
+ });
+ await page.locator('[data-vq-action="dashboard-day"]').first().click();
+ await page.locator('[data-vq-action="download-tool-ng"]').first().click();
+ await expect.poll(()=>requests.filter(r=>r.path==='/api/analysis/export').length).toBe(1);
+ const tool=requests.find(r=>r.path==='/api/analysis/export').body;
+ expect(tool).toMatchObject({kind:'tool-ng',position:'AN(TOP)',tool:'Crack',date:days[13].date});
+ await page.locator('[data-chart-position="AN(TOP)"]').uncheck();
+ await expect.poll(()=>requests.filter(r=>r.path.endsWith('/dates')).at(-1)?.body.positions).toEqual([]);
+ await page.locator('[data-vq-action="download-chart-csv"]').click();
+ await expect.poll(()=>requests.filter(r=>r.path==='/api/analysis/export').length).toBe(2);
+ expect(requests.filter(r=>r.path==='/api/analysis/export').at(-1).body).toMatchObject({kind:'selection',positions:[],date:days[13].date});
+ await page.route('http://127.0.0.1:*/api/history/**',async route=>{
+  const path=new URL(route.request().url()).pathname,body=route.request().postDataJSON();requests.push({path,body});
+  const data=path.endsWith('/search')?{ok:true,totalCount:205,ngCount:17,uniqueCellCount:205,page:1,items:[],daily:[days[2]],filterOptions:{positions:['AN(TOP)','CA(TOP)'],tools:[],workspaces:[],workspaceTypes:[]}}
+   :path.endsWith('/start')?{ok:true,jobId:'history-export'}:{ok:true,jobId:'history-export',completed:true,running:false,result:{count:205,files:['history.csv']}};
+  await route.fulfill({json:data});
+ });
+ await page.evaluate(()=>window.__VISIONQC_DEBUG__.setPage('history'));
+ await expect(page.locator('[data-chart-position="CA(TOP)"]')).toBeVisible();
+ await page.locator('[data-chart-position="CA(TOP)"]').uncheck();
+ await expect.poll(()=>requests.filter(r=>r.path==='/api/history/search').at(-1)?.body.positions).toEqual(['AN(TOP)']);
+ await page.locator('[data-vq-action="history-day"]').click();
+ await page.locator('[data-vq-action="download-chart-csv"]').click();
+ await expect.poll(()=>requests.filter(r=>r.path==='/api/history/export/start').length).toBe(1);
+ expect(requests.find(r=>r.path==='/api/history/export/start').body.filters).toMatchObject({positions:['AN(TOP)'],fromDate:days[2].date,toDate:days[2].date});
+ await expect(page.getByText(/205행.*CSV 저장 완료/).first()).toBeVisible();
+});
+
 test('Agent dashboard keeps four million rows out of browser and pages misses without losing totals',async({page})=>{
  await setup(page);
  let snapshot=await page.evaluate(()=>window.__VISIONQC_DEBUG__.agentAnalysisSnapshot());

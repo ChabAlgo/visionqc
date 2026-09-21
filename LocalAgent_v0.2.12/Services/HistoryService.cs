@@ -16,6 +16,51 @@ namespace VisionQC.LocalAgent.Services
         private readonly object _sync = new object();
         private readonly SqliteRunStore _store;
         private readonly JavaScriptSerializer _json;
+        private ExportJob _export;
+        public sealed class ExportRequest
+        {
+            public AgentHistorySearchRequest filters { get; set; }
+            public string outputDirectory { get; set; }
+            public long maxRows { get; set; } = 1000000;
+            public bool splitByDate { get; set; }
+            public string jobId { get; set; }
+        }
+        private sealed class ExportJob
+        {
+            internal string Id=Guid.NewGuid().ToString("N"), Error;
+            internal object Result;
+            internal bool Running=true;
+            internal CancellationTokenSource Cancel=new CancellationTokenSource();
+        }
+        internal object StartExport(string body)
+        {
+            try
+            {
+                var request=_json.Deserialize<ExportRequest>(body??"{}")??new ExportRequest();
+                if(request.maxRows<1||request.maxRows>int.MaxValue)throw new ArgumentException("CSV 최대 행 수가 올바르지 않습니다.");
+                if(!Directory.Exists(request.outputDirectory))throw new DirectoryNotFoundException("저장 폴더를 선택하세요.");
+                lock(_sync)
+                {
+                    if(_export!=null&&_export.Running)return new {ok=false,error="CSV 저장이 진행 중입니다."};
+                    var job=new ExportJob();_export=job;
+                    Task.Run(()=>{
+                        try { var result=_store.ExportSearch(request.filters??new AgentHistorySearchRequest(),request.outputDirectory,request.maxRows,request.splitByDate,job.Cancel.Token);lock(_sync)job.Result=result; }
+                        catch(Exception ex){lock(_sync)job.Error=ex.Message;}
+                        finally{lock(_sync)job.Running=false;}
+                    });
+                    return new {ok=true,jobId=job.Id};
+                }
+            }catch(Exception ex){return new {ok=false,error=ex.Message};}
+        }
+        internal object ExportStatus(string body)
+        {
+            var request=_json.Deserialize<ExportRequest>(body??"{}")??new ExportRequest();
+            lock(_sync)
+            {
+                if(_export==null||_export.Id!=request.jobId)return new {ok=false,error="CSV 저장 작업을 찾을 수 없습니다."};
+                return new {ok=string.IsNullOrEmpty(_export.Error),jobId=_export.Id,running=_export.Running,completed=!_export.Running&&_export.Error==null,result=_export.Result,error=_export.Error};
+            }
+        }
         private readonly Dictionary<string, SqliteRunStore.RunStoreSession> _browserImports = new Dictionary<string, SqliteRunStore.RunStoreSession>(StringComparer.OrdinalIgnoreCase);
         private readonly Dictionary<string, HistoryFileImportJob> _fileImports = new Dictionary<string, HistoryFileImportJob>(StringComparer.OrdinalIgnoreCase);
 
@@ -109,7 +154,7 @@ namespace VisionQC.LocalAgent.Services
 
             lock (_sync)
             {
-                if (_browserImports.Count > 0 || _fileImports.Values.Any(job => job.Running))
+                if (_browserImports.Count > 0 || _fileImports.Values.Any(job => job.Running) || (_export != null && _export.Running))
                     return new AgentHistoryDeleteResponse { ok = false, busy = true, error = "CSV 이력 저장이 진행 중입니다. 완료 후 다시 삭제하세요.", databasePath = _store.DatabasePath };
                 try { return _store.DeleteAll(); }
                 catch (Exception ex) { return new AgentHistoryDeleteResponse { ok = false, error = "SQLite 검사 이력 삭제 실패: " + ex.Message, databasePath = _store.DatabasePath }; }
@@ -160,6 +205,7 @@ namespace VisionQC.LocalAgent.Services
         {
             lock (_sync)
             {
+                if (_export != null && _export.Running) _export.Cancel.Cancel();
                 foreach (SqliteRunStore.RunStoreSession session in _browserImports.Values)
                     try { _store.Complete(session, "interrupted", "Agent 종료"); } catch { }
                 _browserImports.Clear();

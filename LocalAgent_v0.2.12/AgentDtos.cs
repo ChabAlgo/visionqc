@@ -107,6 +107,7 @@ namespace VisionQC.LocalAgent
     // SQLite 이력은 항상 Agent에서 페이지 단위로 조회합니다. 대량 이력을 브라우저 배열로 전송하지 않습니다.
     public sealed class AgentHistorySearchRequest
     {
+        public List<string> positions { get; set; }
         public string fromDate { get; set; }
         public string toDate { get; set; }
         public string cellId { get; set; }

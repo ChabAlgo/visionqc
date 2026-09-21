@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections;
 using System.Collections.Generic;
 using System.Diagnostics;
@@ -283,6 +283,8 @@ namespace VisionQC.LocalAgent
                     case "/api/history/import":
                         result = ImportHistory(request.Body);
                         break;
+                    case "/api/history/export/start": result = _history.StartExport(request.Body); break;
+                    case "/api/history/export/status": result = _history.ExportStatus(request.Body); break;
                     case "/api/history/search":
                         result = _history.Search(request.Body);
                         break;
@@ -562,7 +564,7 @@ namespace VisionQC.LocalAgent
                 vpdlAvailable = true,
                 instanceId = _instanceId,
                 agentVersion = Program.AgentVersion,
-                analysisApiVersion = 1,
+                analysisApiVersion = 2,
                 engineVersion = "DL_Simulation v1.13 + VisionQC Workspace Inspect",
                 installedVpdlVersion = _vpdlVersion,
                 activeVpdlApiVersion = Program.ActiveVpdlInstallation == null ? "-" : Program.ActiveVpdlInstallation.ApiVersion,

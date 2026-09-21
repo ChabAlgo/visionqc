@@ -339,17 +339,29 @@ SUM(CASE WHEN "+FinalOk+@" THEN 1 ELSE 0 END) AS misses
 FROM actual_keys a LEFT JOIN cells c ON c.day=a.day AND c.cell=a.cell AND c.position=a.position
 WHERE @date='' OR a.day=@date GROUP BY a.position",cancellation,"@date",date??"");
         }
-        internal object DateWindow(int offset,string anchor,CancellationToken cancellation)
+        private string PreparePositions(string[] positions,string column)
+        {
+            if(positions==null)return "1=1";
+            if(positions.Length>1000)throw new InvalidDataException("Position selection exceeds 1000");
+            Execute("CREATE TEMP TABLE IF NOT EXISTS selected_positions(position TEXT PRIMARY KEY); DELETE FROM selected_positions;");
+            using(var command=Command("INSERT OR IGNORE INTO selected_positions VALUES(@position)"))
+            {var parameter=command.Parameters.Add("@position",System.Data.DbType.String);foreach(var position in positions){parameter.Value=position??"";command.ExecuteNonQuery();}}
+            return column+" IN (SELECT position FROM selected_positions)";
+        }
+
+        internal object DateWindow(int offset,string anchor,CancellationToken cancellation,string[] positions=null,string selectedDate="")
         {
             lock(_sync)
             {
-                var range=Query("SELECT COUNT(DISTINCT NULLIF(day,'')) AS count,MIN(NULLIF(day,'')) AS firstDate,MAX(NULLIF(day,'')) AS lastDate FROM position_stats",cancellation)[0];
+                string where=PreparePositions(positions,"position");
+                var range=Query("SELECT COUNT(DISTINCT NULLIF(day,'')) AS count,MIN(NULLIF(day,'')) AS firstDate,MAX(NULLIF(day,'')) AS lastDate FROM position_stats WHERE "+where,cancellation)[0];
                 long count=Number(range,"count"),start=offset<0?Math.Max(0,count-10):offset;
-                if(!string.IsNullOrEmpty(anchor))start=Number(Query("SELECT COUNT(DISTINCT day) AS count FROM position_stats WHERE day<>'' AND day<@date",cancellation,"@date",anchor)[0],"count");
+                if(!string.IsNullOrEmpty(anchor))start=Number(Query("SELECT COUNT(DISTINCT day) AS count FROM position_stats WHERE "+where+" AND day<>'' AND day<@date",cancellation,"@date",anchor)[0],"count");
                 start=Math.Max(0,Math.Min(Math.Max(0,count-10),start));
-                var rows=Query("SELECT day AS date,SUM(total) AS total,SUM(ng) AS ng FROM position_stats WHERE day<>'' GROUP BY day ORDER BY day LIMIT 10 OFFSET @offset",cancellation,"@offset",start);
+                var rows=Query("SELECT day AS date,SUM(total) AS total,SUM(ng) AS ng FROM position_stats WHERE "+where+" AND day<>'' GROUP BY day ORDER BY day LIMIT 10 OFFSET @offset",cancellation,"@offset",start);
                 foreach(var row in rows)row["ngRate"]=Number(row,"total")==0?0:(double)Number(row,"ng")/Number(row,"total");
-                return new {rows,start,count,firstDate=range["firstDate"],lastDate=range["lastDate"]};
+                var summary=Query("SELECT COALESCE(SUM(total),0) AS totalCount,COALESCE(SUM(ng),0) AS ngCount,COALESCE(SUM(CASE WHEN day='' THEN raw_rows ELSE 0 END),0) AS unknown FROM position_stats WHERE "+where+" AND (@date='' OR day=@date)",cancellation,"@date",selectedDate??"")[0];
+                return new {rows,start,count,firstDate=range["firstDate"],lastDate=range["lastDate"],summary};
             }
         }
 
@@ -451,6 +463,53 @@ WHERE i.run_id=@run ORDER BY i.image_id,t.tool_result_id"))
             }
             catch {foreach(var file in published)File.Delete(file);throw;}
             finally {Directory.Delete(stage,true);}
+        }
+
+        internal object ExportSelection(string outputDirectory,long maxRows,bool splitByDate,string date,string[] positions,string tool,CancellationToken cancellation)
+        {
+            string root=Path.GetFullPath(outputDirectory);if(!Directory.Exists(root))throw new DirectoryNotFoundException(root);
+            string token=Guid.NewGuid().ToString("N"),stage=Path.Combine(root,".VisionQC-export-"+token);Directory.CreateDirectory(stage);
+            var published=new List<string>();long count=0;
+            try
+            {
+                lock(_sync)
+                {
+                    string where=PreparePositions(positions,"c.position");
+                    var names=Query("SELECT DISTINCT tool FROM tools ORDER BY tool",cancellation).Select(r=>Convert.ToString(r["tool"])).ToArray();
+                    var header=new List<string>{"Date","Time","Cell ID","Position","Total_result","Source_Row_Count"};
+                    foreach(string name in names)header.AddRange(new[]{name+"_result",name+"_score",name+"_threshold"});
+                    var indexes=names.Select((name,index)=>new{name,index}).ToDictionary(t=>t.name,t=>6+t.index*3);
+                    using(var writer=new PartitionedCsvWriter(Path.Combine(stage,"VisionQC_"+(string.IsNullOrEmpty(tool)?"selection":"tool_NG")+"_"+token.Substring(0,8)+".csv"),maxRows,splitByDate))
+                    using(var command=Command(@"SELECT c.day,c.cell,c.position,c.ng,c.rows,
+CASE WHEN "+FinalOk+@" THEN 1 ELSE 0 END AS is_ok,t.tool,t.base_ng,t.base_ok,t.ng,t.min_ng,t.min_ok,t.min_score,COALESCE(h.value,.5)
+FROM cells c LEFT JOIN tools t ON t.day=c.day AND t.cell=c.cell AND t.position=c.position
+LEFT JOIN thresholds h ON h.position=t.position AND h.tool=t.tool
+WHERE "+where+@" AND (@date='' OR c.day=@date) AND (@tool='' OR EXISTS(SELECT 1 FROM tools n WHERE n.day=c.day AND n.cell=c.cell AND n.position=c.position AND n.tool=@tool AND n.ng=1))
+ORDER BY c.day,c.position,c.cell,t.tool"))
+                    using(cancellation.Register(()=>command.Cancel()))
+                    {
+                        command.Parameters.AddWithValue("@date",date??"");command.Parameters.AddWithValue("@tool",tool??"");writer.WriteLine(ResultCsv.WriteRecord(header));
+                        using(var reader=command.ExecuteReader())
+                        {
+                            string lastDay=null,lastCell=null,lastPosition=null;string[] values=null;
+                            Action flush=()=>{if(values!=null){writer.WriteLine(ResultCsv.WriteRecord(values));count++;}};
+                            while(reader.Read())
+                            {
+                                cancellation.ThrowIfCancellationRequested();string day=reader.GetString(0),cell=reader.GetString(1),position=reader.GetString(2);
+                                if(day!=lastDay||cell!=lastCell||position!=lastPosition){flush();values=new string[header.Count];values[0]=day;values[1]="";values[2]=cell;values[3]=position;values[4]=reader.GetInt64(3)==1?"NG":reader.GetInt64(5)==1?"OK":"UNKNOWN";values[5]=Convert.ToString(reader[4]);lastDay=day;lastCell=cell;lastPosition=position;}
+                                if(!reader.IsDBNull(6)){
+                                    int index=indexes[reader.GetString(6)];values[index]=reader.GetInt64(9)==1?"NG":reader.GetInt64(7)==1||reader.GetInt64(8)==1?"OK":"UNKNOWN";
+                                    int score=reader.GetInt64(7)==1?10:reader.GetInt64(8)==1?11:12;values[index+1]=reader.IsDBNull(score)?"":reader.GetDouble(score).ToString("R",CultureInfo.InvariantCulture);values[index+2]=reader.GetDouble(13).ToString("R",CultureInfo.InvariantCulture);
+                                }
+                            }flush();
+                        }
+                    }
+                }
+                foreach(string file in Directory.GetFiles(stage)){cancellation.ThrowIfCancellationRequested();string target=Path.Combine(root,Path.GetFileName(file));File.Move(file,target);published.Add(target);}
+                return new {count,files=published.Where(p=>p.EndsWith(".csv",StringComparison.OrdinalIgnoreCase)).ToArray()};
+            }
+            catch{foreach(string file in published)File.Delete(file);throw;}
+            finally{Directory.Delete(stage,true);}
         }
 
         internal object ExportFiltered(string outputDirectory,long maxRows,bool splitByDate,string kind,string date,string position,string tool,string scope,bool exclude,double exclusion,string compare,double cutoff,CancellationToken cancellation)

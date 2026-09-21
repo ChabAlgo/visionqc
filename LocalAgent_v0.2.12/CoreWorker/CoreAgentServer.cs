@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.Diagnostics;
 using System.IO;
@@ -156,6 +156,8 @@ namespace VisionQC.LocalAgent
                     case "/api/analysis/thresholds": result = _analysis.Thresholds(request.Body); break;
                     case "/api/analysis/cancel": result = _analysis.Cancel(request.Body); break;
                     case "/api/history/import": result = _history.ImportBrowserRows(request.Body); break;
+                    case "/api/history/export/start": result = _history.StartExport(request.Body); break;
+                    case "/api/history/export/status": result = _history.ExportStatus(request.Body); break;
                     case "/api/history/search": result = _history.Search(request.Body); break;
                     case "/api/history/import-file/start": result = _history.StartFileImport(request.Body); break;
                     case "/api/history/import-file/status": result = _history.FileImportStatus(request.Body); break;
@@ -198,7 +200,7 @@ namespace VisionQC.LocalAgent
                 vpdlAvailable = false,
                 instanceId = _instanceId,
                 agentVersion = Program.AgentVersion,
-                analysisApiVersion = 1,
+                analysisApiVersion = 2,
                 engineVersion = "VisionQC Core · VPDL 미설치 모드",
                 installedVpdlVersion = "-",
                 activeVpdlApiVersion = "-",

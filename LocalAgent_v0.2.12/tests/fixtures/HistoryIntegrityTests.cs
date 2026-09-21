@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.IO;
 using System.Linq;
 using System.Web.Script.Serialization;
@@ -172,6 +172,36 @@ class HistoryIntegrityTests
             var declined=pending.Start(new SqliteRunStore.RunStoreStart {SourceType="simulation"});
             pending.AppendImportedRecord(declined,new AgentHistoryRecordRequest {cellId="declined",position="AN(TOP)"});pending.Complete(declined,"completed","");
             Check(saved.Search(new AgentHistorySearchRequest()).totalCount==402,"No decision persisted records");
+        }
+        using(var selectedStore=new SqliteRunStore(Path.Combine(root,"selected.sqlite")))
+        {
+            var run=selectedStore.Start(new SqliteRunStore.RunStoreStart {SourceType="simulation"});
+            foreach(string pos in new[]{"AN(TOP)","CA(TOP)"})for(int day=1;day<=2;day++)for(int cell=0;cell<20;cell++)for(int duplicate=0;duplicate<2;duplicate++)
+                selectedStore.AppendImportedRecord(run,new AgentHistoryRecordRequest {cellId="CELL"+cell,position=pos,workspaceKey=pos,captureTimestamp="2026-02-0"+day+"T12:34:56",totalResult=cell<17?"NG":"OK",tools=new System.Collections.Generic.List<AgentHistoryToolResultRequest>{new AgentHistoryToolResultRequest {tool="FoilDamage",result=cell<17?"NG":"OK",score=cell<10?.9:.7}}});
+            selectedStore.Complete(run,"completed","");
+            var selection=new AgentHistorySearchRequest {positions=new System.Collections.Generic.List<string>{"AN(TOP)"},fromDate="2026-02-01",toDate="2026-02-01"};
+            Check(selectedStore.Search(selection).totalCount==20,"History Position/date dedup mismatch");
+            Check(selectedStore.Search(new AgentHistorySearchRequest{positions=new System.Collections.Generic.List<string>()}).totalCount==0,"Empty positions exported all history");
+            var json=new JavaScriptSerializer();var cancel=System.Threading.CancellationToken.None;
+            string output=Path.Combine(root,"selected-export");Directory.CreateDirectory(output);
+            var history=(System.Collections.Generic.Dictionary<string,object>)json.DeserializeObject(json.Serialize(selectedStore.ExportSearch(selection,output,7,false,cancel)));
+            Check(Convert.ToInt64(history["count"])==20&&((object[])history["files"]).Length==3,"History export used page/raw count");
+            string firstFile=Convert.ToString(((object[])history["files"])[0]);
+            Check(File.ReadAllText(firstFile).Contains("2026-02-01,12:34:56,CELL"),"History CSV capture time lost");
+            using(var projection=new AnalysisProjection(selectedStore.DatabasePath,Path.Combine(root,"selected-projection.sqlite"),run.RunId))
+            {
+                while(projection.Advance(cancel)){}
+                Func<string[],string,string,System.Collections.Generic.Dictionary<string,object>> export=(positions,date,tool)=>(System.Collections.Generic.Dictionary<string,object>)json.DeserializeObject(json.Serialize(projection.ExportSelection(output,1000000,false,date,positions,tool,cancel)));
+                Check(Convert.ToInt64(export(new[]{"AN(TOP)"},"2026-02-01","FoilDamage")["count"])==17,"17 NG chart must export exactly 17 deduplicated Cells");
+                Check(Convert.ToInt64(export(null,"","FoilDamage")["count"])==68,"All date/Position tool export mismatch");
+                Check(Convert.ToInt64(export(new string[0],"","")["count"])==0,"Empty selection exported all rows");
+                Check(Convert.ToInt64(export(new[]{"CA(TOP)"},"2026-02-02","")["count"])==20,"Date export lost OK Cells");
+                projection.SetThresholds(new[]{new AnalysisProjection.ThresholdValue{position="AN(TOP)",tool="FoilDamage",value=.8}},cancel);
+                Check(Convert.ToInt64(export(new[]{"AN(TOP)"},"2026-02-01","FoilDamage")["count"])==10,"Tool export ignored threshold");
+                var window=(System.Collections.Generic.Dictionary<string,object>)json.DeserializeObject(json.Serialize(projection.DateWindow(-1,"",cancel,new[]{"AN(TOP)"},"2026-02-01")));
+                var summary=(System.Collections.Generic.Dictionary<string,object>)window["summary"];
+                Check(Convert.ToInt64(summary["totalCount"])==20&&Convert.ToInt64(summary["ngCount"])==10&&((object[])window["rows"]).Length==2,"Graph selection summary diverged from exports");
+            }
         }
         Console.WriteLine("PASS: isolated SQLite precision, workspace/live metadata, failed import rollback after 401 rows; original history preserved. " + root);
     }

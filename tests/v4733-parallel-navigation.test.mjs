@@ -86,6 +86,6 @@ test('live dashboard redraw is throttled independently from progress and date to
   assert.match(web, /queueLiveUiRender\(true\)/);
   assert.match(web, /function appendRowToLiveDashboardDates/);
   assert.match(web, /dashboardDates:new Map\(\)/);
-  assert.match(web, /if \(live && !state\.dashboardDate\)/);
+  assert.match(web, /if \(live && !state\.dashboardDate && state\.dashboardPositions===null\)/);
   assert.match(web, /updateGlobalSimulationProgress\(\);/);
 });
