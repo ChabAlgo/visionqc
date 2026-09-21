@@ -142,19 +142,19 @@ namespace VpdlGreenHeatmapOverlay
                     StringComparer.OrdinalIgnoreCase);
                 var integratedToolNames = GetDistinctToolNames(contexts.Values.SelectMany(value => value.Tools));
 
-                var slotWriters = new Dictionary<string, StreamWriter>(StringComparer.OrdinalIgnoreCase);
+                var slotWriters = new Dictionary<string, PartitionedCsvWriter>(StringComparer.OrdinalIgnoreCase);
                 try
                 {
                     foreach (var slot in enabledSlots)
                     {
                         string slotCsv = Path.Combine(GetSlotOutputDir(config, slot), string.Format("results_{0}_{1}.csv", SafeFileName(slot.Key), runStamp));
                         slotCsvPaths[slot.DisplayName] = slotCsv;
-                        var writer = new StreamWriter(slotCsv, false, new System.Text.UTF8Encoding(true));
+                        var writer = new PartitionedCsvWriter(slotCsv, config.CsvMaxRows, config.CsvSplitByDate);
                         WriteHeader(activeSlotToolNames[slot.Key], writer);
                         slotWriters[slot.Key] = writer;
                     }
 
-                    using (var integratedCsv = new StreamWriter(integratedCsvPath, false, new System.Text.UTF8Encoding(true)))
+                    using (var integratedCsv = new PartitionedCsvWriter(integratedCsvPath, config.CsvMaxRows, config.CsvSplitByDate))
                     {
                         WriteIntegratedSummaryHeader(integratedToolNames, integratedCsv);
                         int idx = 0;
@@ -180,7 +180,7 @@ namespace VpdlGreenHeatmapOverlay
 
                             WriteIntegratedSummaryRow(integratedToolNames, integratedCsv, one);
                             UpdateCellPositionSummary(cellPositionSummary, cellPositionOrder, one);
-                            StreamWriter slotWriter;
+                            PartitionedCsvWriter slotWriter;
                             if (slotWriters.TryGetValue(job.WorkspaceKey, out slotWriter))
                                 WriteRow(activeSlotToolNames[job.WorkspaceKey], slotWriter, one);
 
@@ -190,6 +190,9 @@ namespace VpdlGreenHeatmapOverlay
                                 Report(progress, msg, idx, imageJobs.Count);
                             }
                         }
+                        integratedCsv.Flush();
+                        integratedCsvPath = integratedCsv.PrimaryPath;
+                        foreach (var slot in enabledSlots) slotCsvPaths[slot.DisplayName] = slotWriters[slot.Key].PrimaryPath;
                     }
                 }
                 finally
@@ -296,9 +299,9 @@ namespace VpdlGreenHeatmapOverlay
             return list;
         }
 
-        private static void WriteHeader(List<string> toolNames, StreamWriter csv)
+        private static void WriteHeader(List<string> toolNames, TextWriter csv)
         {
-            var header = new List<string> { "Date", "Time", "CaptureTimestamp", "FileName", "FullPath", "ProcessedPath", "Cell ID", "Position", "WorkspaceType", "WorkspaceName", "WorkspaceKey" };
+            var header = new List<string> { "Date", "Time", "InspectionDate", "InspectionTime", "FileName", "FullPath", "ProcessedPath", "Cell ID", "Position", "WorkspaceType", "WorkspaceName", "WorkspaceKey" };
             foreach (var toolName in toolNames)
             {
                 header.Add(toolName + "_result");
@@ -309,9 +312,13 @@ namespace VpdlGreenHeatmapOverlay
             csv.WriteLine(string.Join(",", header.Select(EscapeCsv)));
         }
 
-        private static void WriteRow(List<string> toolNames, StreamWriter csv, ProcessOneResult result)
+        private static void WriteRow(List<string> toolNames, TextWriter csv, ProcessOneResult result)
         {
-            var row = new List<string> { result.DateText, result.TimeText, result.CaptureTimestamp, result.FileName, result.FullPath, result.ProcessingPath, result.CellId, result.Position, result.WorkspaceType, result.WorkspaceName, result.WorkspaceKey };
+            string[] capture = ResultCsv.SplitCaptureTimestamp(result.CaptureTimestamp);
+            DateTime inspectionDate, inspectionTime;
+            string date = DateTime.TryParseExact(result.DateText, "yyyyMMdd", System.Globalization.CultureInfo.InvariantCulture, System.Globalization.DateTimeStyles.None, out inspectionDate) ? inspectionDate.ToString("yyyy-MM-dd") : "";
+            string time = DateTime.TryParseExact(result.TimeText, "HHmmss", System.Globalization.CultureInfo.InvariantCulture, System.Globalization.DateTimeStyles.None, out inspectionTime) ? inspectionTime.ToString("HH:mm:ss") : "";
+            var row = new List<string> { capture[0], capture[1], date, time, result.FileName, result.FullPath, result.ProcessingPath, result.CellId, result.Position, result.WorkspaceType, result.WorkspaceName, result.WorkspaceKey };
             foreach (var toolName in toolNames)
             {
                 ToolResult tr;
@@ -402,12 +409,12 @@ namespace VpdlGreenHeatmapOverlay
             }
         }
 
-        private static void WriteIntegratedSummaryHeader(List<string> toolNames, StreamWriter csv)
+        private static void WriteIntegratedSummaryHeader(List<string> toolNames, TextWriter csv)
         {
             WriteHeader(toolNames, csv);
         }
 
-        private static void WriteIntegratedSummaryRow(List<string> toolNames, StreamWriter csv, ProcessOneResult result)
+        private static void WriteIntegratedSummaryRow(List<string> toolNames, TextWriter csv, ProcessOneResult result)
         {
             WriteRow(toolNames, csv, result);
         }
@@ -571,11 +578,12 @@ namespace VpdlGreenHeatmapOverlay
             string cellId = ExtractCellId(config.NamingProfile, sourceFullPath);
             var judgementCandidates = new List<string>();
             bool allOk = true;
+            var inspectedAt = DateTime.Now;
             var result = new ProcessOneResult
             {
-                DateText = DateTime.Now.ToString("yyyyMMdd"),
+                DateText = inspectedAt.ToString("yyyyMMdd"),
                 CaptureTimestamp = config.NamingProfile == null ? null : NamingProfileParser.Parse(config.NamingProfile, sourceFullPath).captureTimestamp,
-                TimeText = DateTime.Now.ToString("HHmmss"),
+                TimeText = inspectedAt.ToString("HHmmss"),
                 FileName = fileName,
                 FullPath = sourceFullPath,
                 ProcessingPath = job.ImagePath,
@@ -784,9 +792,9 @@ namespace VpdlGreenHeatmapOverlay
             private readonly Dictionary<string, WorkspaceContext> _contexts;
             private readonly Dictionary<string, List<string>> _activeSlotToolNames;
             private readonly List<string> _integratedToolNames;
-            private readonly Dictionary<string, StreamWriter> _slotWriters = new Dictionary<string, StreamWriter>(StringComparer.OrdinalIgnoreCase);
+            private readonly Dictionary<string, PartitionedCsvWriter> _slotWriters = new Dictionary<string, PartitionedCsvWriter>(StringComparer.OrdinalIgnoreCase);
             private readonly Dictionary<string, string> _slotCsvPaths = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
-            private readonly StreamWriter _integratedCsv;
+            private readonly PartitionedCsvWriter _integratedCsv;
             private readonly Dictionary<string, Dictionary<string, string>> _cellPositionSummary = new Dictionary<string, Dictionary<string, string>>(StringComparer.OrdinalIgnoreCase);
             private readonly List<string> _cellPositionOrder = new List<string>();
             private readonly Dictionary<string, int> _judgementPriority;
@@ -872,12 +880,12 @@ namespace VpdlGreenHeatmapOverlay
                 {
                     string slotCsv = Path.Combine(GetSlotOutputDir(_config, slot), string.Format("results_{0}_{1}.csv", SafeFileName(slot.Key), _runStamp));
                     _slotCsvPaths[slot.DisplayName] = slotCsv;
-                    var writer = new StreamWriter(slotCsv, false, new System.Text.UTF8Encoding(true));
+                    var writer = new PartitionedCsvWriter(slotCsv, _config.CsvMaxRows, _config.CsvSplitByDate);
                     WriteHeader(_activeSlotToolNames[slot.Key], writer);
                     _slotWriters[slot.Key] = writer;
                 }
 
-                _integratedCsv = new StreamWriter(Path.Combine(_config.OutputRoot, string.Format("results_{0}.csv", _runStamp)), false, new System.Text.UTF8Encoding(true));
+                _integratedCsv = new PartitionedCsvWriter(Path.Combine(_config.OutputRoot, string.Format("results_{0}.csv", _runStamp)), _config.CsvMaxRows, _config.CsvSplitByDate);
                 WriteIntegratedSummaryHeader(_integratedToolNames, _integratedCsv);
             }
 
@@ -918,7 +926,7 @@ namespace VpdlGreenHeatmapOverlay
 
                 WriteIntegratedSummaryRow(_integratedToolNames, _integratedCsv, one);
                 UpdateCellPositionSummary(_cellPositionSummary, _cellPositionOrder, one);
-                StreamWriter slotWriter;
+                PartitionedCsvWriter slotWriter;
                 if (_slotWriters.TryGetValue(slotKey, out slotWriter))
                     WriteRow(_activeSlotToolNames[slotKey], slotWriter, one);
 
@@ -955,9 +963,9 @@ namespace VpdlGreenHeatmapOverlay
                     SkippedByCellIdCount = _skippedByCellIdCount,
                     NgCountByTool = _ngCountByTool,
                     CountByJudgement = _countByJudgement,
-                    CsvPath = Path.Combine(_config.OutputRoot, string.Format("results_{0}.csv", _runStamp)),
+                    CsvPath = _integratedCsv.PrimaryPath,
                     CellPositionSummaryCsvPath = Path.Combine(_config.OutputRoot, string.Format("cell_position_summary_{0}.csv", _runStamp)),
-                    SlotCsvPaths = _slotCsvPaths,
+                    SlotCsvPaths = _config.WorkspaceSlots.Where(slot => slot.Enabled).ToDictionary(slot => slot.DisplayName, slot => _slotWriters[slot.Key].PrimaryPath),
                     OutputRoot = _config.OutputRoot,
                     Elapsed = _sw.Elapsed
                 };

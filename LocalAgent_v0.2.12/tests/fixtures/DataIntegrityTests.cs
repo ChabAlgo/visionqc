@@ -13,6 +13,8 @@ class DataIntegrityTests
     {
         string root = Path.Combine(Path.GetTempPath(), "VisionQC-integrity-" + Guid.NewGuid().ToString("N"));
         Directory.CreateDirectory(root);
+        Check(ResultCsv.SplitCaptureTimestamp("2026-08-07T01:20:30").SequenceEqual(new[]{"2026-08-07","01:20:30"}), "Capture Date/Time columns incorrect");
+        Check(ResultCsv.SplitCaptureTimestamp(null).All(string.IsNullOrEmpty), "Unknown capture date invented");
         string a = Path.Combine(root, "a.csv"), b = Path.Combine(root, "b.csv");
         string workspace = Path.Combine(root,"workspace.vrws");
         File.WriteAllText(workspace,"original");
@@ -38,6 +40,36 @@ class DataIntegrityTests
         int outputs = Directory.GetFiles(root, "results_*.csv").Length;
         Reject(() => ResultCsv.Merge(root, new[] { a, b }));
         Check(Directory.GetFiles(root, "results_*.csv").Length == outputs && Directory.GetFiles(root, "*.tmp").Length == 0, "Partial output published");
+        // Partition boundaries count CSV records, not physical lines. Interleaved dates exercise LRU reopen.
+        string split = Path.Combine(root, "split.csv");
+        string primary;
+        using (var writer = new PartitionedCsvWriter(split, 2, true))
+        {
+            writer.WriteLine("Cell ID,CaptureTimestamp,Note");
+            for (int round = 0; round < 3; round++) for (int day = 1; day <= 12; day++)
+                writer.WriteLine(ResultCsv.WriteRecord(new[] { "00" + day, "2026-09-" + day.ToString("D2") + "T12:00:00", "a\nb,\"c\"" }));
+            writer.WriteLine("unknown,bad-date,x");
+            writer.Flush(); primary = writer.PrimaryPath;
+        }
+        var parts = PartitionedCsvWriter.Expand(primary).ToArray();
+        Check(parts.Length == 25, "Date/row partition count incorrect");
+        int rowCount = 0;
+        foreach (string part in parts) using (var reader = new StreamReader(part))
+        {
+            Check(ResultCsv.ReadHeader(reader).Count == 3, "Missing repeated header");
+            int count = 0; System.Collections.Generic.List<string> row;
+            while ((row = ResultCsv.ReadRecord(reader)) != null)
+            {
+                Check(row.Count == 3, "Quoted record damaged across parts");
+                if (row[0] != "unknown") Check(row[2] == "a\nb,\"c\"", "Multiline data changed");
+                count++;
+            }
+            Check(count <= 2, "Data row cap exceeded"); rowCount += count;
+        }
+        Check(rowCount == 37 && parts.Any(x => x.Contains("unknown-date")), "Partition lost rows or unknown date");
+        string empty;
+        using (var writer = new PartitionedCsvWriter(Path.Combine(root, "empty.csv"), 2)) { writer.WriteLine("Cell ID,Position"); empty = writer.PrimaryPath; }
+        Check(File.ReadAllLines(empty).Length == 1, "Empty run lost header");
         CultureInfo.CurrentCulture = new CultureInfo("de-DE");
         Check(ResultCsv.ParseScore("0,75") == .75 && ResultCsv.ParseScore("0.75") == .75 && ResultCsv.ParseScore("") == null, "Culture-dependent score");
         Reject(() => ResultCsv.ParseScore("75")); Reject(() => ResultCsv.ParseScore("NaN"));

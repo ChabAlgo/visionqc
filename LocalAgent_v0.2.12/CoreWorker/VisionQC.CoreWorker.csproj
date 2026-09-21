@@ -53,9 +53,12 @@
     <Compile Include="..\Services\VpdlWorkerSelection.cs"><Link>Services\VpdlWorkerSelection.cs</Link></Compile>
     <Compile Include="..\Services\VpdlWorkerLocator.cs"><Link>Services\VpdlWorkerLocator.cs</Link></Compile>
     <Compile Include="..\Services\HistoryService.cs"><Link>Services\HistoryService.cs</Link></Compile>
+    <Compile Include="..\Services\AnalysisService.cs"><Link>Services\AnalysisService.cs</Link></Compile>
     <Compile Include="..\Services\CsvHistoryFileImporter.cs"><Link>Services\CsvHistoryFileImporter.cs</Link></Compile>
     <Compile Include="..\Services\ResultCsv.cs"><Link>Services\ResultCsv.cs</Link></Compile>
+    <Compile Include="..\Services\PartitionedCsvWriter.cs"><Link>Services\PartitionedCsvWriter.cs</Link></Compile>
     <Compile Include="..\Persistence\SqliteRunStore.cs"><Link>Persistence\SqliteRunStore.cs</Link></Compile>
+    <Compile Include="..\Persistence\AnalysisProjection.cs"><Link>Persistence\AnalysisProjection.cs</Link></Compile>
   </ItemGroup>
   <ItemGroup><None Include="..\App.config"><Link>App.config</Link></None></ItemGroup>
   <Import Project="$(MSBuildToolsPath)\Microsoft.CSharp.targets" />

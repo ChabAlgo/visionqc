@@ -4,6 +4,7 @@ using System.Globalization;
 using System.IO;
 using System.Linq;
 using System.Text;
+using System.Threading;
 using System.Web.Script.Serialization;
 using VisionQC.LocalAgent.Domain;
 using VisionQC.LocalAgent.Persistence;
@@ -24,7 +25,20 @@ namespace VisionQC.LocalAgent.Services
 
         internal long Import(AgentHistoryFileImportRequest request, string filePath, Action<long> progress)
         {
+            string runId;
+            return ImportFiles(request, new[] { filePath }, progress, CancellationToken.None, out runId);
+        }
+
+        internal long ImportFiles(AgentHistoryFileImportRequest request, IEnumerable<string> filePaths, Action<long> progress, CancellationToken cancellation, out string runId, IDictionary<string,string> filePositions = null, ISet<string> excludedPositions = null)
+        {
+            runId = null;
+            var paths = filePaths.Select(Path.GetFullPath).Distinct(StringComparer.OrdinalIgnoreCase).ToArray();
+            if (paths.Length == 0) throw new InvalidDataException("선택한 CSV 파일이 없습니다.");
+            foreach (string path in paths)
+                if (!File.Exists(path) || !string.Equals(Path.GetExtension(path), ".csv", StringComparison.OrdinalIgnoreCase))
+                    throw new InvalidDataException("CSV 파일을 찾을 수 없습니다: " + path);
             if (request == null) request = new AgentHistoryFileImportRequest();
+            string sourceName = string.Join("; ", paths.Select(Path.GetFileName));
             SqliteRunStore.RunStoreSession session = null;
             bool completed = false;
             long processed = 0;
@@ -34,17 +48,22 @@ namespace VisionQC.LocalAgent.Services
                 {
                     SourceType = "csv-file-stream",
                     Mode = FirstNonEmpty(request.mode, "csv-analysis"),
-                    SourceName = FirstNonEmpty(request.sourceName, Path.GetFileName(filePath)),
+                    SourceName = FirstNonEmpty(request.sourceName, sourceName),
                     AgentVersion = Program.AgentVersion,
                     WebVersion = request.webVersion ?? "",
                     NamingProfile = request.namingProfile,
                     NamingProfileJson = _json.Serialize(request.namingProfile ?? new NamingProfile()),
                     WorkspaceType = "csv-analysis",
-                    WorkspaceName = FirstNonEmpty(request.sourceName, Path.GetFileName(filePath)),
-                    WorkspaceKey = "csv|" + FirstNonEmpty(request.sourceName, Path.GetFileName(filePath)).Trim().ToLowerInvariant()
+                    WorkspaceName = FirstNonEmpty(request.sourceName, sourceName),
+                    WorkspaceKey = "csv|" + FirstNonEmpty(request.sourceName, sourceName).Trim().ToLowerInvariant()
                 });
 
-                using (var reader = new StreamReader(filePath, Encoding.Default, true, 1024 * 128))
+                foreach (string filePath in paths)
+                {
+                cancellation.ThrowIfCancellationRequested();
+                string filePosition=null;
+                if(filePositions!=null)filePositions.TryGetValue(filePath,out filePosition);
+                using (var reader = OpenCsvReader(filePath,cancellation))
                 {
                     List<string> headers = ResultCsv.ReadHeader(reader);
                     CsvColumnMap columns = CsvColumnMap.Create(headers);
@@ -54,32 +73,41 @@ namespace VisionQC.LocalAgent.Services
                     int sourceRowNumber = 1;
                     while ((values = ResultCsv.ReadRecord(reader)) != null)
                     {
+                        cancellation.ThrowIfCancellationRequested();
                         sourceRowNumber++;
                         if (values.Count == 1 && values[0].Length == 0) continue;
                         if (values.Count != headers.Count) throw new InvalidDataException("CSV 열 수 불일치: " + sourceRowNumber);
                         if (values.All(string.IsNullOrWhiteSpace)) continue;
+                        int originalRow;
+                        if(!int.TryParse(columns.Value(values,columns.SourceRow),NumberStyles.Integer,CultureInfo.InvariantCulture,out originalRow)||originalRow<1)originalRow=sourceRowNumber;
+                        string dateValue=columns.Value(values,columns.Date);
+                        bool captureDateAllowed=columns.HasInspectionDate||dateValue.IndexOf('-')>=0||string.IsNullOrWhiteSpace(columns.Value(values,columns.FullPath));
                         var record = new AgentHistoryRecordRequest
                         {
-                            sourceFileName = Path.GetFileName(filePath),
-                            sourceRowNumber = sourceRowNumber,
+                            sourceFileName = FirstNonEmpty(columns.Value(values,columns.SourceFile),Path.GetFileName(filePath)),
+                            sourceRowNumber = originalRow,
                             fullPath = columns.Value(values, columns.FullPath),
                             processedPath = columns.Value(values, columns.ProcessedPath),
                             cellId = columns.Value(values, columns.CellId),
-                            position = FirstNonEmpty(columns.Value(values, columns.Position), request.defaultPosition),
+                            position = FirstNonEmpty(columns.Value(values, columns.Position), FirstNonEmpty(filePosition,request.defaultPosition)),
                             workspaceType = columns.Value(values, columns.WorkspaceType),
                             workspaceName = columns.Value(values, columns.WorkspaceName),
                             workspaceKey = columns.Value(values, columns.WorkspaceKey),
                             totalResult = columns.Value(values, columns.TotalResult),
                             judgement = columns.Value(values, columns.Judgement),
-                            captureTimestamp = FirstNonEmpty(columns.Value(values, columns.CaptureTimestamp), CaptureTimestamp(columns.Value(values, columns.Date), columns.Value(values, columns.Time))),
+                            captureTimestamp = FirstNonEmpty(columns.Value(values, columns.CaptureTimestamp), captureDateAllowed?CaptureTimestamp(dateValue, columns.Value(values, columns.Time)):""),
                             tools = columns.ReadTools(values)
                         };
+                        if(excludedPositions!=null && excludedPositions.Contains(record.position))continue;
                         _store.AppendImportedRecord(session, record);
                         processed++;
                         if (processed % 250 == 0) progress?.Invoke(processed);
                     }
                 }
+                }
+                cancellation.ThrowIfCancellationRequested();
                 _store.Complete(session, "completed", "대용량 CSV 스트리밍 저장 완료");
+                runId = session.RunId;
                 completed = true;
                 progress?.Invoke(processed);
                 return processed;
@@ -93,6 +121,24 @@ namespace VisionQC.LocalAgent.Services
             {
                 if (!completed) progress?.Invoke(processed);
             }
+        }
+
+        private static StreamReader OpenCsvReader(string path,CancellationToken cancellation)
+        {
+            Encoding encoding=Encoding.UTF8;
+            using(var stream=File.OpenRead(path))
+            {
+                var prefix=new byte[4];int count=stream.Read(prefix,0,prefix.Length);
+                bool bom=(count>=3&&prefix[0]==0xef&&prefix[1]==0xbb&&prefix[2]==0xbf)||(count>=2&&((prefix[0]==0xff&&prefix[1]==0xfe)||(prefix[0]==0xfe&&prefix[1]==0xff)));
+                if(!bom)
+                {
+                    stream.Position=0;
+                    try{using(var check=new StreamReader(stream,new UTF8Encoding(false,true),false,131072,true))
+                    {var buffer=new char[65536];while(check.Read(buffer,0,buffer.Length)>0)cancellation.ThrowIfCancellationRequested();}}
+                    catch(DecoderFallbackException){encoding=Encoding.Default;}
+                }
+            }
+            return new StreamReader(path,encoding,true,131072);
         }
 
         private static string CaptureTimestamp(string dateValue, string timeValue)
@@ -135,6 +181,8 @@ namespace VisionQC.LocalAgent.Services
 
         private sealed class CsvColumnMap
         {
+            internal int SourceFile=-1,SourceRow=-1;
+            internal bool HasInspectionDate;
             internal int CellId = -1, FullPath = -1, ProcessedPath = -1, Position = -1, WorkspaceType = -1, WorkspaceName = -1, WorkspaceKey = -1, TotalResult = -1, Judgement = -1, CaptureTimestamp = -1, Date = -1, Time = -1;
             internal readonly List<ToolColumn> Tools = new List<ToolColumn>();
 
@@ -146,6 +194,9 @@ namespace VisionQC.LocalAgent.Services
                 {
                     string header = (headers[index] ?? "").Trim();
                     string key = Normalize(header);
+                    if(key=="sourcefile"||key=="sourcefilename"){map.SourceFile=index;continue;}
+                    if(key=="sourcerow"||key=="sourcerownumber"){map.SourceRow=index;continue;}
+                    if(key=="inspectiondate"){map.HasInspectionDate=true;continue;}
                     if (map.CellId < 0 && (key == "cellid" || key == "cell" || key == "id")) { map.CellId = index; continue; }
                     if (map.FullPath < 0 && (key == "fullpath" || key == "imagepath" || key == "filepath" || key == "sourceimagepath" || key == "sourcefilepath")) { map.FullPath = index; continue; }
                     if (map.ProcessedPath < 0 && (key == "processedpath" || key == "processingpath" || key == "croppath")) { map.ProcessedPath = index; continue; }
@@ -182,7 +233,6 @@ namespace VisionQC.LocalAgent.Services
                     string result = Value(values, column.Result);
                     string scoreText = Value(values, column.Score);
                     double? parsedScore = ResultCsv.ParseScore(scoreText);
-                    if (string.IsNullOrWhiteSpace(result) && !parsedScore.HasValue) continue;
                     output.Add(new AgentHistoryToolResultRequest { tool = column.Name, result = result, score = parsedScore });
                 }
                 return output;

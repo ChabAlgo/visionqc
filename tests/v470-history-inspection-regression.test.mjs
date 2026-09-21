@@ -13,14 +13,14 @@ const cleanCss = read('visionqc-v4433-clean.css');
 const html = read('index.html');
 const server = read('LocalAgent_v0.2.12/AgentServer.cs');
 
-test('v4.7.49 Web cache and Agent download targets are declared', () => {
-  assert.match(read('VERSION.txt'), /v4\.7\.49/);
-  assert.match(html, /visionqc-extension\.js\?v=4\.7\.49/);
+test('v4.8.1 Web cache and Agent download targets are declared', () => {
+  assert.match(read('VERSION.txt'), /v4\.8\.1/);
+  assert.match(html, /visionqc-extension\.js\?v=4\.8\.1/);
   assert.match(html, /visionqc-v470\.css\?v=4\.7\.9/);
-  assert.match(js, /const VERSION = '4\.7\.49'/);
-  assert.match(js, /const EXPECTED_AGENT_VERSION = '1\.3\.36'/);
-  assert.match(js, /VisionQC_Agent_Installer_v1\.3\.36\.exe/);
-  assert.match(js, /VisionQC_Offline_v4\.7\.49\.zip/);
+  assert.match(js, /const VERSION = '4\.8\.1'/);
+  assert.match(js, /const EXPECTED_AGENT_VERSION = '1\.4\.1'/);
+  assert.match(js, /VisionQC_Agent_Installer_v1\.4\.1\.exe/);
+  assert.match(js, /VisionQC_Offline_v4\.8\.1\.zip/);
 });
 
 test('persistent History page has filters, server-side pagination, daily NG chart and image viewer', () => {
@@ -67,7 +67,7 @@ test('Simulation Options padding and naming select colors are explicit in both t
 test('Simulation results CSV is directly importable with Workspace metadata and history can be cleared explicitly', () => {
   const green = read('LocalAgent_v0.2.12/Engine/GreenOverlayProcessor.cs');
   const importer = read('LocalAgent_v0.2.12/Services/CsvHistoryFileImporter.cs');
-  assert.match(green, /"CaptureTimestamp"[\s\S]*"ProcessedPath"[\s\S]*"WorkspaceType"[\s\S]*"WorkspaceName"[\s\S]*"WorkspaceKey"/);
+  assert.match(green, /"Date", "Time", "InspectionDate", "InspectionTime"[\s\S]*"ProcessedPath"[\s\S]*"WorkspaceType"[\s\S]*"WorkspaceName"[\s\S]*"WorkspaceKey"/);
   assert.match(green, /integratedToolNames[\s\S]*WriteIntegratedSummaryHeader\(integratedToolNames/);
   assert.match(green, /WriteIntegratedSummaryRow\(List<string> toolNames[\s\S]*WriteRow\(toolNames, csv, result\)/);
   assert.match(importer, /workspaceType = columns\.Value\(values, columns\.WorkspaceType\)/);

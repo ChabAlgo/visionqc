@@ -26,6 +26,25 @@ namespace VisionQC.LocalAgent.Persistence
 
         internal string DatabasePath { get { return _databasePath; } }
 
+        // Copy a temporary analysis subset to a new run without loading observations into RAM.
+        // The caller owns the destination session; the original run is never changed.
+        internal void CopyAnalysisRows(RunStoreSession session,string sourcePath,string runId,string excludedPosition)
+        {
+            using(var command=session.Connection.CreateCommand())
+            {
+                command.Transaction=session.Transaction;
+                command.CommandText="ATTACH DATABASE @source AS analysis_source";
+                Add(command,"@source",sourcePath);command.ExecuteNonQuery();
+                Add(command,"@old",runId);Add(command,"@new",session.RunId);Add(command,"@excluded",excludedPosition??"");
+                command.CommandText=@"INSERT INTO images(image_id,run_id,sequence_no,source_file_name,source_row_number,full_path,processed_path,cell_id,position_key,total_result,judgement,capture_timestamp,inspected_at_utc,workspace_type,workspace_name,workspace_key)
+SELECT image_id,@new,sequence_no,source_file_name,source_row_number,full_path,processed_path,cell_id,position_key,total_result,judgement,capture_timestamp,inspected_at_utc,workspace_type,workspace_name,workspace_key FROM analysis_source.images WHERE run_id=@old AND position_key<>@excluded;
+INSERT INTO tool_results(run_id,image_id,tool_name,result,score,overlay_path)
+SELECT @new,t.image_id,t.tool_name,t.result,t.score,t.overlay_path FROM analysis_source.tool_results t JOIN images i ON i.image_id=t.image_id AND i.run_id=@new WHERE t.run_id=@old;";
+                command.ExecuteNonQuery();command.CommandText="SELECT COUNT(*) FROM images WHERE run_id=@new";
+                session.RecordCount=Convert.ToInt32(command.ExecuteScalar());
+            }
+        }
+
         // Copy on explicit approval only. One transaction preserves row IDs, tools and timestamps;
         // the run ID makes retries idempotent even when the HTTP response was lost.
         internal void CopyCompletedRunFrom(string sourcePath, string runId)
@@ -715,6 +734,9 @@ CREATE TABLE IF NOT EXISTS tool_results (
   result TEXT, score REAL, overlay_path TEXT,
   FOREIGN KEY(run_id) REFERENCES runs(run_id), FOREIGN KEY(image_id) REFERENCES images(image_id)
 );
+CREATE INDEX IF NOT EXISTS idx_images_run_image ON images(run_id,image_id);
+CREATE INDEX IF NOT EXISTS idx_tool_results_image ON tool_results(image_id);
+CREATE INDEX IF NOT EXISTS idx_tool_results_score_page ON tool_results(run_id,tool_name,score);
 CREATE INDEX IF NOT EXISTS idx_images_run_sequence ON images(run_id, sequence_no);
 CREATE INDEX IF NOT EXISTS idx_images_cell_capture ON images(cell_id, capture_timestamp);
 CREATE INDEX IF NOT EXISTS idx_images_full_path ON images(full_path);

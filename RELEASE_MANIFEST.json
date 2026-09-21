@@ -1,19 +1,19 @@
 {
-  "releaseTag": "visionqc-v4.7.49-agent-v1.3.36",
-  "webVersion": "4.7.49",
-  "agentVersion": "1.3.36",
-  "minimumAgentVersion": "1.3.36",
+  "releaseTag": "visionqc-v4.8.1-agent-v1.4.1",
+  "webVersion": "4.8.1",
+  "agentVersion": "1.4.1",
+  "minimumAgentVersion": "1.4.1",
   "compatibility": {
-    "web": "4.7.49",
-    "agent": "1.3.36"
+    "web": "4.8.1",
+    "agent": "1.4.1"
   },
   "artifacts": {
-    "agentInstaller": "downloads/VisionQC_Agent_Installer_v1.3.36.exe",
-    "offlinePackage": "downloads/VisionQC_Offline_v4.7.49.zip",
+    "agentInstaller": "downloads/VisionQC_Agent_Installer_v1.4.1.exe",
+    "offlinePackage": "downloads/VisionQC_Offline_v4.8.1.zip",
     "sha256": {
-      "agentInstaller": "B62B06C6E95911A3CB843A38C140A0DC7C9038B2C1B1509A4C06826507045605",
-      "offlinePackage": "C9FBDFA033859576774BC5C592C2C3728EB6DF3942F94E6B8B7E7E585255F70B"
+      "agentInstaller": "8E0D8E5905CE9C20B3CFA4437D6BBF1BCCB795AB77461EE2F8915546509B2D6D",
+      "offlinePackage": "01BFD42C6958C03F7AA8E659B01CDA8884CD265D14F6498D11BD0CCDBC4B9469"
     }
   },
-  "notes": "실제 NG 제외/연속 탐색, 경계 안내, 다중 폴더와 Cell ID CSV 입력, 분석 정보 복원."
+  "notes": "대용량 Agent SQLite 분석, CSV 다중 입력·행 수/날짜 분할, Date/Time 분리, 분석 복원, Class Presets JSON 백업"
 }

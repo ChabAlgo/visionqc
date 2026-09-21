@@ -42,6 +42,8 @@
     <Compile Include="..\Domain\NamingProfile.cs" />
     <Compile Include="..\Engine\Models.cs" />
     <Compile Include="..\Engine\GreenOverlayProcessor.cs" />
+    <Compile Include="..\Services\ResultCsv.cs" />
+    <Compile Include="..\Services\PartitionedCsvWriter.cs" />
     <None Include="App.config" />
   </ItemGroup>
   <Import Project="$(MSBuildToolsPath)\Microsoft.CSharp.targets" />

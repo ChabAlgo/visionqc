@@ -1,7 +1,7 @@
 (() => {
   'use strict';
 
-  const VERSION = '4.7.49';
+  const VERSION = '4.8.1';
   const DEFAULT_POSITION_DEFS = [
     { key:'CA_TOP', name:'CA(TOP)' },
     { key:'AN_TOP', name:'AN(TOP)' },
@@ -27,9 +27,9 @@
   const NG_POSITION_PREFIX = 'ng-position:';
   const IMG_RE = /\.(png|jpe?g|bmp|gif|webp|tif?f)$/i;
   const LOCAL_AGENT_URL = 'http://127.0.0.1:17891';
-  const EXPECTED_AGENT_VERSION = '1.3.36';
-  const AGENT_INSTALLER_URL = './downloads/VisionQC_Agent_Installer_v1.3.36.exe';
-  const OFFLINE_PACKAGE_URL = './downloads/VisionQC_Offline_v4.7.49.zip';
+  const EXPECTED_AGENT_VERSION = '1.4.1';
+  const AGENT_INSTALLER_URL = './downloads/VisionQC_Agent_Installer_v1.4.1.exe';
+  const OFFLINE_PACKAGE_URL = './downloads/VisionQC_Offline_v4.8.1.zip';
   // SQLite에는 사용자가 명시적으로 남기려는 두 종류의 결과만 표시한다.
   // 이전 버전의 단발 검사(single-inspection) 이력은 보존하되 화면 집계에서는 제외한다.
   const PERSISTED_HISTORY_SOURCE_TYPES = ['simulation', 'csv-import', 'csv-file-stream'];
@@ -217,6 +217,8 @@
     .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
     .replace(/"/g, '&quot;').replace(/'/g, '&#039;');
   const numberText = (value) => Number(value || 0).toLocaleString('ko-KR');
+  const analysisRecordCount = model => model?.recordCount ?? model?.records?.length ?? 0;
+  const analysisMissCount = model => model?.missCount ?? model?.misses?.length ?? 0;
   const rateText = (value) => `${(Number(value || 0) * 100).toFixed(2)}%`;
   const scoreText = (value) => Number.isFinite(value) ? Number(value).toFixed(4) : '-';
   const normalizeHeader = (value) => String(value ?? '').trim();
@@ -768,12 +770,13 @@
     else if (action === 'simulation-log-clear') clearSimulationLogs();
     else if (action === 'choose-result') chooseResultFile(control.closest('[data-vq-position]')?.dataset.vqPosition);
     else if (action === 'remove-result') removeResultInput(control.closest('[data-vq-position]')?.dataset.vqPosition);
+    else if (action === 'choose-result-excel') chooseResultFile(control.closest('[data-vq-position]')?.dataset.vqPosition,true);
     else if (action === 'save-csv-history') saveCsvAnalysisHistory();
     else if (action === 'history-refresh') refreshHistory(true);
     else if (action === 'history-open') setPage('history');
     else if (action === 'dashboard-day' || action === 'dashboard-all') {
       state.dashboardDate = action === 'dashboard-day' ? control.dataset.vqHistoryDay || '' : '';
-      rebuildModel();
+      if(state.remoteAnalysis)refreshAgentDashboard({actual:false,thresholds:false});else rebuildModel();
     }
     else if (action === 'history-chart-prev' || action === 'history-chart-next' || action === 'history-chart-latest') changeHistoryChartWindow(control.dataset.chartScope, action, undefined, Number(control.dataset.chartStep) || 10);
     else if (action === 'history-day') { const day = control.dataset.vqHistoryDay || ''; state.historyFilters.fromDate = day; state.historyFilters.toDate = day; refreshHistory(true); }
@@ -793,11 +796,13 @@
     else if (action === 'clear-inputs') clearAnalysisInputs();
     else if (action === 'miss-tab') {
       state.selectedMissPosition = control.closest('[data-vq-position]')?.dataset.vqPosition || state.selectedMissPosition;
+      if(state.remoteAnalysis){loadAgentMissPage().then(()=>{renderDashboard();bindPageControls();}).catch(error=>showToast(error.message,true));return;}
       renderDashboard();
       bindPageControls();
     } else if (action === 'open-miss') {
       openMissModal(control.closest('[data-vq-key]')?.dataset.vqKey);
-    } else if (action === 'download-misses') downloadMissCsv(state.selectedMissPosition);
+    } else if (action === 'agent-miss-prev' || action === 'agent-miss-next') changeAgentMissPage(action==='agent-miss-prev'?-1:1);
+    else if (action === 'download-misses') downloadMissCsv(state.selectedMissPosition);
     else if (action === 'save-dashboard-history') saveDashboardHistory();
     else if (action === 'download-all-results') downloadAllResultsCsv();
     else if (action === 'export-summary-report') exportSummaryReport();
@@ -1326,7 +1331,9 @@
   }
   function saveAnalysisSnapshot() {
     clearTimeout(snapshotTimer);
-    const data = structuredClone({ resultInputs:state.resultInputs, ngImages:state.ngImages,
+    const remote=state.remoteAnalysis;
+    const reference=remote ? {analysisId:remote.analysisId,runId:remote.runId,inputs:remote.inputs,filePaths:remote.filePaths,excludedPositions:remote.excludedPositions,saved:!!remote.saved,live:!!remote.live} : null;
+    const data = structuredClone({ remoteAnalysis:reference,resultInputs:state.resultInputs, ngImages:state.ngImages,
       ngRootName:state.ngRootName, ngFolderNames:state.ngFolderNames, ngWarnings:state.ngWarnings,
       thresholds:state.thresholds, dashboardDate:state.dashboardDate, page:state.page });
     const write = snapshotWrites.catch(()=>{}).then(()=>saveHandle(ANALYSIS_SNAPSHOT_KEY, data));
@@ -1341,6 +1348,7 @@
       if (snapshot?.resultInputs && Array.isArray(snapshot.ngImages)) {
         Object.assign(state, snapshot);
         state.simulationLiveActive = false;
+        if(state.remoteAnalysis){state.remoteAnalysis.needsRestore=true;if(state.remoteAnalysis.live)state.simulationLiveRunId=state.remoteAnalysis.runId;}
         return;
       }
       for (const position of positionNames()) {
@@ -1554,7 +1562,7 @@
       const dateValue = dateIndex >= 0 ? String(row[dateIndex] || '').trim() : '';
       const timeValue = timeIndex >= 0 ? String(row[timeIndex] || '').trim() : '';
       const captureTimestamp = strictCaptureTimestamp(timestampIndex >= 0 ? row[timestampIndex] : '') ||
-        (fullPathIndex >= 0 && csvFullPathValue(row[fullPathIndex]) ? '' :
+        (fullPathIndex >= 0 && csvFullPathValue(row[fullPathIndex]) && !(keys.includes('inspectiondate') || /^\d{4}-\d{2}-\d{2}$/.test(dateValue)) ? '' :
           strictCaptureTimestamp(dateValue && timeValue ? dateValue + (dateValue.includes('-') ? 'T' : '_') + timeValue : dateValue));
       const metadata = {};
       for (const [field, column] of Object.entries({ workspaceType:'workspacetype', workspaceName:'workspacename', workspaceKey:'workspacekey' })) {
@@ -1569,7 +1577,175 @@
     return { position: selectedPosition, fileName: file.name, fileSize: file.size, rows, warnings, handle, updatedAt: Date.now() };
   }
 
-  async function chooseResultFile(position) {
+  async function analysisApi(path, body, timeout = 30000) {
+    const result = await agentFetch(`/api/analysis/${path}`, {method:'POST', body, timeout});
+    if (!result?.ok) throw Object.assign(new Error(result?.error || '분석 요청 실패'), {busy:!!result?.busy});
+    return result;
+  }
+
+  async function waitAnalysisOperation(started, onProgress = null) {
+    let status = started;
+    const operationId = started.operationId;
+    while (status.running) {
+      if (onProgress) onProgress(status);
+      await new Promise(resolve=>setTimeout(resolve, 250));
+      status = await analysisApi('status', {analysisId:started.analysisId}, 8000);
+      if (operationId && status.operationId !== operationId) throw new Error('분석 요청이 교체되었습니다. 현재 결과를 다시 조회하세요.');
+    }
+    if (!status.completed) throw new Error(status.error || '분석을 완료하지 못했습니다.');
+    return status;
+  }
+
+  async function agentAnalysisOperation(path, body, onProgress) {
+    const started = await analysisApi(path, body);
+    return waitAnalysisOperation(started, onProgress);
+  }
+
+  function emptyRemoteModel(data) {
+    return {...data, records:[], misses:[], duplicates:[], recordMap:new Map(), actualMap:new Map(),
+      detectedActual:new Set(), resultCellIdSamples:[], actualCellIdSamples:[]};
+  }
+
+  async function syncAgentActualNg(analysisId) {
+    const batchId = crypto.randomUUID().replaceAll('-', '');
+    await analysisApi('actual-ng', {analysisId,batchId,action:'begin'});
+    for (let offset=0; offset<state.ngImages.length; offset+=1000) {
+      const actualNg=state.ngImages.slice(offset,offset+1000).map(image=>({
+        day:dashboardDateForImage(image),cell:image.cellId,position:image.position,
+        path:image.fullPath || image.relativePath || image.name || '',wildcard:!!image.csvOnly
+      }));
+      await analysisApi('actual-ng', {analysisId,batchId,action:'append',actualNg});
+    }
+    await analysisApi('actual-ng', {analysisId,batchId,action:'commit'});
+  }
+
+  async function fetchAgentDashboard(analysisId, date='') {
+    const status=await agentAnalysisOperation('dashboard',{analysisId,date,exclusionThreshold:state.actualNgOtherToolExclusionScore});
+    return emptyRemoteModel(status.result);
+  }
+
+  async function chooseAgentResultFiles(position) {
+    if (state.loading) return;
+    const previous=state.remoteAnalysis;
+    try {
+      const picked=await requestSimulationPicker('/api/pick/file',{fileType:'csv',multiple:true});
+      const chosen=picked?.paths?.length ? picked.paths : picked?.path ? [picked.path] : [];
+      if (!picked?.ok || !chosen.length) return;
+      if((previous?.live || (!previous && Object.values(state.resultInputs).some(input=>input?.rows?.length))) && !window.confirm('선택한 CSV로 현재 분석 결과를 교체합니다. 원본 로그와 저장한 DB 이력은 유지됩니다. 계속할까요?'))return;
+      state.loading=`result:${position}`;renderSettings();
+      const progressBar=document.createElement('div');progressBar.id='vq43-analysis-import-progress';progressBar.className='vq43-agent-import-progress';
+      progressBar.innerHTML='<span>CSV 분석을 준비하고 있습니다…</span><button class="vq43-btn">취소</button>';document.body.append(progressBar);
+      const inputs={...(previous?.inputs || {}),[position]:chosen};
+      const excludedPositions=(previous?.excludedPositions||[]).filter(value=>value!==position);
+      const filePaths=[...new Set(Object.values(inputs).flat())];
+      const filePositions=Object.fromEntries(Object.entries(inputs).flatMap(([key,paths])=>paths.map(path=>[path,key])));
+      const imported=await agentAnalysisOperation('import/start',{
+        filePaths,filePositions,excludedPositions,options:{defaultPosition:position,namingProfile:state.namingProfile,webVersion:VERSION,mode:'csv-analysis'}
+      }, status=>{
+        const progress=$('#vq43-analysis-import-progress');
+        if(progress){progress.querySelector('span').textContent=`읽기 ${numberText(status.imported)}행 · 집계 ${numberText(status.projectedCursor)}행`;
+          progress.querySelector('button').onclick=()=>analysisApi('cancel',{analysisId:status.analysisId}).catch(error=>showToast(error.message,true));}
+      });
+      await syncAgentActualNg(imported.analysisId);
+      const thresholds=Object.entries(state.thresholds).map(([key,value])=>{const split=key.indexOf('|');return {position:key.slice(0,split),tool:key.slice(split+1),value};});
+      await agentAnalysisOperation('thresholds',{analysisId:imported.analysisId,thresholds});
+      const model=await fetchAgentDashboard(imported.analysisId);
+      // Publish only after the entire import and projection succeed. The old view survives failure.
+      state.remoteAnalysis={analysisId:imported.analysisId,runId:imported.runId,inputs,filePaths,excludedPositions};
+      state.resultInputs=Object.fromEntries(model.positionSummaries.filter(p=>p.input).map(p=>[p.position,{
+        position:p.position,remote:true,rowCount:p.rawRows ?? p.total,rows:[],warnings:[],fileName:filePaths.map(p=>p.split(/[\\/]/).pop()).join(', '),updatedAt:Date.now()
+      }]));
+      state.dashboardDate='';state.model=model;state.dashboardModel=model;
+      state.remoteAnalysis.dateWindow=(await analysisApi('dates',{analysisId:imported.analysisId})).page;
+      if(!model.tools.includes(state.analysisTool))state.analysisTool=model.tools[0]||'';
+      await loadAgentMissPage();
+      scheduleAnalysisSnapshot();
+      showToast(`${numberText(model.rawRowCount)}행을 에이전트에서 분석했습니다.`);
+    } catch(error) {showToast(`결과 파일 분석 실패: ${error.message}`,true);}
+    finally {$('#vq43-analysis-import-progress')?.remove();state.loading='';renderSettings();}
+  }
+
+  async function loadAgentMissPage(afterDay='',afterCell='') {
+    const remote=state.remoteAnalysis;if(!remote)return;
+    const positions=(state.dashboardModel || state.model)?.positionSummaries || [];
+    if(!positions.some(p=>p.position===state.selectedMissPosition))state.selectedMissPosition=positions[0]?.position||'';
+    const position=state.selectedMissPosition;
+    const selection=`${state.dashboardDate}|${position}`;
+    if(remote.missSelection!==selection){remote.missSelection=selection;remote.missCursors=[];}
+    if(!afterDay&&!afterCell)remote.missCursors=[];
+    const response=await analysisApi('misses',{analysisId:remote.analysisId,date:state.dashboardDate,position,afterDay,afterCell,pageSize:100});
+    if(state.remoteAnalysis!==remote || selection!==`${state.dashboardDate}|${state.selectedMissPosition}`)return;
+    remote.missPage=response.page;
+    remote.missCursor={day:afterDay,cell:afterCell};
+    const model=state.dashboardModel || state.model;
+    model.misses=(response.page?.records || []).map(row=>{
+      const key=datedResultKey(row.position,row.cellId,row.day);
+      const record={key,cellId:row.cellId,position:row.position,totalResult:'OK',tools:Object.fromEntries((row.tools||[]).map(tool=>[tool.tool,tool])),sourceRows:[]};
+      return {key,day:row.day,position:row.position,cellId:row.cellId,record,images:[]};
+    });
+  }
+
+  async function changeAgentMissPage(direction) {
+    const remote=state.remoteAnalysis;if(!remote||remote.missLoading)return false;
+    const stack=remote.missCursors||[];
+    if(direction>0&&!remote.missPage?.hasMore)return false;
+    if(direction<0&&!stack.length)return false;
+    remote.missLoading=true;
+    try{
+      const cursor=direction>0?{day:remote.missPage.nextDay,cell:remote.missPage.nextCell}:stack[stack.length-1];
+      const nextStack=direction>0?[...stack,remote.missCursor]:stack.slice(0,-1);
+      await loadAgentMissPage(cursor.day,cursor.cell);
+      remote.missCursors=nextStack;renderCurrentPage();return true;
+    }catch(error){showToast(error.message,true);return false;}
+    finally{remote.missLoading=false;}
+  }
+
+  async function hydrateAgentMiss(miss, afterId=null) {
+    if(miss.hydrated&&afterId===null)return miss;
+    const remote=state.remoteAnalysis;
+    const response=await analysisApi('detail',{analysisId:remote.analysisId,day:miss.day,cellId:miss.cellId,position:miss.position,afterId:afterId||0,pageSize:200});
+    if(state.remoteAnalysis!==remote)return null;
+    const page=response.page;
+    miss.record.sourceRows=(page.records||[]).map(row=>({...row,tools:Object.fromEntries((row.tools||[]).map(tool=>[tool.tool,tool]))}));
+    // Keep original FileSystem handles so excluding an image remains available.
+    miss.images=state.ngImages.filter(image=>image.position===miss.position&&image.cellId===miss.cellId&&(image.csvOnly||dashboardDateForImage(image)===miss.day));
+    miss.hydrated=true;miss.detailPage=page;miss.detailCursor=afterId||0;
+    return miss;
+  }
+
+  async function refreshAgentDashboard({actual=true,thresholds=true}={}) {
+    const remote=state.remoteAnalysis;if(!remote)return;
+    // Queue one update at a time and coalesce rapid edits into the newest requested state.
+    remote.revision=(remote.revision||0)+1;
+    remote.syncActual=remote.syncActual||actual;remote.syncThresholds=remote.syncThresholds||thresholds;
+    if(remote.refreshing)return remote.refreshing;
+    remote.refreshing=(async()=>{
+      remote.error='';
+      let applied=-1;
+      while(state.remoteAnalysis===remote && applied!==remote.revision) {
+        const revision=remote.revision;
+        await waitAnalysisOperation(await analysisApi('status',{analysisId:remote.analysisId}));
+        if(remote.syncActual){remote.syncActual=false;
+          if(remote.actualInput!==state.ngImages||remote.actualInputCount!==state.ngImages.length){await syncAgentActualNg(remote.analysisId);remote.actualInput=state.ngImages;remote.actualInputCount=state.ngImages.length;}}
+        if(remote.syncThresholds){
+          remote.syncThresholds=false;
+          const values=Object.entries(state.thresholds).map(([key,value])=>{const split=key.indexOf('|');return {position:key.slice(0,split),tool:key.slice(split+1),value};});
+          const signature=JSON.stringify(values);
+          if(remote.thresholdSignature!==signature){await agentAnalysisOperation('thresholds',{analysisId:remote.analysisId,thresholds:values});remote.thresholdSignature=signature;}
+        }
+        const full=await fetchAgentDashboard(remote.analysisId);
+        const selected=state.dashboardDate?await fetchAgentDashboard(remote.analysisId,state.dashboardDate):full;
+        if(revision!==remote.revision)continue;
+        state.model=full;state.dashboardModel=selected;if(!full.tools.includes(state.analysisTool))state.analysisTool=full.tools[0]||'';await loadAgentMissPage();applied=revision;remote.needsRestore=false;
+        remote.dateWindow=(await analysisApi('dates',{analysisId:remote.analysisId,dateStart:remote.dateWindow?.start ?? -1})).page;
+        scheduleAnalysisSnapshot();if(state.page!=='classification')renderCurrentPage();
+      }
+    })().catch(error=>{remote.error=error.message;showToast(`분석 갱신 실패: ${error.message}`,true);}).finally(()=>{remote.refreshing=null;if(state.remoteAnalysis===remote&&state.page==='analysis'&&!remote.error)renderCurrentPage();});
+    return remote.refreshing;
+  }
+
+  async function chooseResultFile(position, legacyExcel=false) {
+    if(!legacyExcel&&state.simulationAgent.analysisApiVersion>=1)return chooseAgentResultFiles(position);
     if (state.loading) return;
     try {
       let file, handle;
@@ -1584,7 +1760,13 @@
       } else file = await pickFile('.csv,.xlsx');
       state.loading = `result:${position}`;
       renderSettings();
-      state.resultInputs[position] = await parsePositionFile(file, position, handle);
+      if(file.size>50*1024*1024)throw new Error('50MB를 초과하는 결과 파일은 Agent CSV 분석을 사용해 주세요. Excel은 CSV로 저장한 뒤 여러 파일을 함께 선택할 수 있습니다.');
+      const parsed=await parsePositionFile(file, position, handle);
+      if(state.remoteAnalysis){
+        if(!window.confirm('Excel 브라우저 분석으로 전환하여 현재 대시보드 입력을 교체합니다. 원본 파일과 저장한 DB 이력은 유지됩니다. 계속할까요?'))return;
+        state.remoteAnalysis=null;state.resultInputs={};
+      }
+      state.resultInputs[position] = parsed;
       if (handle) await saveHandle(`${RESULT_PREFIX}${position}`, handle);
       state.dashboardDate = '';
       rebuildModel();
@@ -1610,6 +1792,20 @@
   }
 
   async function removeResultInput(position) {
+    if(state.remoteAnalysis){
+      const previous=state.remoteAnalysis;
+      if(state.simulationProgress?.running)return showToast('시뮬레이션 완료 후 입력을 제거할 수 있습니다.',true);
+      if(state.loading)return;
+      state.loading=`result:${position}`;renderSettings();
+      try{
+        const done=await agentAnalysisOperation('remove-position',{analysisId:previous.analysisId,position});
+        const inputs={...previous.inputs};delete inputs[position];
+        state.remoteAnalysis={analysisId:done.analysisId,runId:done.runId,inputs,filePaths:[...new Set(Object.values(inputs).flat())],excludedPositions:[...new Set([...(previous.excludedPositions||[]),position])]};
+        state.dashboardDate='';delete state.resultInputs[position];
+        await refreshAgentDashboard();
+      }catch(error){state.remoteAnalysis=previous;showToast(`입력 제거 실패: ${error.message}`,true);}
+      finally{state.loading='';renderSettings();}return;
+    }
     delete state.resultInputs[position];
     try { await deleteHandle(`${RESULT_PREFIX}${position}`); } catch (error) { console.error(error); }
     state.dashboardDate = '';
@@ -1618,6 +1814,8 @@
   }
 
   function dashboardHistoryContext() {
+    if(state.remoteAnalysis)return {inputs:Object.values(state.resultInputs),runId:state.remoteAnalysis.runId,saved:!!state.remoteAnalysis.saved,
+      disabled:!analysisRecordCount(state.model)||!!state.simulationProgress?.running||state.historyImporting||!!state.remoteAnalysis.saved};
     const inputs = Object.values(state.resultInputs || {}).filter(input=>input?.rows?.length);
     const runId = inputs[0]?.simulationRunId || '';
     const exactRun = !!runId && inputs.every(input=>input.simulationRunId === runId) && state.simulationProgress?.simulationRunId === runId;
@@ -1633,6 +1831,7 @@
   }
 
   async function saveDashboardHistory() {
+    if(state.remoteAnalysis)return saveAgentAnalysisHistory();
     const context = dashboardHistoryContext();
     if (context.disabled) return;
     if (!context.runId) return saveCsvAnalysisHistory();
@@ -1649,6 +1848,7 @@
   }
 
   async function saveCsvAnalysisHistory() {
+    if(state.remoteAnalysis)return saveAgentAnalysisHistory();
     if (state.historyImporting) return;
     const inputs = Object.values(state.resultInputs || {}).filter((input) => Array.isArray(input?.rows) && input.rows.length);
     const total = inputs.reduce((sum, input) => sum + input.rows.length, 0);
@@ -1940,6 +2140,7 @@
 
   async function clearAnalysisInputs() {
     if (!window.confirm('Position 결과 파일과 실제 NG 이미지 설정을 모두 초기화할까요?')) return;
+    state.remoteAnalysis=null;
     state.resultInputs = {}; state.ngRootName = ''; state.ngImages = []; state.ngFolderNames = {}; state.ngWarnings = []; state.restoreWarnings = [];
     try { await clearHandles(); } catch (error) { console.error(error); }
     state.dashboardDate = '';
@@ -2329,6 +2530,7 @@
   }
 
   function rebuildModel(renderPage = true) {
+    if(state.remoteAnalysis){refreshAgentDashboard();return;}
     const positions = positionNames();
     const rows = positions.flatMap(position => state.resultInputs[position]?.rows || []);
     if (state.simulationLiveActive) {
@@ -2392,7 +2594,7 @@
       const sameRun = input.simulationRunId && input.simulationRunId === state.simulationProgress?.simulationRunId;
       const csv = input.resultCsv || (sameRun ? state.simulationProgress?.resultCsv : '');
       const files = csv ? [baseName(csv)] : unique([input.fileName,...sources.map(row=>row.sourceFileName)].filter(name=>name && /\.csv$/i.test(name)).map(baseName));
-      const workspaces = unique(sources.map(row=>baseName(row.workspaceName || row.workspaceKey)));
+      const workspaces = unique((model.remote?(model.workspaces||[]).filter(row=>row.position===item.position):sources).map(row=>baseName(row.workspaceName || row.workspaceKey)));
       reportFiles.push(...files);
       return `<tr><td style="color:${colorFor(item.position)}">${escapeHtml(item.position)}</td><td>${workspaces.length ? workspaces.map(escapeHtml).join('<br>') : '기록 없음'}</td></tr>`;
     }).join('');
@@ -2400,7 +2602,7 @@
     const tools = `<table class="tool-table"><thead><tr><th>Position</th><th>Tool</th><th>Threshold</th><th>NG</th><th>구성 비율</th></tr></thead><tbody>${model.positionToolSummaries.filter(item=>positions.some(p=>p.position===item.position)).map((item,pi)=>item.tools.map((tool,ti)=>`<tr style="--accent:${colorFor(item.position)};background:${pi%2?'#fff':'#f3f7fc'}"><td>${ti===0?escapeHtml(item.position):''}</td><td>${escapeHtml(tool.tool)}</td><td class="threshold">${Number(tool.threshold ?? getThreshold(item.position,tool.tool)).toFixed(4)}</td><td>${numberText(tool.ng)}</td><td><div class="tool-ratio"><i><em style="width:${Math.min(100,tool.rate*100)}%"></em></i><b>${rateText(tool.rate)}</b></div></td></tr>`).join('')).join('')}</tbody></table>`;
     const days = new Map();
     model.records.forEach(record=>{const date=dashboardDateForRecord(record);if(!date)return;const day=days.get(date)||{date,total:0,ng:0};day.total++;if(record.totalResult==='NG')day.ng++;days.set(date,day);});
-    const daily=[...days.values()].sort((a,b)=>a.date.localeCompare(b.date)).map(day=>({...day,ngRate:day.ng/day.total}));
+    const daily=model.remote?(model.daily||[]):[...days.values()].sort((a,b)=>a.date.localeCompare(b.date)).map(day=>({...day,ngRate:day.ng/day.total}));
     const shown=daily.slice(-10), max=historyNgAxisMax(shown), w=700,h=190,top=25,bottom=35,left=55,plot=630;
     const x=i=>left+plot/10*((10-shown.length)/2+i+.5),y=r=>top+(h-top-bottom)*(1-r/max);
     const grid=[0,.25,.5,.75,1].map(r=>`<line x1="${left}" x2="${w-10}" y1="${y(max*r)}" y2="${y(max*r)}" stroke="#d9e2ee"/><text x="${left-8}" y="${y(max*r)+5}" text-anchor="end">${Number((max*r*100).toFixed(2))}%</text>`).join('');
@@ -2409,19 +2611,19 @@
     const chart=shown.length?`<section class="chart"><h2><i>2</i>날짜별 NG율 <small>${escapeHtml(shown[0].date)} ~ ${escapeHtml(shown.at(-1).date)}${daily.length>10?' · 최근 10 / '+daily.length+'일':''}</small></h2><svg viewBox="0 0 ${w} ${h}" role="img" aria-label="날짜별 NG율">${grid}${lines}${points}</svg></section>`:'';
     const positionBars = `<section class="position-bars"><h3>Position별 NG율</h3>${positions.map(p=>`<div class="bar-row" style="--accent:${colorFor(p.position)}"><b>${escapeHtml(p.position)}</b><i><em style="width:${p.ngRate/Math.max(.01,...positions.map(p=>p.ngRate))*100}%"></em></i><strong>${rateText(p.ngRate)}</strong></div>`).join('')}</section>`;
     let cursor=0;
-    const stops=positions.map(p=>{const start=cursor;cursor+=model.misses.length?p.misses/model.misses.length*100:0;return `${colorFor(p.position)} ${start}% ${cursor}%`;}).join(',');
-    const missMix=model.misses.length?`<section class="miss-mix"><h3>미검 구성 비율</h3><div class="donut" style="background:conic-gradient(${stops})"><span><b>${numberText(model.misses.length)}</b><small>미검</small></span></div><div class="legend">${positions.filter(p=>p.misses).map(p=>`<div style="--accent:${colorFor(p.position)}"><i></i><span>${escapeHtml(p.position)}</span><b>${numberText(p.misses)}건 · ${rateText(p.misses/model.misses.length)}</b></div>`).join('')}</div></section>`:'';
+    const stops=positions.map(p=>{const start=cursor;cursor+=analysisMissCount(model)?p.misses/analysisMissCount(model)*100:0;return `${colorFor(p.position)} ${start}% ${cursor}%`;}).join(',');
+    const missMix=analysisMissCount(model)?`<section class="miss-mix"><h3>미검 구성 비율</h3><div class="donut" style="background:conic-gradient(${stops})"><span><b>${numberText(analysisMissCount(model))}</b><small>미검</small></span></div><div class="legend">${positions.filter(p=>p.misses).map(p=>`<div style="--accent:${colorFor(p.position)}"><i></i><span>${escapeHtml(p.position)}</span><b>${numberText(p.misses)}건 · ${rateText(p.misses/analysisMissCount(model))}</b></div>`).join('')}</div></section>`:'';
     const missLists=positions.map(p=>{const ids=unique(model.misses.filter(m=>m.position===p.position).map(m=>m.cellId));return ids.length?`<section class="miss-list" style="--accent:${colorFor(p.position)}"><h2>${escapeHtml(p.position)} <small>${ids.length}개</small><button class="copy" onclick="navigator.clipboard.writeText(this.parentElement.nextElementSibling.textContent).then(()=>this.textContent='복사 완료').catch(()=>this.textContent='목록을 선택해 복사해 주세요')">Cell ID 복사</button></h2><pre>${escapeHtml(ids.join('\n'))}</pre></section>`:'';}).join('');
-    const dateRange=daily.length?`${daily[0].date} ~ ${daily.at(-1).date}`:'날짜 기록 없음';
+    const dateRange=model.remote&&model.dateRange?.firstDate?`${model.dateRange.firstDate} ~ ${model.dateRange.lastDate}`:daily.length?`${daily[0].date} ~ ${daily.at(-1).date}`:'날짜 기록 없음';
     const header = `<header><div class="report-brand"><b>VisionQC</b><h1>검사 요약 리포트</h1></div><div class="metadata"><dl><dt>생성 시각</dt><dd>${reportDateText(generatedAt)}</dd><dt>결과 파일</dt><dd>${unique(reportFiles).map(escapeHtml).join('<br>') || '저장된 로그 확인 불가'}</dd><dt>분석 기간</dt><dd>${escapeHtml(dateRange)}</dd></dl><table><thead><tr><th>Position</th><th>워크스페이스</th></tr></thead><tbody>${metadata}</tbody></table></div></header>`;
     return `<!doctype html><html lang="ko"><head><meta charset="utf-8"><title>${reportFileName(generatedAt)}</title><style>
     @page{size:A4 portrait;margin:12mm}*{box-sizing:border-box}body{margin:0;background:#e8edf5;color:#21354d;font:14px/1.4 Arial,"Malgun Gothic",sans-serif;-webkit-print-color-adjust:exact;print-color-adjust:exact}.report{width:186mm;margin:16px auto;background:#fff;box-shadow:0 3px 20px #0002}.content{padding:6mm}header{display:flex;align-items:flex-start;justify-content:space-between;gap:16px;border-bottom:2px solid #143d70;padding-bottom:10px;margin-bottom:10px}.report-brand{flex:0 0 40%;padding-top:6px}.report-brand>b{font-size:14px;color:#143d70}h1{font-size:27px;margin:14px 0;color:#143d70;white-space:nowrap}.metadata{flex:1;min-width:0;background:#f3f7fc;border:1px solid #d8e2ee;border-radius:9px;padding:8px;font-size:13px}.metadata dl{display:grid;grid-template-columns:72px minmax(0,1fr);gap:3px;margin:0 0 5px}.metadata dt{font-weight:bold;color:#64748b}.metadata dd{margin:0;overflow-wrap:anywhere}.metadata table{font-size:13px}.metadata th,.metadata td{text-align:left;padding:2px 2px}.metadata th:first-child{width:30%}.metadata td:first-child{font-weight:bold}h2{font-size:18px;margin:14px 0 8px;color:#143d70;display:flex;align-items:center;gap:9px}h2>i{font-size:14px;font-style:normal;display:inline-flex;align-items:center;justify-content:center;border-radius:6px;width:25px;height:25px;background:#143d70;color:#fff}h3{font-size:16px;color:#143d70;margin:0 0 14px}small{font-size:12px;font-weight:400;color:#64748b}.kpis{display:grid;grid-template-columns:repeat(4,1fr);gap:10px;margin:12px 0}.kpis div{border:1px solid #d8e2ee;border-left:4px solid #143d70;border-radius:7px;padding:8px}.kpis span{display:block;font-size:14px;color:#64748b}.kpis b{display:block;font-size:28px;color:#143d70;margin-top:4px}.kpis .ng{border-left-color:#d74a61}.kpis .ng b{color:#d74a61}.kpis .miss{border-left-color:#d98721}.kpis .miss b{color:#d98721}table{width:100%;border-collapse:collapse;font-size:14px;table-layout:fixed}th,td{border-bottom:1px solid #d8e2ee;padding:5px 5px;text-align:center;overflow-wrap:anywhere}th{background:#143d70;color:#fff;font-weight:bold}td:first-child,th:first-child{text-align:left}.metadata th{background:transparent;color:#64748b}.metadata tr:last-child td{border:0}.results tbody tr:nth-child(odd){background:#f3f7fc}.ng{color:#d74a61}.miss{color:#d98721}.threshold{font-weight:bold;color:#143d70}.comparisons{display:grid;grid-template-columns:1.35fr 1fr;gap:14px;margin:12px 0}.comparisons.single{grid-template-columns:1fr}.position-bars,.miss-mix{border:1px solid #d8e2ee;border-radius:9px;padding:12px}.bar-row{display:grid;grid-template-columns:90px minmax(0,1fr) 68px;gap:10px;align-items:center;margin:12px 0;font-size:13px}.bar-row>i,.tool-ratio>i{height:12px;background:#edf3fa;border-radius:4px;overflow:hidden}.bar-row em,.tool-ratio em{display:block;height:100%;background:var(--accent);border-radius:4px}.bar-row strong{color:var(--accent);text-align:right}.donut{width:80px;height:80px;border-radius:50%;display:grid;place-items:center;margin:0 auto 12px}.donut>span{width:56px;height:56px;border-radius:50%;background:#fff;text-align:center;display:flex;flex-direction:column;justify-content:center}.donut b{font-size:24px;color:#143d70}.legend>div{display:flex;gap:7px;align-items:center;margin:3px 0;font-size:12px}.legend i{width:8px;height:8px;background:var(--accent);border-radius:2px}.legend b{margin-left:auto;color:var(--accent)}.chart svg{width:100%;display:block;font-size:14px;fill:#64748b;border:1px solid #d8e2ee;border-radius:9px;padding:6px}.chart,.comparisons,.kpis{break-inside:avoid}.details{break-before:page;padding-top:4px}.tool-table th:nth-child(1){width:17%}.tool-table th:nth-child(2){width:23%}.tool-table th:nth-child(3){width:16%}.tool-table th:nth-child(4){width:10%}.tool-table th:nth-child(5){width:34%}.tool-table td{padding-top:3px;padding-bottom:3px}.tool-table td:first-child{color:var(--accent);font-weight:bold}.tool-ratio{display:flex;align-items:center;gap:8px}.tool-ratio i{flex:1;min-width:0;height:10px}.tool-ratio b{width:64px;color:var(--accent);font-size:13px}.ratio-note{font-size:12px;color:#64748b;margin:9px 0}.miss-lists{display:grid;grid-template-columns:1fr 1fr;gap:10px}.miss-lists.long{display:block}.miss-list{border:1px solid #d8e2ee;border-radius:8px;overflow:hidden;margin-bottom:12px}.miss-list h2{font-size:15px;color:var(--accent);background:#f3f7fc;padding:9px 12px;margin:0}.miss-list pre{font:16px/1.7 Consolas,"Malgun Gothic",monospace;margin:0;padding:8px 12px;white-space:pre-wrap;overflow-wrap:anywhere;user-select:text}.actions{position:sticky;top:0;display:flex;justify-content:flex-end;gap:10px;padding:10px;background:#10213a}button{font:inherit;border:1px solid #6683a8;border-radius:7px;padding:7px 12px;cursor:pointer}.actions button{background:#214d81;color:#fff}.copy{margin-left:auto;font-size:11px;padding:4px 6px;background:#fff;color:#214d81}thead{display:table-header-group}tr{break-inside:avoid}@media print{body{background:#fff}.actions,.copy{display:none}.report{width:auto;margin:0;box-shadow:none}.content{padding:0}h2,h3{break-after:avoid}.miss-list{overflow:visible}.miss-lists:not(.long) .miss-list{break-inside:avoid}}
-    </style></head><body><div class="actions"><button onclick="window.close()">닫기</button><button onclick="window.print()">PDF로 저장</button></div><main class="report"><div class="content">${header}<div class="kpis"><div><span>검사 Cell</span><b>${numberText(model.uniqueCellCount)}</b></div><div class="ng"><span>NG Cell</span><b>${numberText(model.ngCellCount)}</b></div><div class="ng"><span>Cell NG율</span><b>${rateText(model.ngCellRate)}</b></div><div class="miss"><span>미검 Cell·Position</span><b>${numberText(model.misses.length)}</b></div></div><section class="position-results"><h2><i>1</i>Position별 검사 결과</h2><table class="results"><thead><tr><th>Position</th><th>검사</th><th>NG</th><th>NG율</th><th>실제 NG</th><th>검출</th><th>미검</th>${positions.some(p=>p.unmatched)?'<th>미매칭</th>':''}</tr></thead><tbody>${tableRows}</tbody></table><div class="comparisons ${model.misses.length?'':'single'}">${positionBars}${missMix}</div></section>${chart}<section class="details"><h2><i>3</i>Tool별 NG 구성 · 적용 Threshold</h2>${tools}<p class="ratio-note">구성 비율 = Tool NG / Position NG</p>${missLists?`<h2><i>4</i>미검 Cell ID</h2><div class="miss-lists ${model.misses.length>20?'long':''}">${missLists}</div>`:''}</section></div></main></body></html>`;
+    </style></head><body><div class="actions"><button onclick="window.close()">닫기</button><button onclick="window.print()">PDF로 저장</button></div><main class="report"><div class="content">${header}<div class="kpis"><div><span>검사 Cell</span><b>${numberText(model.uniqueCellCount)}</b></div><div class="ng"><span>NG Cell</span><b>${numberText(model.ngCellCount)}</b></div><div class="ng"><span>Cell NG율</span><b>${rateText(model.ngCellRate)}</b></div><div class="miss"><span>미검 Cell·Position</span><b>${numberText(analysisMissCount(model))}</b></div></div><section class="position-results"><h2><i>1</i>Position별 검사 결과</h2><table class="results"><thead><tr><th>Position</th><th>검사</th><th>NG</th><th>NG율</th><th>실제 NG</th><th>검출</th><th>미검</th>${positions.some(p=>p.unmatched)?'<th>미매칭</th>':''}</tr></thead><tbody>${tableRows}</tbody></table><div class="comparisons ${analysisMissCount(model)?'':'single'}">${positionBars}${missMix}</div></section>${chart}<section class="details"><h2><i>3</i>Tool별 NG 구성 · 적용 Threshold</h2>${tools}<p class="ratio-note">구성 비율 = Tool NG / Position NG</p>${missLists?`<h2><i>4</i>미검 Cell ID</h2><div class="miss-lists ${analysisMissCount(model)>20?'long':''}">${missLists}</div>`:''}</section></div></main></body></html>`;
   }
 
-  function exportSummaryReport() {
+  async function exportSummaryReport() {
     const model = state.page === 'main' ? state.dashboardModel || state.model : state.model;
-    if (!model || !model.records.length) {
+    if (!model || !analysisRecordCount(model)) {
       showToast('리포트로 내보낼 분석 결과가 없습니다.', true);
       return;
     }
@@ -2432,8 +2634,35 @@
     }
     const now = new Date();
     reportWindow.opener = null;
+    let reportModel=model;
+    if(model.remote){
+      const remote=state.remoteAnalysis;
+      reportWindow.document.body.textContent='에이전트에서 리포트 정보를 준비하고 있습니다…';
+      try{
+        const misses=[];
+        // A summary PDF must not allocate millions of DOM nodes. Large ID lists stay in
+        // the lossless streaming CSV export, with an explicit count in the report.
+        if(analysisMissCount(model)<=5000){
+          for(const position of model.positionSummaries.filter(p=>p.misses)){
+            let afterDay='',afterCell='';
+            do{
+              const page=(await analysisApi('misses',{analysisId:remote.analysisId,date:state.dashboardDate,position:position.position,afterDay,afterCell,pageSize:500})).page;
+              if(!page)throw new Error('미검 목록 갱신 중입니다. 다시 시도하세요.');
+              misses.push(...page.records);if(!page.hasMore)break;
+              if(page.nextDay===afterDay&&page.nextCell===afterCell)throw new Error('미검 목록 페이지가 진행되지 않습니다.');
+              afterDay=page.nextDay;afterCell=page.nextCell;
+            }while(true);
+          }
+          if(misses.length!==analysisMissCount(model))throw new Error('리포트 미검 수량이 변경되었습니다. 다시 생성하세요.');
+        }
+        if(state.remoteAnalysis!==remote)throw new Error('분석 결과가 교체되었습니다.');
+        reportModel={...model,misses};
+      }catch(error){reportWindow.document.body.textContent=`리포트 생성 실패: ${error.message}`;showToast(error.message,true);return;}
+    }
     reportWindow.document.open();
-    reportWindow.document.write(buildSummaryReportHtml(model, now));
+    let reportHtml=buildSummaryReportHtml(reportModel, now);
+    if(model.remote&&analysisMissCount(model)>5000)reportHtml=reportHtml.replace('</main>',`<section style="padding:24px"><h2>미검 Cell ID ${numberText(analysisMissCount(model))}건</h2><p>대용량 미검 목록은 대시보드의 ‘선택 Position 미검 CSV’에서 전체 건수를 저장할 수 있습니다. 이 요약 리포트의 검사·미검 수량과 비율은 전체 데이터를 기준으로 집계했습니다.</p></section></main>`);
+    reportWindow.document.write(reportHtml);
     reportWindow.document.close();
     showToast('요약 리포트를 열었습니다. PDF로 저장 버튼을 누르십시오.');
   }
@@ -2441,7 +2670,7 @@
   function renderDashboard() {
     const model = state.dashboardModel || state.model;
     const persistedHistory = mainHistoryDashboardPanel();
-    if (!model?.records.length) {
+    if (!analysisRecordCount(model)) {
       $('#vq43-page').innerHTML = `<div class="vq43-content"><div class="vq43-topline"><div><div class="vq43-eyebrow">Main Dashboard</div><h1 class="vq43-title">검사 결과 전체 View</h1><p class="vq43-subtitle">CSV 분석 결과와 Local Agent SQLite 검사 이력을 한 화면에서 확인합니다.</p></div><div class="vq43-top-actions">${packageDownloadActionsHtml()}<button class="vq43-btn" data-vq-action="open-settings">Input 변경</button></div></div>${persistedHistory}<section class="vq43-section"><div class="vq43-empty"><div class="vq43-empty-card"><div class="vq43-empty-symbol">◌</div><h2>분석 Input이 없습니다</h2><p>설정 메뉴에서 Position별 시뮬레이션 결과 파일과 실제 NG 이미지 폴더를 입력하세요. 결과 파일은 1개 Position만 입력해도 분석할 수 있습니다.</p></div></div></section></div>`;
       return;
     }
@@ -2456,16 +2685,17 @@
           ${kpi('검사 Cell', numberText(model.uniqueCellCount), `Position ${inputCount}개 입력`)}
           ${kpi('NG Cell', numberText(model.ngCellCount), '한 Position 이상 NG', 'red')}
           ${kpi('Cell NG율', rateText(model.ngCellRate), rateBar(model.ngCellRate, true), 'blue', true)}
-          ${kpi('미검 Cell·Position', numberText(model.misses.length), '실제 NG + 시뮬레이션 OK', 'amber')}
+          ${kpi('미검 Cell·Position', numberText(analysisMissCount(model)), '실제 NG + 시뮬레이션 OK', 'amber')}
         </div></section>
         <section class="vq43-section"><div class="vq43-section-title"><span class="vq43-step">2</span><div><h3>Position별 NG</h3><p>Threshold 적용 결과이며 입력하지 않은 Position은 미입력으로 구분</p></div></div><div class="vq43-position-grid">${model.positionSummaries.map(positionCard).join('')}</div></section>
         <section class="vq43-section"><div class="vq43-section-title vq43-threshold-section-title"><span class="vq43-step">3</span><div><h3>Position별 Tool NG 구성</h3><p>원래 NG 결과 중 Score가 Threshold 이상인 Tool만 NG로 유지하여 재계산</p></div><button class="vq43-btn vq43-btn-amber" data-vq-action="reset-thresholds">Threshold 0.50 초기화</button></div>${positionToolCharts(model.positionToolSummaries)}<div class="vq43-note" style="margin-top:12px">Threshold는 CSV에서 원래 NG로 판정된 결과만 필터링합니다. 원래 OK 결과를 NG로 전환하지 않습니다. 동일 Cell에서 여러 Tool이 동시에 NG일 수 있어 Tool 비율 합계는 100%를 초과할 수 있습니다.</div></section>
         ${matchDiagnostic(model)}
         <section class="vq43-section" style="padding-bottom:28px"><div class="vq43-section-title"><span class="vq43-step amber">!</span><div><h3>Position별 미검 Cell ID</h3><p>실제 NG 이미지가 존재하지만 Threshold 적용 시뮬레이션 결과가 OK인 Cell</p></div></div>
-          <div class="vq43-miss-toolbar"><div class="vq43-tabs">${positions.map((position) => `<button class="vq43-tab ${state.selectedMissPosition === position ? 'active' : ''}" data-vq-action="miss-tab" data-vq-position="${position}">${position}<b>${model.misses.filter((item) => item.position === position).length}</b></button>`).join('')}</div><button class="vq43-btn vq43-btn-green" data-vq-action="download-misses" ${misses.length ? '' : 'disabled'}>선택 Position 미검 CSV</button></div>
+          <div class="vq43-miss-toolbar"><div class="vq43-tabs">${positions.map((position) => `<button class="vq43-tab ${state.selectedMissPosition === position ? 'active' : ''}" data-vq-action="miss-tab" data-vq-position="${position}">${position}<b>${(model.remote ? model.positionSummaries.find(p=>p.position===position)?.misses || 0 : model.misses.filter((item) => item.position === position).length)}</b></button>`).join('')}</div><button class="vq43-btn vq43-btn-green" data-vq-action="download-misses" ${misses.length ? '' : 'disabled'}>선택 Position 미검 CSV</button></div>
           <div class="vq43-miss-table"><div class="vq43-miss-row head"><span>Cell ID</span><span>시뮬레이션</span><span>Tool별 Score</span><span>실제 이미지</span></div>${misses.length ? misses.map(missRow).join('') : `<div class="vq43-no-data">${state.selectedMissPosition} 미검 없음</div>`}</div>
+          ${model.remote?`<div class="vq43-miss-toolbar"><button class="vq43-btn" data-vq-action="agent-miss-prev" ${state.remoteAnalysis.missCursors?.length?'':'disabled'}>이전 100개</button><span>${numberText((state.remoteAnalysis.missCursors?.length||0)*100+ (misses.length?1:0))}–${numberText((state.remoteAnalysis.missCursors?.length||0)*100+misses.length)} / ${numberText(model.positionSummaries.find(p=>p.position===state.selectedMissPosition)?.misses||0)}</span><button class="vq43-btn" data-vq-action="agent-miss-next" ${state.remoteAnalysis.missPage?.hasMore?'':'disabled'}>다음 100개</button></div>`:''}
         </section>
-        ${model.duplicates.length ? `<div class="vq43-note">⚠ 중복 Cell ID + Position ${numberText(model.duplicates.length)}건은 하나라도 NG이면 NG로 통합했습니다.</div>` : ''}
+        ${(model.duplicateCount ?? model.duplicates.length) ? `<div class="vq43-note">⚠ 중복 Cell ID + Position ${numberText((model.duplicateCount ?? model.duplicates.length))}건은 하나라도 NG이면 NG로 통합했습니다.</div>` : ''}
       </div>`;
   }
 
@@ -2528,6 +2758,10 @@
   // aggregateRows()는 같은 날짜의 Cell ID + Position 중복만 하나의 record로 통합한다.
   // 날짜가 다른 동일 Cell ID는 서로 다른 검사 건이므로 전체보기에서 각각 계산한다.
   function currentAnalysisDashboardData() {
+    if(state.remoteAnalysis && state.model?.remote){
+      const model=state.dashboardModel || state.model;
+      return {totalCount:model.recordCount,ngCount:model.totalNg,uniqueCellCount:model.recordCount,daily:state.model.daily,unknown:model.unknownRows};
+    }
     const records = Array.isArray(state.dashboardModel?.records) ? state.dashboardModel.records : (state.model?.records || []);
     const live = state.simulationLiveAccumulator;
     if (live && !state.dashboardDate) {
@@ -2706,18 +2940,24 @@
     return true;
   }
 
+  function csvCaptureParts(timestamp) {
+    const normalized = strictCaptureTimestamp(timestamp);
+    return normalized ? [normalized.slice(0,10), normalized.slice(11,19)] : ['', ''];
+  }
+
   function downloadMissCsv(position) {
+    if(state.remoteAnalysis)return exportAgentAnalysis('misses',position);
     const misses = ((state.page === 'main' ? state.dashboardModel : state.model)?.misses || []).filter((item) => item.position === position);
     if (!misses.length) return showToast(`${position} 미검 데이터가 없습니다.`, true);
     const tools = [...new Set(misses.flatMap((miss) => Object.keys(miss.record.tools)))].sort();
-    const headers = ['CaptureTimestamp', 'Cell ID', 'Position', 'Simulated_Total_result'];
+    const headers = ['Date', 'Time', 'Cell ID', 'Position', 'Simulated_Total_result'];
     tools.forEach((tool) => headers.push(`${tool}_result`, `${tool}_score`, `${tool}_threshold`));
     headers.push('Actual_Image_Count', 'Actual_Image_Path', 'Summary_Date', 'Source_Row_Count', 'Source_Paths');
     const lines = [headers.map(csvCell).join(',')];
     misses.forEach((miss) => {
       const source = miss.record.sourceRows?.[0] || {};
       const timestamp = source.captureTimestamp || (dashboardDateForRecord(miss.record) ? `${dashboardDateForRecord(miss.record)}T00:00:00` : '');
-      const row = [timestamp, miss.cellId, miss.position, miss.record.totalResult];
+      const row = [...csvCaptureParts(timestamp), miss.cellId, miss.position, miss.record.totalResult];
       tools.forEach((tool) => {
         const observation = miss.record.tools[tool];
         row.push(observation?.result || '', Number.isFinite(observation?.representativeScore) ? observation.representativeScore.toFixed(4) : '', observation ? observation.threshold.toFixed(2) : '');
@@ -2728,18 +2968,44 @@
     saveCsvFile(`VisionQC_${position.replace(/[^A-Z]/g, '_')}_미검_${misses.length}건.csv`, lines, `${position} 미검 ${numberText(misses.length)}건 CSV 저장 완료`);
   }
 
+  async function saveAgentAnalysisHistory() {
+    const remote=state.remoteAnalysis;
+    if(!remote||state.historyImporting||state.simulationProgress?.running)return;
+    state.historyImporting=true;renderCurrentPage();
+    try {
+      await agentAnalysisOperation('save-history',{analysisId:remote.analysisId});
+      if(state.remoteAnalysis===remote)remote.saved=true;
+      state.historyLoaded=false;showToast('현재 분석 결과를 검사 이력 DB에 저장했습니다.');
+    }catch(error){showToast(`DB 저장 실패: ${error.message}`,true);}
+    finally{state.historyImporting=false;renderCurrentPage();}
+  }
+
+  async function exportAgentAnalysis(kind='all',position='') {
+    const remote=state.remoteAnalysis;if(!remote)return;
+    try {
+      const picked=await requestSimulationPicker('/api/pick/folder',{initialPath:ensureSimulationForm().outputRoot || ''});
+      if(!picked?.ok||!picked.path)return;
+      const form=ensureSimulationForm();
+      const body={analysisId:remote.analysisId,outputDirectory:picked.path,maxRows:form.csvMaxRows,splitByDate:form.csvSplitByDate,kind,position,date:state.dashboardDate};
+      if(kind==='score')Object.assign(body,agentScoreRequest(),{cutoff:clampScore($('#vq43-score-cutoff')?.value ?? state.analysisScoreCutoff,.8),compare:state.analysisScoreCompare});
+      const done=await agentAnalysisOperation('export',body);
+      showToast(`${numberText(done.result.count)}행 · ${done.result.files.length}개 CSV 저장 완료: ${picked.path}`);
+    }catch(error){showToast(`CSV 저장 실패: ${error.message}`,true);}
+  }
+
   function downloadAllResultsCsv() {
+    if(state.remoteAnalysis)return exportAgentAnalysis();
     const model = state.model;
-    if (!model?.records.length) return showToast('저장할 결과 데이터가 없습니다.', true);
+    if (!analysisRecordCount(model)) return showToast('저장할 결과 데이터가 없습니다.', true);
     const tools = model.tools;
-    const headers = ['CaptureTimestamp', 'Cell ID', 'Position', 'Total_result', 'FullPath', 'ProcessedPath', 'Source_File', 'Source_Row', 'WorkspaceType', 'WorkspaceName', 'WorkspaceKey'];
+    const headers = ['Date', 'Time', 'Cell ID', 'Position', 'Total_result', 'FullPath', 'ProcessedPath', 'Source_File', 'Source_Row', 'WorkspaceType', 'WorkspaceName', 'WorkspaceKey'];
     tools.forEach((tool) => headers.push(`${tool}_result`, `${tool}_score`));
     const lines = [headers.map(csvCell).join(',')];
     const positions = positionNames();
     const sorted = [...model.records].sort((a, b) => dashboardDateForRecord(a).localeCompare(dashboardDateForRecord(b)) || positions.indexOf(a.position) - positions.indexOf(b.position) || a.cellId.localeCompare(b.cellId));
     sorted.forEach((record) => (record.sourceRows || []).forEach((source) => {
       const timestamp = source.captureTimestamp || '';
-      const row = [timestamp, record.cellId, record.position, source.totalResult, source.originalFullPath || source.fullPath || '', source.processedPath || '', source.sourceFileName || '', source.sourceRowNumber || '', source.workspaceType || '', source.workspaceName || '', source.workspaceKey || ''];
+      const row = [...csvCaptureParts(timestamp), record.cellId, record.position, source.totalResult, source.originalFullPath || source.fullPath || '', source.processedPath || '', source.sourceFileName || '', source.sourceRowNumber || '', source.workspaceType || '', source.workspaceName || '', source.workspaceKey || ''];
       tools.forEach((toolName) => {
         const tool = source.tools[toolName];
         row.push(tool?.result || '', Number.isFinite(tool?.score) ? String(tool.score) : '');
@@ -2837,6 +3103,7 @@
   }
 
   function downloadScoreFilterCsv() {
+    if(state.remoteAnalysis)return exportAgentAnalysis('score');
     const cutoffInput = $('#vq43-score-cutoff');
     state.analysisScoreCutoff = clampScore(cutoffInput?.value ?? state.analysisScoreCutoff, 0.80);
     const points = sortAnalysisScorePoints(scorePoints(state.analysisTool, state.analysisScope, state.analysisPosition, analysisScorePointOptions()));
@@ -2864,9 +3131,91 @@
     );
   }
 
+  function agentScoreRequest() {
+    return {analysisId:state.remoteAnalysis.analysisId,tool:state.analysisTool,position:state.analysisPosition,scope:state.analysisScope,
+      excludeOtherToolNg:state.analysisScope==='ACTUAL_NG_TOOL_NG',exclusionThreshold:state.actualNgOtherToolExclusionScore,pageSize:300};
+  }
+
+  function adoptAgentScorePage(page) {
+    state.analysisPoints=(page.records || []).map(row=>({ ...row,key:`agent-score:${row.observationId}`,recordKey:`agent-score:${row.observationId}`,
+      sourceRowIndex:0,hasCsvImage:!!row.fullPath,hasActualImage:!!row.hasActualImage,otherToolNgScores:[] }));
+    state.analysisPointMap=new Map(state.analysisPoints.map(point=>[point.key,point]));
+    state.model.recordMap=new Map();state.model.actualMap=new Map();
+    state.analysisPoints.forEach(point=>{
+      const source={...point,tools:{[state.analysisTool]:{tool:state.analysisTool,result:point.result,score:point.score,overlayPath:point.overlayPath}},totalResult:point.result};
+      state.model.recordMap.set(point.recordKey,{key:point.recordKey,cellId:point.cellId,position:point.position,tools:source.tools,sourceRows:[source],totalResult:point.result});
+    });
+  }
+
+  async function loadAgentScores() {
+    const remote=state.remoteAnalysis;if(!remote||remote.scoresLoading||remote.refreshing)return;
+    const request=agentScoreRequest(),key=JSON.stringify({...request,revision:remote.revision||0});
+    remote.scoresLoading=true;
+    try {
+      await waitAnalysisOperation(await analysisApi('status',{analysisId:remote.analysisId}));
+      const stats=(await agentAnalysisOperation('statistics',request)).result;
+      let minimum={min:null,eligible:0,total:0};
+      if(state.model.actualUniqueCount){
+        const all=(await agentAnalysisOperation('statistics',{...request,scope:'ACTUAL_NG_TOOL_NG',excludeOtherToolNg:false})).result;
+        const eligible=(await agentAnalysisOperation('statistics',{...request,scope:'ACTUAL_NG_TOOL_NG',excludeOtherToolNg:true})).result;
+        minimum={min:eligible.total.min,eligible:eligible.total.count,total:all.total.count};
+      }
+      const response=await analysisApi('score-window',{...request,afterScore:-1,afterId:0});
+      if(state.remoteAnalysis!==remote||JSON.stringify({...agentScoreRequest(),revision:remote.revision||0})!==key)return;
+      remote.scores={key,stats,minimum,page:response.page,offset:0};adoptAgentScorePage(response.page);
+    } catch(error){remote.scoreError=error.message;showToast(`Score 조회 실패: ${error.message}`,true);}
+    finally {
+      remote.scoresLoading=false;
+      if(state.remoteAnalysis===remote&&state.page==='analysis'){
+        if(!remote.scoreError)renderCurrentPage();
+        else {const target=$('#vq43-agent-score-status');if(target)target.textContent=remote.scoreError;}
+      }
+    }
+  }
+
+  async function changeAgentScorePage(direction) {
+    const remote=state.remoteAnalysis,view=remote?.scores;if(!view||remote.scoresLoading)return;
+    if(direction<0&&view.offset===0)return showModalBoundary(-1);
+    if(direction>0&&!view.page.hasMore)return showModalBoundary(1);
+    remote.scoresLoading=true;
+    try {
+      const previous=direction<0;
+      const response=await analysisApi('score-window',{...agentScoreRequest(),previous,
+        afterScore:previous?view.page.previousScore:view.page.nextScore,afterId:previous?view.page.previousId:view.page.nextId});
+      if(state.remoteAnalysis!==remote)return;
+      view.offset=Math.max(0,view.offset+(previous?-response.page.records.length:view.page.records.length));
+      view.page={...response.page,hasMore:previous?true:response.page.hasMore};adoptAgentScorePage(view.page);renderCurrentPage();
+    }catch(error){showToast(error.message,true);}finally{remote.scoresLoading=false;}
+  }
+
+  function renderAgentAnalysis() {
+    const remote=state.remoteAnalysis,model=state.model;
+    if(!analysisRecordCount(model)||!model.tools.length)return emptyPage('Score 분석 데이터가 없습니다','Tool 결과를 포함한 CSV를 입력하세요.');
+    if(!model.tools.includes(state.analysisTool))state.analysisTool=model.tools[0];
+    const scopes=[{value:'TOOL_OK',label:'선택 Tool의 OK Score'},{value:'TOOL_NG',label:'선택 Tool의 NG Score'},{value:'ACTUAL_NG_TOOL_NG',label:'NG Image를 NG로 검출한 Score'},{value:'ACTUAL_NG_TOOL_OK',label:'실제 미검 Cell의 Tool Score'}];
+    const key=JSON.stringify({...agentScoreRequest(),revision:remote.revision||0});
+    const view=remote.scores?.key===key?remote.scores:null;
+    const filters=`<div class="vq43-filter">${customDropdown('position','Position',state.analysisPosition,[{value:'ALL',label:'전체 Position'},...model.positionSummaries.map(p=>({value:p.position,label:p.position}))])}${customDropdown('tool','Tool',state.analysisTool,model.tools.map(tool=>({value:tool,label:tool})))}${customDropdown('scope','분석 범위',state.analysisScope,scopes)}</div>`;
+    if(!view){
+      $('#vq43-page').innerHTML=`<div class="vq43-content"><h1 class="vq43-title">Tool별 Score 분석</h1>${filters}<div id="vq43-agent-score-status" class="vq43-note">에이전트에서 전체 Score를 집계하고 있습니다.</div></div>`;
+      remote.scoreError='';loadAgentScores();return;
+    }
+    const total=view.stats.total,minimum=view.minimum;
+    const summaryRow=label=>{const r=view.stats.byResult.find(r=>r.result===label)||{count:0};return `<div class="vq43-table-row"><span>${label}</span><span>${numberText(r.count)}</span><span>${scoreText(r.mean)}</span><span>${scoreText(r.min)}</span><span>${scoreText(r.max)}</span><span>${scoreText(r.median)}</span></div>`;};
+    const weighted=view.stats.bins.map(bin=>({score:(Number(bin.bin)+.5)/20,result:bin.result,weight:Number(bin.count)}));
+    $('#vq43-page').innerHTML=`<div class="vq43-content vq43-analysis-page"><div class="vq43-eyebrow">Detailed Analysis</div><h1 class="vq43-title">Tool별 Score 분석</h1>${filters}
+      <div class="vq43-kpi-grid">${kpi('Score 데이터',numberText(total.count),'전체 조건의 검사 결과')}${kpi('평균 Score',scoreText(total.mean),'전체 데이터','blue')}${kpi('최소 Score',scoreText(total.min),'전체 데이터','amber')}${kpi('최대 / 중앙값',scoreText(total.max),`Median ${scoreText(total.median)}`)}</div>
+      <div class="vq43-analysis-export"><strong>Score 조건 CSV 저장</strong><label>Score<input id="vq43-score-cutoff" type="number" min="0" max="1" step="0.01" value="${state.analysisScoreCutoff}"></label>${customDropdown('compare','조건',state.analysisScoreCompare,[{value:'GTE',label:'이상 (≥)'},{value:'LTE',label:'이하 (≤)'}])}<button class="vq43-btn vq43-btn-green" data-vq-action="download-score-filter">CSV 저장</button></div>
+      <section class="vq43-actual-ng-minimum"><div><strong>실제 NG 검출 최소 Score</strong><p>다른 Tool이 원래 NG이며 아래 Score 이상인 Cell은 제외합니다.</p></div><label>다른 Tool NG 제외 기준<input id="vq43-actual-ng-exclusion-score" type="number" min="0.50" max="1" step=".01" value="${state.actualNgOtherToolExclusionScore}"></label><div class="vq43-actual-ng-minimum-value"><b>${scoreText(minimum.min)}</b><small>후보 ${numberText(minimum.eligible)} · 제외 ${numberText(minimum.total-minimum.eligible)} / 전체 ${numberText(minimum.total)}</small></div></section>
+      <div class="vq43-table vq43-summary-table"><div class="vq43-table-row head"><span>구분</span><span>개수</span><span>평균</span><span>최소</span><span>최대</span><span>중앙값</span></div>${summaryRow('OK')}${summaryRow('NG')}</div>
+      <div class="vq43-chart-grid"><div class="vq43-chart-card"><h3>Score 분포 · 전체 데이터</h3><div class="vq43-chart-area">${total.count?histogramSvg(weighted):'<div class="vq43-chart-empty">해당 조건의 Score가 없습니다.</div>'}</div></div><div class="vq43-chart-card"><div class="vq43-chart-head"><h3>Cell별 Score</h3><button class="vq43-btn" data-vq-action="open-chart-modal">확대 보기</button></div><div class="vq43-history-navigation"><span>${numberText(view.offset+(state.analysisPoints.length?1:0))}–${numberText(view.offset+state.analysisPoints.length)} / ${numberText(total.count)}</span><button class="vq43-btn" data-agent-score-page="-1" ${view.offset===0?'disabled':''}>이전</button><button class="vq43-btn" data-agent-score-page="1" ${!view.page.hasMore?'disabled':''}>다음</button></div><div class="vq43-chart-area vq43-analysis-scatter">${state.analysisPoints.length?scatterSvg(state.analysisPoints,{interactive:true}):'<div class="vq43-chart-empty">해당 조건의 Score가 없습니다.</div>'}</div></div></div></div>`;
+    $$('[data-agent-score-page]').forEach(button=>button.onclick=()=>changeAgentScorePage(Number(button.dataset.agentScorePage)));
+  }
+
   function renderAnalysis() {
+    if(state.remoteAnalysis)return renderAgentAnalysis();
     const model = state.model;
-    if (!model?.records.length || !model.tools.length) return emptyPage('Score 분석 데이터가 없습니다', '설정에서 *_result 및 *_score 열이 포함된 Position 결과 파일을 입력하세요.');
+    if (!analysisRecordCount(model) || !model.tools.length) return emptyPage('Score 분석 데이터가 없습니다', '설정에서 *_result 및 *_score 열이 포함된 Position 결과 파일을 입력하세요.');
     if (!model.tools.includes(state.analysisTool)) state.analysisTool = model.tools[0];
     const allowedScopes = ['TOOL_OK', 'TOOL_NG', 'ACTUAL_NG_TOOL_NG', 'ACTUAL_NG_TOOL_OK'];
     if (!allowedScopes.includes(state.analysisScope)) state.analysisScope = 'TOOL_NG';
@@ -2905,7 +3254,7 @@
     points.forEach((point) => {
       const clamped = Math.max(minScore, Math.min(maxScore, point.score));
       const index = Math.min(bucketCount - 1, Math.max(0, Math.floor((clamped - minScore) / step)));
-      if (point.result === 'NG') buckets[index].ng += 1; else buckets[index].ok += 1;
+      if (point.result === 'NG') buckets[index].ng += Number(point.weight ?? 1); else buckets[index].ok += Number(point.weight ?? 1);
     });
     const maxCount = Math.max(1, ...buckets.flatMap((bucket) => [bucket.ok, bucket.ng]));
     const groupW = plotW / bucketCount, barW = groupW * .31;
@@ -3094,6 +3443,13 @@
   // 날짜별 최고 NG율보다 3%p 높은 범위만 표시해 낮은 NG율의 변화도 선명하게 비교합니다.
   const historyChartWindows = {};
   function changeHistoryChartWindow(scope, action, date, step = 10) {
+    if(scope==='main' && state.remoteAnalysis){
+      const remote=state.remoteAnalysis;
+      const start=action==='history-chart-latest'||(action==='date'&&!date)?-1:action==='date'?0:(remote.dateWindow?.start||0)+(action==='history-chart-prev'?-step:step);
+      analysisApi('dates',{analysisId:remote.analysisId,dateStart:action==='history-chart-latest'||(action==='date'&&!date)?-1:Math.max(0,start),dateAnchor:action==='date'?date:''}).then(response=>{
+        if(state.remoteAnalysis===remote&&response.page){remote.dateWindow=response.page;renderCurrentPage();}
+      }).catch(error=>showToast(error.message,true));return;
+    }
     const view = historyChartWindows[scope];
     if (!view?.rows.length) return;
     if (action === 'history-chart-latest' || (action === 'date' && !date)) view.anchor = null;
@@ -3106,16 +3462,19 @@
   }
 
   function historyDateBars(daily) {
+    const remoteWindow=state.page==='main'?state.remoteAnalysis?.dateWindow:null;
+    if(remoteWindow)daily=remoteWindow.rows;
     const allRows = (Array.isArray(daily) ? daily : []).slice().sort((a,b)=>String(a.date).localeCompare(String(b.date)));
     if (!allRows.length) return '<div class="vq43-history-empty">표시할 날짜별 이력이 없습니다.</div>';
     const height = 220, mainCompact = state.page === 'main', scope = mainCompact ? 'main' : 'history';
     const view = historyChartWindows[scope] || (historyChartWindows[scope] = {anchor:null});
-    const found = view.anchor ? allRows.findIndex(row=>row.date >= view.anchor) : -1;
+    const found = !remoteWindow && view.anchor ? allRows.findIndex(row=>row.date >= view.anchor) : -1;
     const lastStart = Math.max(0,allRows.length-10);
     const start = view.anchor ? Math.min(lastStart, found < 0 ? lastStart : found) : lastStart;
     view.rows = allRows; view.start = start;
     const rows = allRows.slice(start,start+10), slots = 10;
-    const controls = `<div class="vq43-history-navigation"><span>그래프 표시 범위 · ${start+1}–${start+rows.length} / ${allRows.length}일</span><div><label>시작 날짜 <input type="date" aria-label="그래프 시작 날짜" data-history-chart-start="${scope}" min="${escapeHtml(allRows[0].date)}" max="${escapeHtml(allRows.at(-1).date)}" value="${escapeHtml(rows[0].date)}"></label><button class="vq43-btn" data-vq-action="history-chart-prev" data-chart-scope="${scope}" ${start===0?'disabled':''}>이전 10개</button><button class="vq43-btn" data-vq-action="history-chart-next" data-chart-scope="${scope}" ${start+10>=allRows.length?'disabled':''}>다음 10개</button><button class="vq43-btn" data-vq-action="history-chart-latest" data-chart-scope="${scope}">최신</button></div></div>`;
+    const navStart=remoteWindow?remoteWindow.start:start,navCount=remoteWindow?remoteWindow.count:allRows.length;
+    const controls = `<div class="vq43-history-navigation"><span>그래프 표시 범위 · ${navStart+1}–${navStart+rows.length} / ${navCount}일</span><div><label>시작 날짜 <input type="date" aria-label="그래프 시작 날짜" data-history-chart-start="${scope}" min="${escapeHtml(remoteWindow?.firstDate || allRows[0].date)}" max="${escapeHtml(remoteWindow?.lastDate || allRows.at(-1).date)}" value="${escapeHtml(rows[0].date)}"></label><button class="vq43-btn" data-vq-action="history-chart-prev" data-chart-scope="${scope}" ${navStart===0?'disabled':''}>이전 10개</button><button class="vq43-btn" data-vq-action="history-chart-next" data-chart-scope="${scope}" ${navStart+10>=navCount?'disabled':''}>다음 10개</button><button class="vq43-btn" data-vq-action="history-chart-latest" data-chart-scope="${scope}">최신</button></div></div>`;
     // Percentage x coordinates resize without scaling the text; ten fixed slots per viewport.
     const left = 0, right = 0, top = 30, bottom = 42;
     const plotW = 100 - left - right, plotH = height - top - bottom;
@@ -3137,7 +3496,7 @@
       return '<g class="vq43-history-point" data-vq-action="' + (mainCompact ? 'dashboard-day' : 'history-day') + '" data-vq-history-day="' + date + '" role="button" aria-label="' + date + ' 선택" aria-pressed="' + (mainCompact && state.dashboardDate === row.date) + '" tabindex="0"><title>' + date + ' · 전체 ' + numberText(total) + ' · NG ' + numberText(ng) + ' (' + rateText(rate) + ')</title><rect x="' + hitLeft(index) + '%" y="0" width="' + (hitRight(index) - hitLeft(index)) + '%" height="' + height + '" fill="' + (mainCompact && state.dashboardDate === row.date ? 'rgba(59,130,246,.12)' : 'transparent') + '" pointer-events="all"/><circle cx="' + x(index) + '%" cy="' + y(rate) + '" r="5"/><text class="rate" x="' + x(index) + '%" y="' + Math.max(14,y(rate)-10) + '" text-anchor="middle">' + rateText(rate) + '</text>' + dateLabel + '</g>';
     }).join('');
     const axis = [0,.25,.5,.75,1].map(ratio=>'<text x="54" y="'+(y(axisMax*ratio)+4)+'" text-anchor="end">'+Number((axisMax*ratio*100).toFixed(2))+'%</text>').join('');
-    const arrows = `<button class="vq43-history-arrow prev" data-vq-action="history-chart-prev" data-chart-scope="${scope}" data-chart-step="5" aria-label="이전 5개 날짜" title="이전 5개 날짜" ${start===0?'disabled':''}>‹</button><button class="vq43-history-arrow next" data-vq-action="history-chart-next" data-chart-scope="${scope}" data-chart-step="5" aria-label="다음 5개 날짜" title="다음 5개 날짜" ${start+10>=allRows.length?'disabled':''}>›</button>`;
+    const arrows = `<button class="vq43-history-arrow prev" data-vq-action="history-chart-prev" data-chart-scope="${scope}" data-chart-step="5" aria-label="이전 5개 날짜" title="이전 5개 날짜" ${navStart===0?'disabled':''}>‹</button><button class="vq43-history-arrow next" data-vq-action="history-chart-next" data-chart-scope="${scope}" data-chart-step="5" aria-label="다음 5개 날짜" title="다음 5개 날짜" ${navStart+10>=navCount?'disabled':''}>›</button>`;
     return controls + '<div class="vq43-history-line-scroll vq43-history-ten-slots vq43-history-paged"><svg class="vq43-history-axis" width="60" height="220" aria-label="NG율 퍼센트 축">'+axis+'</svg><svg class="vq43-history-line" height="220" style="--history-width:100%;--history-min-width:0px">' + grid + segments + dots + '</svg>' + arrows + '</div>';
 
   }
@@ -3433,7 +3792,7 @@
       };
     });
     return {
-      outputRoot:'',
+      outputRoot:'', csvMaxRows:1000000, csvSplitByDate:false,
       execution:{ parallelPositions:true, autoDistributeGpu:true, maxParallelPositions:10 },
       activePositionsByMode:{
         green:simulationPositionDefs().map(x => x.key),
@@ -3474,6 +3833,8 @@
     const old = state.simulationForm && typeof state.simulationForm === 'object' ? state.simulationForm : {};
     const form = old;
     form.outputRoot = typeof form.outputRoot === 'string' ? form.outputRoot : '';
+    form.csvMaxRows = safePositiveInt(form.csvMaxRows,1000000,2147483647);
+    form.csvSplitByDate = form.csvSplitByDate === true;
     form.positions = form.positions && typeof form.positions === 'object' ? form.positions : {};
 
     const currentDefs = simulationPositionDefs();
@@ -4004,6 +4365,7 @@
       const installedVpdl = vpdlAvailable ? (data.installedVpdlVersion || data.vpdlVersion || '-') : '-';
       state.simulationAgent = {
         status:'connected', version:detectedVersion,
+        analysisApiVersion:Number(data.analysisApiVersion || 0),
         vpdlAvailable,
         installedVpdl,
         vpdl:vpdlAvailable ? (runtimeActive ? (data.vpdlVersion || installedVpdl) : '미로드') : '미설치',
@@ -4030,6 +4392,8 @@
       }
       const nowRunning = !!data.state?.running;
       const runId = String(data.state?.simulationRunId || '');
+      if(state.remoteAnalysis?.needsRestore&&!state.remoteAnalysis.refreshing&&state.simulationAgent.analysisApiVersion>=1)refreshAgentDashboard({actual:false,thresholds:false});
+      if(nowRunning&&runId&&state.simulationAgent.analysisApiVersion>=1)state.simulationDbLiveEnabled=true;
       if (nowRunning && runId) state.simulationLiveRunId = runId;
       if (nowRunning && runId && state.simulationDbLiveEnabled) syncSimulationLiveResults(data.state);
       if (!nowRunning && runId && state.simulationLiveRunId === runId && state.simulationSyncedRunId !== runId)
@@ -4654,7 +5018,7 @@
       toolName:String(tool.toolName || ''), threshold:Number(tool.threshold), judgement:String(tool.judgement || '')
     }));
     return {
-      mode:state.simulationMode || 'integrated', webVersion:VERSION, outputRoot:form.outputRoot, namingProfile:state.namingProfile,
+      mode:state.simulationMode || 'integrated', webVersion:VERSION, agentAnalysis:state.simulationAgent.analysisApiVersion>=1, outputRoot:form.outputRoot, csvMaxRows:form.csvMaxRows, csvSplitByDate:form.csvSplitByDate, namingProfile:state.namingProfile,
       parallelPositions:form.execution.parallelPositions !== false,
       autoDistributeGpu:form.execution.autoDistributeGpu !== false,
       maxParallelPositions:Math.max(1, Math.min(10, Number(form.execution.maxParallelPositions || 10))),
@@ -4761,6 +5125,7 @@
 
   function prepareLiveSimulationData(request) {
     if (!request || request.mode === 'blue') return;
+    state.remoteAnalysis=null;
     state.dashboardDate = '';
     state.resultInputs = {};
     request.positions.forEach(p => {
@@ -4833,6 +5198,7 @@
   }
 
   function appendSimulationAnalysisRecords(records) {
+    if(state.simulationAgent.analysisApiVersion>=1)return 0;
     let accepted = 0;
     const appendedRows = [];
     (Array.isArray(records) ? records : []).forEach((record) => {
@@ -4854,7 +5220,55 @@
     return accepted;
   }
 
+  async function syncAgentSimulation(simulationState, final) {
+    const runId=String(simulationState?.simulationRunId || state.simulationLiveRunId || '');
+    if(simulationState?.mode==='blue'){if(final)state.simulationSyncedRunId=runId;return;}
+    if(!runId || runId!==state.simulationLiveRunId || state.simulationSyncedRunId===runId)return;
+    if(state.simulationDbLiveSyncPromise){
+      await state.simulationDbLiveSyncPromise;
+      if(final)return syncAgentSimulation(simulationState,true);
+      return;
+    }
+    if(!final && Date.now()<(state.agentLiveNextAt||0))return;
+    const task=(async()=>{
+      const current=state.remoteAnalysis;
+      if(current?.refreshing)await current.refreshing;
+      if(current?.scoresLoading)return;
+      const started=await agentFetch('/api/simulation/analysis',{method:'POST',body:{runId},timeout:15000});
+      if(!started?.ok)throw new Error(started?.error || '실시간 분석 연결 실패');
+      const completed=await waitAnalysisOperation(started);
+      if(runId!==state.simulationLiveRunId)return;
+      if(!state.remoteAnalysis || state.remoteAnalysis.analysisId!==completed.analysisId){
+        state.remoteAnalysis={analysisId:completed.analysisId,runId,inputs:{},filePaths:[],live:true};
+        await syncAgentActualNg(completed.analysisId);
+        const thresholds=Object.entries(state.thresholds).map(([key,value])=>{const split=key.indexOf('|');return {position:key.slice(0,split),tool:key.slice(split+1),value};});
+        await agentAnalysisOperation('thresholds',{analysisId:completed.analysisId,thresholds});
+      }
+      await refreshAgentDashboard({actual:false,thresholds:false});
+      if(state.remoteAnalysis?.error)throw new Error(state.remoteAnalysis.error);
+      if(runId!==state.simulationLiveRunId)return;
+      state.simulationLiveRows=Number(state.model.rawRowCount||0);
+      for(const p of state.model.positionSummaries){
+        state.resultInputs[p.position]={position:p.position,remote:true,rows:[],rowCount:p.rawRows ?? p.total,
+          warnings:[],simulationRunId:runId,resultCsv:simulationState?.resultCsv||'',fileName:simulationState?.resultCsv?.split(/[\\/]/).pop()||'LIVE Simulation',updatedAt:Date.now()};
+      }
+      if(final){
+        const expected=Number(simulationState?.processed);
+        if(Number.isFinite(expected)&&expected!==state.simulationLiveRows)throw new Error(`처리 ${numberText(expected)}건 / 분석 ${numberText(state.simulationLiveRows)}건: 재동기화가 필요합니다.`);
+        state.simulationSyncedRunId=runId;
+        state.simulationLiveActive=false;
+        appendSimulationLog({level:'INFO',message:`에이전트 완료 결과 검증 · ${numberText(state.simulationLiveRows)}건`});
+      }
+      if(final||!state.remoteAnalysis.snapshotSaved){await saveAnalysisSnapshot();state.remoteAnalysis.snapshotSaved=true;}else scheduleAnalysisSnapshot();updateSimulationStatusDom();
+    })().catch(error=>{
+      if(final)showToast(`완료 결과 확인 실패: ${error.message}`,true);
+      else console.warn('VisionQC agent live analysis',error);
+    }).finally(()=>{state.agentLiveNextAt=Date.now()+3000;if(state.simulationDbLiveSyncPromise===task)state.simulationDbLiveSyncPromise=null;});
+    state.simulationDbLiveSyncPromise=task;return task;
+  }
+
   async function syncSimulationLiveResults(simulationState) {
+    if(state.simulationAgent.analysisApiVersion>=1)return syncAgentSimulation(simulationState,false);
     const runId = String(simulationState?.simulationRunId || state.simulationLiveRunId || '');
     if (!state.simulationDbLiveEnabled || !runId || state.simulationLiveRunId !== runId) return;
     if (state.simulationDbLiveSyncPromise) return state.simulationDbLiveSyncPromise;
@@ -4886,6 +5300,7 @@
   }
 
   async function reconcileSimulationResults(simulationState) {
+    if(state.simulationAgent.analysisApiVersion>=1)return syncAgentSimulation(simulationState,true);
     const runId = String(simulationState?.simulationRunId || state.simulationLiveRunId || '');
     if (!runId || state.simulationLiveRunId !== runId || state.simulationSyncedRunId === runId) return;
     state.simulationDbLiveEnabled = false;
@@ -5705,7 +6120,7 @@
 
   function simulationOutputPanel() {
     const form = ensureSimulationForm();
-    return `<section class="vq43-sim-panel vq43-sim-output-main"><div class="vq43-sim-panel-head"><div><strong>Output</strong><span>모든 Simulation 결과의 로컬 저장 위치</span></div></div><div class="vq43-sim-output-row"><input data-sim-scope="root" data-sim-field="outputRoot" value="${escapeHtml(form.outputRoot)}" placeholder="결과 저장 폴더"><button data-vq-action="simulation-browse" data-sim-scope="root" data-sim-kind="folder" data-sim-field="outputRoot">선택</button></div></section>`;
+    return `<section class="vq43-sim-panel vq43-sim-output-main"><div class="vq43-sim-panel-head"><div><strong>Output</strong><span>모든 Simulation 결과의 로컬 저장 위치</span></div></div><div class="vq43-sim-output-row"><input data-sim-scope="root" data-sim-field="outputRoot" value="${escapeHtml(form.outputRoot)}" placeholder="결과 저장 폴더"><button data-vq-action="simulation-browse" data-sim-scope="root" data-sim-kind="folder" data-sim-field="outputRoot">선택</button></div><div class="vq48-output-partition"><label>CSV당 최대 행 수 <input type="number" min="1" max="2147483647" step="1" data-sim-scope="root" data-sim-field="csvMaxRows" value="${form.csvMaxRows}"></label>${simulationCheck('root','csvSplitByDate','날짜별로 파일 나누기')}<small>제목 행 제외 · 날짜 미확인은 별도 저장</small></div></section>`;
   }
 
   function formatDuration(seconds) {
@@ -6025,15 +6440,16 @@
         <section class="vq43-settings-card"><div class="vq43-settings-title"><span class="vq43-settings-icon cyan">${railIconSvg('settings')}</span><div><h3>1. Position 구성</h3><p>이름 변경/추가/삭제 시 모든 분석·시뮬레이션 화면에 동일하게 반영됩니다.</p></div></div><div class="vq43-position-config-list">${positionRows}</div><div class="vq43-position-add-row"><input id="vq43-new-position-name" placeholder="예: CA(MID), AN(SIDE), CUSTOM-01"><button class="vq43-btn vq43-btn-blue" data-vq-action="position-add">+ Position 추가</button></div></section>
         <section class="vq43-settings-card"><div class="vq43-settings-title"><span class="vq43-settings-icon">▦</span><div><h3>1. Position별 시뮬레이션 결과 파일</h3><p>CSV 또는 XLSX · Cell ID, Total_result, Tool_result, Tool_score 열 자동 인식</p></div></div><div class="vq43-input-list">${positions.map(resultInputRow).join('')}</div></section>
         <section class="vq43-settings-card"><div class="vq43-settings-title"><span class="vq43-settings-icon amber">▣</span><div><h3>2. 실제 최종 NG 이미지 경로</h3><p>각 Position별 폴더를 독립적으로 선택/교체할 수 있습니다. 전체 루트를 한 번에 읽는 기존 방식도 유지합니다.</p></div><button class="vq43-btn vq43-btn-amber" data-vq-action="choose-ng-folder" ${state.loading?'disabled':''}>${state.loading==='ng'?'◌ 전체 루트 읽는 중...':'▣ 전체 NG 루트 선택'}</button></div><div class="vq43-ng-position-list">${ngRows}</div></section>
-        <section class="vq43-settings-card"><div class="vq43-settings-title"><span class="vq43-settings-icon green">✓</span><div><h3>분석 준비 상태</h3><p>현재 입력 데이터의 집계 결과</p></div></div><div class="vq43-ready-grid"><div><span>결과 Position</span><b>${positions.filter((position)=>state.resultInputs[position]).length} / ${positions.length}</b></div><div><span>고유 Cell</span><b>${numberText(model.uniqueCellCount)}</b></div><div><span>실제 NG 고유값</span><b>${numberText(model.actualUniqueCount || 0)}</b></div><div><span>CSV 매칭</span><b class="vq43-blue">${numberText(model.matchedActualCount || 0)}</b></div><div><span>미매칭</span><b class="vq43-red">${numberText(model.unmatchedActualCount || 0)}</b></div><div><span>미검</span><b class="vq43-amber">${numberText(model.misses.length)}</b></div></div>${model.actualUniqueCount ? matchDiagnostic(model) : ''}</section>
-        <section class="vq43-settings-card"><div class="vq43-settings-title"><span class="vq43-settings-icon green">▤</span><div><h3>SQLite 분석 이력</h3><p>CSV 분석 결과를 명시적으로 영구 저장합니다. 원본 이미지 파일은 복사하지 않고 FullPath·Cell ID·결과·Tool Score·파일명 규칙만 보관합니다.</p></div><button class="vq43-btn vq43-btn-green" data-vq-action="save-csv-history" ${state.historyImporting || !Object.values(state.resultInputs || {}).some(input=>input?.rows?.length)?'disabled':''}>${state.historyImporting?'SQLite 저장 중...':'현재 CSV 이력 저장'}</button></div></section>
-        ${(warningList.length || model.duplicates.length) ? `<section class="vq43-warning"><strong>⚠ 확인 필요</strong>${warningList.map((warning)=>`<div>• ${escapeHtml(warning)}</div>`).join('')}${model.duplicates.length?`<div>• 중복 Cell ID + Position ${numberText(model.duplicates.length)}건: 하나라도 NG이면 NG로 통합하고 Score 원본 행은 유지합니다.</div>`:''}</section>`:''}
+        <section class="vq43-settings-card"><div class="vq43-settings-title"><span class="vq43-settings-icon green">✓</span><div><h3>분석 준비 상태</h3><p>현재 입력 데이터의 집계 결과</p></div></div><div class="vq43-ready-grid"><div><span>결과 Position</span><b>${positions.filter((position)=>state.resultInputs[position]).length} / ${positions.length}</b></div><div><span>고유 Cell</span><b>${numberText(model.uniqueCellCount)}</b></div><div><span>실제 NG 고유값</span><b>${numberText(model.actualUniqueCount || 0)}</b></div><div><span>CSV 매칭</span><b class="vq43-blue">${numberText(model.matchedActualCount || 0)}</b></div><div><span>미매칭</span><b class="vq43-red">${numberText(model.unmatchedActualCount || 0)}</b></div><div><span>미검</span><b class="vq43-amber">${numberText(analysisMissCount(model))}</b></div></div>${model.actualUniqueCount ? matchDiagnostic(model) : ''}</section>
+        <section class="vq43-settings-card"><div class="vq43-settings-title"><span class="vq43-settings-icon green">▤</span><div><h3>SQLite 분석 이력</h3><p>CSV 분석 결과를 명시적으로 영구 저장합니다. 원본 이미지 파일은 복사하지 않고 FullPath·Cell ID·결과·Tool Score·파일명 규칙만 보관합니다.</p></div><button class="vq43-btn vq43-btn-green" data-vq-action="save-csv-history" ${state.historyImporting || !(state.remoteAnalysis?analysisRecordCount(state.model):Object.values(state.resultInputs || {}).some(input=>input?.rows?.length))?'disabled':''}>${state.historyImporting?'SQLite 저장 중...':'현재 CSV 이력 저장'}</button></div></section>
+        ${(warningList.length || (model.duplicateCount ?? model.duplicates.length)) ? `<section class="vq43-warning"><strong>⚠ 확인 필요</strong>${warningList.map((warning)=>`<div>• ${escapeHtml(warning)}</div>`).join('')}${(model.duplicateCount ?? model.duplicates.length)?`<div>• 중복 Cell ID + Position ${numberText((model.duplicateCount ?? model.duplicates.length))}건: 하나라도 NG이면 NG로 통합하고 Score 원본 행은 유지합니다.</div>`:''}</section>`:''}
       </div>`;
   }
 
   function resultInputRow(position) {
     const input = state.resultInputs[position], loading = state.loading === `result:${position}`;
-    return `<div class="vq43-input-row" data-vq-position="${position}"><div class="vq43-position-label">${position}</div><div>${input?`<div class="vq43-input-name">${escapeHtml(input.fileName)}</div><div class="vq43-input-meta">${numberText(input.rows.length)}행 · ${formatBytes(input.fileSize)} · Tool ${Object.keys(input.rows[0]?.tools || {}).length}개</div>`:'<div class="vq43-input-name" style="color:#475569">결과 파일 미입력</div>'}</div><button class="vq43-btn vq43-btn-blue" data-vq-action="choose-result" ${state.loading?'disabled':''}>${loading?'읽는 중...':input?'교체':'파일 선택'}</button>${input?'<button class="vq43-icon-btn" data-vq-action="remove-result" title="제거">×</button>':'<span></span>'}</div>`;
+    const meta=input?.remote?`${numberText(input.rowCount)}행 · Agent 분석 · Tool ${state.model?.positionToolSummaries?.find(p=>p.position===position)?.tools.length||0}개`:`${numberText(input?.rows.length||0)}행 · ${formatBytes(input?.fileSize||0)} · Tool ${Object.keys(input?.rows[0]?.tools || {}).length}개`;
+    return `<div class="vq43-input-row" data-vq-position="${position}"><div class="vq43-position-label">${position}</div><div>${input?`<div class="vq43-input-name">${escapeHtml(input.fileName)}</div><div class="vq43-input-meta">${meta}</div>`:'<div class="vq43-input-name" style="color:#475569">결과 파일 미입력</div>'}</div><div style="display:flex;gap:6px"><button class="vq43-btn vq43-btn-blue" data-vq-action="choose-result" ${state.loading?'disabled':''}>${loading?'읽는 중...':input?'교체':'파일 선택'}</button><button class="vq43-btn" data-vq-action="choose-result-excel" ${state.loading?'disabled':''} title="Excel 브라우저 분석 (50MB 이하)">Excel</button></div>${input?'<button class="vq43-icon-btn" data-vq-action="remove-result" title="제거">×</button>':'<span></span>'}</div>`;
   }
 
   function resetChartModalView() {
@@ -6191,11 +6607,16 @@
     viewport.addEventListener('dblclick', resetModalView);
   }
 
-  function openMissModal(key) {
+  async function openMissModal(key) {
     const model = state.page === 'main' ? state.dashboardModel : state.model;
     const misses = (model?.misses || []).filter((item) => item.position === state.selectedMissPosition);
     const miss = misses.find((item) => item.key === key);
     if (!miss) return;
+    if(state.remoteAnalysis&&!miss.hydrated){
+      const request=state.agentViewerRequest=(state.agentViewerRequest||0)+1;
+      try{await hydrateAgentMiss(miss);}catch(error){showToast(error.message,true);return;}
+      if(request!==state.agentViewerRequest)return;
+    }
     state.modalMissKey = key;
     state.modalSequence = misses.map((item) => ({ ...item, images:item.images.some(image=>!image.csvOnly) ? item.images.filter(image=>!image.csvOnly) : csvImagesForRecord(item.record), overlayImages:overlayImagesForRecord(item.record), label:'Missed Actual NG' }));
     state.modalSequenceIndex = state.modalSequence.findIndex((item) => item.key === key);
@@ -6273,9 +6694,26 @@
     };
   }
 
-  function openScorePointImage(pointKey, options = {}) {
+  async function hydrateAgentScorePoint(point) {
+    const remote=state.remoteAnalysis;if(!remote||point.hydrated)return;
+    const page=(await analysisApi('detail',{analysisId:remote.analysisId,day:String(point.captureTimestamp||'').slice(0,10),cellId:point.cellId,position:point.position,afterId:Number(point.imageId)-1,pageSize:1})).page;
+    if(state.remoteAnalysis!==remote||!state.analysisPointMap.has(point.key))return;
+    const source=page?.records?.find(row=>Number(row.imageId)===Number(point.imageId));
+    if(!source)throw new Error('선택한 검사 원본을 찾지 못했습니다. 분석을 다시 조회하세요.');
+    source.tools=Object.fromEntries((source.tools||[]).map(tool=>[tool.tool,tool]));
+    state.model.recordMap.set(point.recordKey,{key:point.recordKey,cellId:point.cellId,position:point.position,tools:source.tools,sourceRows:[source],totalResult:source.totalResult});
+    state.model.actualMap.set(point.recordKey,state.ngImages.filter(image=>image.position===point.position&&image.cellId===point.cellId&&(image.csvOnly||dashboardDateForImage(image)===String(point.captureTimestamp||'').slice(0,10))));
+    point.hydrated=true;
+  }
+
+  async function openScorePointImage(pointKey, options = {}) {
     const point = state.analysisPointMap.get(pointKey);
     if (!point) return;
+    if(state.remoteAnalysis&&!point.hydrated){
+      const request=state.agentViewerRequest=(state.agentViewerRequest||0)+1;
+      try{await hydrateAgentScorePoint(point);}catch(error){showToast(error.message,true);return;}
+      if(request!==state.agentViewerRequest)return;
+    }
     const media = scorePointMedia(point);
     if (!media) return;
     const { record, csvImages, images, overlayImages } = media;
@@ -6441,18 +6879,18 @@
     const navigationIndex = selectedOverlay ? Math.max(0, overlayImages.findIndex((candidate) => candidate.fullPath === selectedOverlay.fullPath)) : state.modalIndex;
     const scorePointIndex = Number.isInteger(miss.scorePointIndex) ? miss.scorePointIndex : -1;
     const scorePointCount = scorePointIndex >= 0 ? state.analysisPoints.length : 0;
-    const scoreNavigation = scorePointCount > 1;
+    const scoreNavigation = scorePointCount > 1 || (scorePointIndex>=0 && state.remoteAnalysis?.scores?.stats.total.count>1);
     const sequenceCount = Array.isArray(state.modalSequence) ? state.modalSequence.length : 0;
     const sequenceIndex = Number(state.modalSequenceIndex);
-    const sequenceNavigation = scorePointIndex < 0 && sequenceCount > 1 && sequenceIndex >= 0;
+    const sequenceNavigation = scorePointIndex < 0 && sequenceIndex>=0 && (sequenceCount>1 || !!state.remoteAnalysis?.missPage?.hasMore || !!state.remoteAnalysis?.missCursors?.length);
     const mediaPrevious = navigationIndex > 0;
     const mediaNext = navigationIndex < navigationImages.length - 1;
     const countText = scorePointIndex >= 0
-      ? ('Score ' + (scorePointIndex + 1) + ' / ' + scorePointCount)
+      ? ('Score ' + ((state.remoteAnalysis?.scores?.offset||0) + scorePointIndex + 1) + ' / ' + (state.remoteAnalysis?.scores?.stats.total.count||scorePointCount))
       : (sequenceNavigation ? `${state.modalSequenceKind} ${sequenceIndex + 1} / ${sequenceCount} · ` : '') + (selectedOverlay ? ('Heatmap ' + (navigationIndex + 1) + ' / ' + overlayImages.length) : ((state.modalIndex+1) + ' / ' + displayImages.length));
     const showNavigation = scoreNavigation || sequenceNavigation || navigationImages.length > 1;
-    const previousDisabled = scoreNavigation ? scorePointIndex <= 0 : (!mediaPrevious && (!sequenceNavigation || sequenceIndex <= 0));
-    const nextDisabled = scoreNavigation ? scorePointIndex >= scorePointCount - 1 : (!mediaNext && (!sequenceNavigation || sequenceIndex >= sequenceCount - 1));
+    const previousDisabled = scoreNavigation ? scorePointIndex <= 0&&!state.remoteAnalysis?.scores?.offset : (!mediaPrevious && (!sequenceNavigation || sequenceIndex <= 0)&&!state.remoteAnalysis?.missCursors?.length&&!miss.detailCursors?.length);
+    const nextDisabled = scoreNavigation ? scorePointIndex >= scorePointCount - 1&&!state.remoteAnalysis?.scores?.page.hasMore : (!mediaNext && (!sequenceNavigation || sequenceIndex >= sequenceCount - 1)&&!state.remoteAnalysis?.missPage?.hasMore&&!miss.detailPage?.hasMore);
     const canMoveActualNg = !selectedOverlay && !!image.actualNg && !!image.fileHandle && !!image.rootHandleKey;
     const moveButton = canMoveActualNg ? '<button type="button" class="vq43-modal-delete" data-vq-action="modal-move-delet">이미지 제외</button>' : '';
     modal.innerHTML = `<div class="vq43-modal-card"><div class="vq43-modal-head"><div><small>${escapeHtml(miss.label || 'Actual NG Image')}</small><strong>${escapeHtml(miss.cellId)} · ${miss.position}</strong></div><div class="vq43-modal-head-actions">${moveButton}<button class="vq43-close" data-vq-action="close-modal">×</button></div></div>${switcher}${heatmapCreate}<div class="vq43-modal-image" id="vq43-modal-viewport"><div class="vq43-modal-media-layer"><img id="vq43-modal-zoom-image" draggable="false" src="${state.modalUrl}" alt="${escapeHtml(image.file?.name || image.name || image.relativePath)}"></div><div class="vq43-modal-zoom-tools"><span id="vq43-modal-zoom-value">100%</span><button data-vq-action="modal-reset">원위치</button></div><div class="vq43-modal-help">마우스 휠: 확대/축소 · 드래그: 이동 · 더블클릭: 원위치</div>${showNavigation?`<button class="vq43-modal-nav prev" data-vq-action="modal-prev" ${previousDisabled?'disabled':''}>‹</button><button class="vq43-modal-nav next" data-vq-action="modal-next" ${nextDisabled?'disabled':''}>›</button>`:''}</div><div class="vq43-modal-foot"><div class="vq43-modal-path"><span>${escapeHtml(image.relativePath)}</span><b>${countText}</b></div><div class="vq43-modal-scores">${scores}</div></div></div>`;
@@ -6591,6 +7029,24 @@
     const sequence = Array.isArray(state.modalSequence) ? state.modalSequence : [];
     const current = Number(state.modalSequenceIndex);
     const next = current + (delta < 0 ? -1 : 1);
+    if(state.remoteAnalysis&&state.modalSequenceKind==='미검'){
+      if(state.remoteAnalysis.missLoading)return true;
+      const item=(state.dashboardModel||state.model).misses.find(m=>m.key===state.modalMissKey);
+      const cursors=item?.detailCursors||[];
+      if(item&&!item.images.some(image=>!image.csvOnly)&&((delta>0&&item.detailPage?.hasMore)||(delta<0&&cursors.length))){
+        state.remoteAnalysis.missLoading=true;
+        const cursor=delta>0?item.detailPage.nextImageId:cursors.at(-1);
+        const nextCursors=delta>0?[...cursors,item.detailCursor]:cursors.slice(0,-1);
+        hydrateAgentMiss(item,cursor).then(async()=>{item.detailCursors=nextCursors;await openMissModal(item.key);if(delta<0){state.modalIndex=Math.max(0,modalImagesForView(state.modalItem).length-1);renderModal();}})
+          .catch(error=>showToast(error.message,true)).finally(()=>{if(state.remoteAnalysis)state.remoteAnalysis.missLoading=false;});return true;
+      }
+      if(next>=0&&next<sequence.length){openMissModal(sequence[next].key);return true;}
+      changeAgentMissPage(delta).then(changed=>{
+        if(!changed){showModalBoundary(delta);return;}
+        const rows=(state.dashboardModel||state.model).misses;
+        const item=delta<0?rows.at(-1):rows[0];if(item)openMissModal(item.key);
+      });return true;
+    }
     if (!delta || current < 0 || next < 0 || next >= sequence.length) return false;
     state.modalSequenceIndex = next;
     state.modalItem = sequence[next];
@@ -6611,9 +7067,15 @@
     for (let index = currentIndex + direction; index >= 0 && index < state.analysisPoints.length; index += direction) {
       const point = state.analysisPoints[index];
       const media = scorePointMedia(point);
-      if (!media || (!media.images.length && !media.overlayImages.length)) continue;
+      if (!state.remoteAnalysis && (!media || (!media.images.length && !media.overlayImages.length))) continue;
       openScorePointImage(point.key, { preserveView:true });
       return;
+    }
+    if(state.remoteAnalysis){
+      const remote=state.remoteAnalysis,view=remote.scores;
+      if((delta>0&&view?.page.hasMore)||(delta<0&&view?.offset>0)){
+        changeAgentScorePage(delta).then(()=>{const point=delta<0?state.analysisPoints.at(-1):state.analysisPoints[0];if(point)openScorePointImage(point.key,{preserveView:true});});return;
+      }
     }
     showModalBoundary(delta);
   }
@@ -6707,14 +7169,15 @@
       }
       const removedKey = image.key;
       state.ngImages = state.ngImages.filter(item => item.key !== removedKey);
-      rebuildModel();
+      if(state.remoteAnalysis)await refreshAgentDashboard({actual:true,thresholds:false});
+      else rebuildModel();
       if (state.modalItem !== priorItem) { /* 사용자가 닫거나 다른 이미지를 연 경우 그대로 유지 */ }
       else if (state.modalSequenceKind === '미검') {
         const model = state.page === 'main' ? state.dashboardModel : state.model;
         const misses = (model?.misses || []).filter(item=>item.position===priorItem.position);
         const current = misses.find(item=>item.key===priorItem.key);
         const next = current || nextKeys.map(key=>misses.find(item=>item.key===key)).find(Boolean) || misses[Math.min(priorIndex,misses.length-1)];
-        if (next) { state.selectedMissPosition=next.position; openMissModal(next.key); if (current) { state.modalIndex=Math.min(priorImageIndex,modalImagesForView(state.modalItem).length-1);renderModal(); } }
+        if (next) { state.selectedMissPosition=next.position; await openMissModal(next.key); if (current) { state.modalIndex=Math.max(0,Math.min(priorImageIndex,modalImagesForView(state.modalItem).length-1));renderModal(); } }
         else closeModal();
       } else if (Number.isInteger(scoreIndex)) {
         const point = state.analysisPoints[Math.min(scoreIndex + 1,state.analysisPoints.length-1)];
@@ -6760,6 +7223,20 @@
     window.__VISIONQC_DEBUG__ = {
       classificationCellSheets, buildClassificationWorkbook, formatHistoryTimestamp, offerSimulationHistorySave,
       setPage,
+      async syncAgentLiveTest(processed,final=false,mode='green'){
+        state.simulationAgent={...state.simulationAgent,status:'connected',version:EXPECTED_AGENT_VERSION,analysisApiVersion:1};
+        state.simulationLiveRunId='test-run';state.simulationLiveActive=!final;state.agentLiveNextAt=0;
+        await syncAgentSimulation({mode,simulationRunId:'test-run',processed,resultCsv:'C:\\output\\results_001.csv'},final);
+        return {synced:state.simulationSyncedRunId,rawRows:state.simulationLiveRows,rows:Object.values(state.resultInputs).reduce((count,input)=>count+input.rows.length,0)};
+      },
+      async seedAgentAnalysis(id='test-analysis') {
+        state.simulationAgent={...state.simulationAgent,status:'connected',version:EXPECTED_AGENT_VERSION,analysisApiVersion:1};
+        state.remoteAnalysis={analysisId:id,runId:'test-run',inputs:{},filePaths:[]};
+        state.resultInputs={'AN(TOP)':{position:'AN(TOP)',remote:true,rows:[],warnings:[],rowCount:4000000,fileName:'results.csv'}};
+        state.dashboardDate='';state.selectedMissPosition='AN(TOP)';state.analysisTool='Crack';state.analysisPosition='ALL';state.analysisScope='TOOL_NG';
+        await refreshAgentDashboard({actual:false,thresholds:false});setPage('main');
+      },
+      agentAnalysisSnapshot(){return {remote:!!state.remoteAnalysis,rows:Object.values(state.resultInputs).reduce((n,input)=>n+input.rows.length,0),records:state.model?.records.length,total:state.model?.recordCount,misses:state.dashboardModel?.misses.length,points:state.analysisPoints.length,dateWindow:state.remoteAnalysis?.dateWindow,scoreOffset:state.remoteAnalysis?.scores?.offset};},
       seedDeclinedDashboard() { this.seedDashboard(); Object.values(state.resultInputs).forEach(input=>input.simulationRunId="debug-declined"); state.simulationProgress={running:false,simulationRunId:"debug-declined",historyDecision:"declined"}; renderDashboard(); bindPageControls(); },
 
       reconcileLiveRowsRegression() {

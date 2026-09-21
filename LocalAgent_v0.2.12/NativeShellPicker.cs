@@ -411,21 +411,28 @@ namespace VisionQC.LocalAgent
 
         internal static string PickFile(string initialPath, string fileType)
         {
+            var selected = PickFiles(initialPath, fileType, false);
+            return selected.Length == 0 ? null : selected[0];
+        }
+
+        internal static string[] PickFiles(string initialPath, string fileType, bool allowMultiple)
+        {
             string kind = (fileType ?? "workspace").Trim().ToLowerInvariant();
             string caption = kind == "image" ? "이미지 선택" : kind == "csv" ? "CSV 선택" : "Workspace 선택";
             return RunOwnedDialog(caption, ownerHandle =>
             {
-                IFileDialog dialog = null;
+                IFileOpenDialog dialog = null;
                 IShellItem initialItem = null;
                 IShellItem resultItem = null;
+                IShellItemArray resultItems = null;
                 try
                 {
-                    dialog = (IFileDialog)new FileOpenDialogCom();
+                    dialog = (IFileOpenDialog)new FileOpenDialogCom();
                     Guid clientGuid = kind == "image" ? ImageClientGuid : kind == "csv" ? CsvClientGuid : WorkspaceClientGuid;
                     dialog.SetClientGuid(ref clientGuid);
                     try { dialog.ClearClientData(); } catch { }
                     dialog.SetOkButtonLabel("열기");
-                    dialog.SetOptions(FileOpenOptions.FOS_FORCEFILESYSTEM |
+                    dialog.SetOptions((allowMultiple ? FileOpenOptions.FOS_ALLOWMULTISELECT : 0) | FileOpenOptions.FOS_FORCEFILESYSTEM |
                                       FileOpenOptions.FOS_PATHMUSTEXIST |
                                       FileOpenOptions.FOS_FILEMUSTEXIST |
                                       FileOpenOptions.FOS_NOCHANGEDIR |
@@ -481,24 +488,32 @@ namespace VisionQC.LocalAgent
 
                     string dialogTitle = kind == "image" ? "VisionQC 이미지 선택" : kind == "csv" ? "VisionQC Cell ID CSV 선택" : "VisionQC Runtime Workspace 선택";
                     SetActiveDialog(dialog, dialogTitle);
-                    if (IsCancelRequested(dialog)) return null;
+                    if (IsCancelRequested(dialog)) return new string[0];
                     SetForegroundWindow(ownerHandle);
                     PromoteShellDialogWhenCreated(dialogTitle);
                     int hr = dialog.Show(ownerHandle);
-                    if (hr == ERROR_CANCELLED_HRESULT) return null;
+                    if (hr == ERROR_CANCELLED_HRESULT) return new string[0];
                     if (hr != S_OK) Marshal.ThrowExceptionForHR(hr);
 
+                    if (allowMultiple)
+                    {
+                        dialog.GetResults(out resultItems);
+                        var paths = ShellItemPaths(resultItems);
+                        if (paths.Length > 0) RememberLastSelectedFolder(Path.GetDirectoryName(paths[0]));
+                        return paths;
+                    }
                     dialog.GetResult(out resultItem);
                     string selectedPath = ShellItemPath(resultItem);
                     if (!string.IsNullOrWhiteSpace(selectedPath))
                     {
                         try { RememberLastSelectedFolder(Path.GetDirectoryName(selectedPath)); } catch { }
                     }
-                    return selectedPath;
+                    return string.IsNullOrWhiteSpace(selectedPath) ? new string[0] : new[] { selectedPath };
                 }
                 finally
                 {
                     ClearActiveDialog(dialog);
+                    if (resultItems != null) Marshal.FinalReleaseComObject(resultItems);
                     if (resultItem != null) Marshal.FinalReleaseComObject(resultItem);
                     if (initialItem != null) Marshal.FinalReleaseComObject(initialItem);
                     if (dialog != null) Marshal.FinalReleaseComObject(dialog);

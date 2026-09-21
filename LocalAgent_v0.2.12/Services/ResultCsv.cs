@@ -67,6 +67,16 @@ namespace VisionQC.LocalAgent.Services
             return header;
         }
 
+        internal static string[] SplitCaptureTimestamp(string timestamp)
+        {
+            string text=(timestamp ?? "").Trim();
+            if(text.Length<19) return new[]{"",""};
+            DateTime date;
+            string seconds=text.Substring(0,19).Replace('T',' ');
+            if(!DateTime.TryParseExact(seconds,"yyyy-MM-dd HH:mm:ss",CultureInfo.InvariantCulture,DateTimeStyles.None,out date)) return new[]{"",""};
+            return new[]{date.ToString("yyyy-MM-dd",CultureInfo.InvariantCulture),date.ToString("HH:mm:ss",CultureInfo.InvariantCulture)};
+        }
+
         internal static double? ParseScore(string text)
         {
             text = (text ?? "").Trim();
@@ -78,16 +88,15 @@ namespace VisionQC.LocalAgent.Services
             return value;
         }
 
-        internal static string Merge(string outputRoot, IEnumerable<string> paths)
+        internal static string Merge(string outputRoot, IEnumerable<string> paths, int maxRows = 1000000, bool splitByDate = false)
         {
-            var inputs = paths.ToList();
-            if (inputs.Count == 0) return "";
-            if (inputs.Any(string.IsNullOrWhiteSpace)) throw new InvalidDataException("Position 결과 CSV 경로가 비어 있습니다.");
-            // Missing worker outputs must not silently disappear from a completed run.
+            var sources = paths.ToList();
+            if (sources.Count == 0) return "";
+            if (sources.Any(string.IsNullOrWhiteSpace)) throw new InvalidDataException("Position 결과 CSV 경로가 비어 있습니다.");
+            var inputs = sources.SelectMany(PartitionedCsvWriter.Expand).Distinct(StringComparer.OrdinalIgnoreCase).ToList();
             foreach (var input in inputs) if (!File.Exists(input)) throw new FileNotFoundException("Position 결과 CSV가 없습니다.", input);
-            if (inputs.Count == 1) return inputs[0];
-            var headers = new List<List<string>>();
-            var union = new List<string>();
+            if (sources.Count == 1) return sources[0];
+            var headers = new List<List<string>>(); var union = new List<string>();
             foreach (string input in inputs)
                 using (var reader = new StreamReader(input, Encoding.Default, true))
                 {
@@ -95,33 +104,43 @@ namespace VisionQC.LocalAgent.Services
                     foreach (string column in header) if (!union.Contains(column, StringComparer.OrdinalIgnoreCase)) union.Add(column);
                 }
             string output = Path.Combine(outputRoot, "results_" + DateTime.Now.ToString("yyyyMMdd_HHmmss_fff", CultureInfo.InvariantCulture) + "_parallel.csv");
-            string temporary = output + "." + Guid.NewGuid().ToString("N") + ".tmp";
+            Directory.CreateDirectory(outputRoot);
+            string stage = Path.Combine(outputRoot, ".merge-" + Guid.NewGuid().ToString("N"));
+            Directory.CreateDirectory(stage);
+            var published = new List<string>();
             try
             {
-                using (var writer = new StreamWriter(temporary, false, new UTF8Encoding(true)))
-                {
-                    writer.WriteLine(WriteRecord(union));
-                    for (int i = 0; i < inputs.Count; i++)
-                        using (var reader = new StreamReader(inputs[i], Encoding.Default, true))
+            string first;
+            using (var writer = new PartitionedCsvWriter(Path.Combine(stage, Path.GetFileName(output)), maxRows > 0 ? maxRows : 1000000, splitByDate))
+            {
+                writer.WriteLine(WriteRecord(union));
+                for (int i = 0; i < inputs.Count; i++)
+                    using (var reader = new StreamReader(inputs[i], Encoding.Default, true))
+                    {
+                        var header = ReadHeader(reader);
+                        if (!header.SequenceEqual(headers[i])) throw new InvalidDataException("병합 중 CSV 헤더가 변경되었습니다.");
+                        var map = header.Select(column => union.FindIndex(x => string.Equals(x, column, StringComparison.OrdinalIgnoreCase))).ToArray();
+                        List<string> record;
+                        while ((record = ReadRecord(reader)) != null)
                         {
-                            var header = ReadHeader(reader);
-                            if (!header.SequenceEqual(headers[i])) throw new InvalidDataException("병합 중 CSV 헤더가 변경되었습니다.");
-                            var map = header.Select(column => union.FindIndex(x => string.Equals(x, column, StringComparison.OrdinalIgnoreCase))).ToArray();
-                            List<string> record;
-                            while ((record = ReadRecord(reader)) != null)
-                            {
-                                if (record.Count == 1 && record[0].Length == 0) continue;
-                                if (record.Count != header.Count) throw new InvalidDataException("CSV 열 수 불일치: " + inputs[i]);
-                                var values = new string[union.Count];
-                                for (int j = 0; j < map.Length; j++) values[map[j]] = record[j];
-                                writer.WriteLine(WriteRecord(values));
-                            }
+                            if (record.Count == 1 && record[0].Length == 0) continue;
+                            if (record.Count != header.Count) throw new InvalidDataException("CSV 열 수 불일치: " + inputs[i]);
+                            var values = new string[union.Count];
+                            for (int j = 0; j < map.Length; j++) values[map[j]] = record[j];
+                            writer.WriteLine(WriteRecord(values));
                         }
-                }
-                File.Move(temporary, output);
-                return output;
+                    }
+                writer.Flush(); first = writer.PrimaryPath;
             }
-            finally { if (File.Exists(temporary)) File.Delete(temporary); }
+            foreach (string file in Directory.GetFiles(stage))
+            {
+                string destination = Path.Combine(outputRoot, Path.GetFileName(file));
+                File.Move(file, destination); published.Add(destination);
+            }
+            return Path.Combine(outputRoot, Path.GetFileName(first));
+            }
+            catch { foreach (string file in published) File.Delete(file); throw; }
+            finally { Directory.Delete(stage, true); }
         }
     }
 }

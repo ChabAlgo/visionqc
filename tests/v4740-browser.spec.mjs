@@ -29,6 +29,9 @@ test('full export roundtrip preserves all raw rows, precise scores, paths, works
   const downloadPromise=page.waitForEvent('download');
   await page.evaluate(()=>window.__VISIONQC_DEBUG__.exportAllResults());
   const exported=await readFile(await (await downloadPromise).path(),'utf8');
+  expect(exported.replace(/^\uFEFF/,'').split(/\r?\n/)[0]).toMatch(/^Date,Time,Cell ID,/);
+  expect(exported).not.toContain('CaptureTimestamp');
+  expect(exported).toContain('2026-02-03,08:00:00,');
   await page.evaluate(text=>window.__VISIONQC_DEBUG__.seedCsv(text),exported);
   const after=await page.evaluate(()=>({rows:window.__VISIONQC_DEBUG__.integrityRows(),dates:window.__VISIONQC_DEBUG__.dateSnapshot()}));
   const observations=rows=>rows.map(({sourceFileName,sourceRowNumber,...row})=>row);

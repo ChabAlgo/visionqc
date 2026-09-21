@@ -55,6 +55,8 @@ namespace VpdlGreenHeatmapOverlay
         public List<WorkspaceSlotConfig> WorkspaceSlots { get; set; } = new List<WorkspaceSlotConfig>();
         public string OutputRoot { get; set; }
         public string ResultFileSuffix { get; set; }
+        public int CsvMaxRows { get; set; } = 1000000;
+        public bool CsvSplitByDate { get; set; }
         public string CellIdCsvPath { get; set; }
         public bool KeywordMode { get; set; } = false;
         public string KeywordInputRoot { get; set; }

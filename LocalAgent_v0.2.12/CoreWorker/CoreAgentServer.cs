@@ -28,7 +28,10 @@ namespace VisionQC.LocalAgent
         private readonly ImagePreviewService _imagePreview;
         private readonly SqliteRunStore _historyStore;
         private readonly HistoryService _history;
+        private readonly AnalysisService _analysis;
         private TcpListener _listener;
+        private Mutex _portMutex;
+        private bool _ownsPort;
 
         internal CoreAgentServer()
         {
@@ -36,11 +39,18 @@ namespace VisionQC.LocalAgent
             _imagePreview = new ImagePreviewService();
             _historyStore = new SqliteRunStore(ResolveHistoryDatabasePath());
             _history = new HistoryService(_historyStore, _json);
+            _analysis = new AnalysisService(Path.Combine(Path.GetDirectoryName(_historyStore.DatabasePath), "analysis-cache"));
         }
 
         internal void RunUntilExit(bool openOfflinePage)
         {
+            _portMutex = new Mutex(false, @"Local\VisionQC.Agent.Port." + Port);
+            try { _ownsPort = _portMutex.WaitOne(0); } catch (AbandonedMutexException) { _ownsPort = true; }
+            if (!_ownsPort) return;
             _listener = new TcpListener(IPAddress.Loopback, Port);
+            // The port mutex prevents duplicate listeners; reuse permits restart during TCP TIME_WAIT.
+            _listener.Server.ExclusiveAddressUse = false;
+            _listener.Server.SetSocketOption(SocketOptionLevel.Socket, SocketOptionName.ReuseAddress, true);
             try { _listener.Start(); }
             catch (SocketException ex)
             {
@@ -129,6 +139,22 @@ namespace VisionQC.LocalAgent
                     case "/api/pick/cancel": result = _picker.Cancel(DeserializeDictionary(request.Body)); break;
                     case "/api/naming/preview": result = PreviewNamingProfile(request.Body); break;
                     case "/api/image/preview": result = PreviewImage(request.Body); break;
+                    case "/api/analysis/import/start": result = _analysis.StartImport(request.Body); break;
+                    case "/api/analysis/remove-position": result = _analysis.RemovePosition(request.Body); break;
+                    case "/api/analysis/status": result = _analysis.Status(request.Body); break;
+                    case "/api/analysis/summary": result = _analysis.Summary(request.Body); break;
+                    case "/api/analysis/dashboard": result = _analysis.Dashboard(request.Body); break;
+                    case "/api/analysis/dates": result = _analysis.Dates(request.Body); break;
+                    case "/api/analysis/export": result = _analysis.Export(request.Body); break;
+                    case "/api/analysis/save-history": result = _analysis.SaveHistory(request.Body, _historyStore); break;
+                    case "/api/analysis/scores": result = _analysis.Scores(request.Body); break;
+                    case "/api/analysis/score-window": result = _analysis.ScoreWindow(request.Body); break;
+                    case "/api/analysis/statistics": result = _analysis.Statistics(request.Body); break;
+                    case "/api/analysis/misses": result = _analysis.Misses(request.Body); break;
+                    case "/api/analysis/actual-ng": result = _analysis.ActualNg(request.Body); break;
+                    case "/api/analysis/detail": result = _analysis.Detail(request.Body); break;
+                    case "/api/analysis/thresholds": result = _analysis.Thresholds(request.Body); break;
+                    case "/api/analysis/cancel": result = _analysis.Cancel(request.Body); break;
                     case "/api/history/import": result = _history.ImportBrowserRows(request.Body); break;
                     case "/api/history/search": result = _history.Search(request.Body); break;
                     case "/api/history/import-file/start": result = _history.StartFileImport(request.Body); break;
@@ -172,6 +198,7 @@ namespace VisionQC.LocalAgent
                 vpdlAvailable = false,
                 instanceId = _instanceId,
                 agentVersion = Program.AgentVersion,
+                analysisApiVersion = 1,
                 engineVersion = "VisionQC Core · VPDL 미설치 모드",
                 installedVpdlVersion = "-",
                 activeVpdlApiVersion = "-",
@@ -462,10 +489,13 @@ namespace VisionQC.LocalAgent
         public void Dispose()
         {
             try { _picker.Dispose(); } catch { }
-            try { _history.Dispose(); } catch { }
+            try { _analysis.Dispose();
+            _history.Dispose(); } catch { }
             try { _historyStore.Dispose(); } catch { }
             try { _serverCts.Cancel(); } catch { }
             try { _listener?.Stop(); } catch { }
+            if (_ownsPort) { try { _portMutex.ReleaseMutex(); } catch { } _ownsPort=false; }
+            _portMutex?.Dispose();
             lock (_sync)
             {
                 foreach (SseClient client in _sse) try { client.Client.Close(); } catch { }

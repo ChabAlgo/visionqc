@@ -36,6 +36,8 @@ namespace VisionQC.LocalAgent
         private readonly List<SseClient> _sse = new List<SseClient>();
         private readonly Dictionary<string, WorkspaceInspectionCacheEntry> _workspaceInspectionCache = new Dictionary<string, WorkspaceInspectionCacheEntry>(StringComparer.OrdinalIgnoreCase);
         private TcpListener _listener;
+        private Mutex _portMutex;
+        private bool _ownsPort;
         private CancellationTokenSource _serverCts = new CancellationTokenSource();
         private CancellationTokenSource _simulationCts;
         private Task _simulationTask;
@@ -55,6 +57,7 @@ namespace VisionQC.LocalAgent
         private int _lastProgressValue = -1;
         private SimulationState _state = NewIdleState();
         private readonly List<LiveAnalysisRecord> _liveBuffer = new List<LiveAnalysisRecord>();
+        private bool _agentAnalysisOnly;
         private int _liveBatchSize = 100;
         private LocalRuntime.Control _inspectionControl;
         private string _inspectionControlKey = "";
@@ -83,6 +86,7 @@ namespace VisionQC.LocalAgent
         private readonly ImagePreviewService _imagePreview;
         private readonly SqliteRunStore _historyStore;
         private readonly HistoryService _history;
+        private readonly AnalysisService _analysis;
         private SqliteRunStore.RunStoreSession _simulationHistorySession;
         private bool _simulationHistoryWriteFailed;
         private string _lastSimulationRunId = "";
@@ -102,8 +106,9 @@ namespace VisionQC.LocalAgent
             _picker = new PickerService(AppendAgentLog);
             _imagePreview = new ImagePreviewService();
             _historyStore = new SqliteRunStore(ResolveHistoryDatabasePath());
-            _simulationStore = new SqliteRunStore(Path.Combine(Path.GetTempPath(), "VisionQC-pending-" + Guid.NewGuid().ToString("N") + ".sqlite"));
+            _simulationStore = new SqliteRunStore(Path.Combine(Path.GetDirectoryName(_historyStore.DatabasePath), "analysis-sources", "pending-" + Guid.NewGuid().ToString("N") + ".sqlite"));
             _history = new HistoryService(_historyStore, _json);
+            _analysis = new AnalysisService(Path.Combine(Path.GetDirectoryName(_historyStore.DatabasePath), "analysis-cache"));
             if (_parentProcessId > 0) Task.Run(MonitorParentProcess);
         }
 
@@ -123,7 +128,13 @@ namespace VisionQC.LocalAgent
 
         public void RunUntilExit(bool openOfflinePage = false)
         {
+            _portMutex = new Mutex(false, @"Local\VisionQC.Agent.Port." + _port);
+            try { _ownsPort = _portMutex.WaitOne(0); } catch (AbandonedMutexException) { _ownsPort = true; }
+            if (!_ownsPort) return;
             _listener = new TcpListener(IPAddress.Loopback, _port);
+            // The port mutex prevents duplicate listeners; reuse permits restart during TCP TIME_WAIT.
+            _listener.Server.ExclusiveAddressUse = false;
+            _listener.Server.SetSocketOption(SocketOptionLevel.Socket, SocketOptionName.ReuseAddress, true);
             try
             {
                 _listener.Start();
@@ -253,6 +264,22 @@ namespace VisionQC.LocalAgent
                     case "/api/image/preview":
                         result = PreviewImage(request.Body);
                         break;
+                    case "/api/analysis/import/start": result = _analysis.StartImport(request.Body); break;
+                    case "/api/analysis/remove-position": result = _analysis.RemovePosition(request.Body); break;
+                    case "/api/analysis/status": result = _analysis.Status(request.Body); break;
+                    case "/api/analysis/summary": result = _analysis.Summary(request.Body); break;
+                    case "/api/analysis/dashboard": result = _analysis.Dashboard(request.Body); break;
+                    case "/api/analysis/dates": result = _analysis.Dates(request.Body); break;
+                    case "/api/analysis/export": result = _analysis.Export(request.Body); break;
+                    case "/api/analysis/save-history": result = _analysis.SaveHistory(request.Body, _historyStore); break;
+                    case "/api/analysis/scores": result = _analysis.Scores(request.Body); break;
+                    case "/api/analysis/score-window": result = _analysis.ScoreWindow(request.Body); break;
+                    case "/api/analysis/statistics": result = _analysis.Statistics(request.Body); break;
+                    case "/api/analysis/misses": result = _analysis.Misses(request.Body); break;
+                    case "/api/analysis/actual-ng": result = _analysis.ActualNg(request.Body); break;
+                    case "/api/analysis/detail": result = _analysis.Detail(request.Body); break;
+                    case "/api/analysis/thresholds": result = _analysis.Thresholds(request.Body); break;
+                    case "/api/analysis/cancel": result = _analysis.Cancel(request.Body); break;
                     case "/api/history/import":
                         result = ImportHistory(request.Body);
                         break;
@@ -286,6 +313,7 @@ namespace VisionQC.LocalAgent
                     case "/api/simulation/history-decision":
                         result = DecideSimulationHistory(request.Body);
                         break;
+                    case "/api/simulation/analysis": result = ReadSimulationAnalysis(request.Body); break;
                     case "/api/simulation/results":
                         result = ReadSimulationResults(request.Body);
                         break;
@@ -534,6 +562,7 @@ namespace VisionQC.LocalAgent
                 vpdlAvailable = true,
                 instanceId = _instanceId,
                 agentVersion = Program.AgentVersion,
+                analysisApiVersion = 1,
                 engineVersion = "DL_Simulation v1.13 + VisionQC Workspace Inspect",
                 installedVpdlVersion = _vpdlVersion,
                 activeVpdlApiVersion = Program.ActiveVpdlInstallation == null ? "-" : Program.ActiveVpdlInstallation.ApiVersion,
@@ -1533,6 +1562,7 @@ namespace VisionQC.LocalAgent
                 {
                     _liveBuffer.Clear();
                     _liveBatchSize = GetLiveBatchSize(req);
+                    _agentAnalysisOnly=req.agentAnalysis;
                     _liveRecordCount = 0;
                     _simulationStartedUtc = DateTime.UtcNow;
                     _simulationEndedUtc = DateTime.MinValue;
@@ -1915,7 +1945,7 @@ namespace VisionQC.LocalAgent
                     _state.total = results.Sum(x => x.Total);
                     _state.ok = results.Sum(x => x.Ok);
                     _state.ng = results.Sum(x => x.Ng);
-                    _state.resultCsv = mode == "blue" ? null : MergePositionResultCsv(req.outputRoot, results.Select(x => x.CsvPath));
+                    _state.resultCsv = mode == "blue" ? null : MergePositionResultCsv(req.outputRoot, results.Select(x => x.CsvPath), req.csvMaxRows, req.csvSplitByDate);
                     _state.activePositionWorkers = 0;
                     _state.completedPositionWorkers = results.Count;
                     _state.message = "Position 병렬 Simulation 완료 | " + results.Count + "개";
@@ -1994,9 +2024,9 @@ namespace VisionQC.LocalAgent
             OnEngineProgress(aggregate);
         }
 
-        private static string MergePositionResultCsv(string outputRoot, IEnumerable<string> paths)
+        private static string MergePositionResultCsv(string outputRoot, IEnumerable<string> paths, int maxRows, bool splitByDate)
         {
-            return ResultCsv.Merge(outputRoot, paths);
+            return ResultCsv.Merge(outputRoot, paths, maxRows, splitByDate);
         }
 
         private object DecideSimulationHistory(string body)
@@ -2029,7 +2059,7 @@ namespace VisionQC.LocalAgent
                     lock (_sync) _state.simulationRunId = "";
                     if (_simulationHistorySession != null) _simulationStore.Complete(_simulationHistorySession, "replaced", "새 Simulation 실행으로 교체됨");
                     _simulationNeedsHistoryChoice = string.IsNullOrWhiteSpace(request.parallelPositionKey);
-                    _simulationStore.DeleteAll();
+                    // Prior runs may still be referenced by a restored dashboard. Keep their source rows.
                     _simulationHistorySession = _simulationStore.Start(new SqliteRunStore.RunStoreStart
                     {
                         SourceType = "simulation",
@@ -2054,6 +2084,17 @@ namespace VisionQC.LocalAgent
                 _simulationHistorySession = null;
                 AppendAgentLog("WARN", "SQLite Simulation 이력 시작 실패(검사는 계속 진행): " + ex.Message);
             }
+        }
+
+        private object ReadSimulationAnalysis(string body)
+        {
+            var data=DeserializeDictionary(body);string runId=GetString(data,"runId","").Trim();
+            lock(_historyWriteSync)
+            {
+                if(string.IsNullOrEmpty(runId)||runId!=_lastSimulationRunId)throw new InvalidDataException("현재 Simulation 실행 ID가 아닙니다.");
+                if(_simulationHistorySession!=null)_simulationStore.Flush(_simulationHistorySession);
+            }
+            return _analysis.BindSource(_simulationStore.DatabasePath,runId);
         }
 
         private SqliteRunStore.SimulationResultPage ReadSimulationResults(string body)
@@ -2157,7 +2198,8 @@ namespace VisionQC.LocalAgent
                     // Integrated Streaming은 LiveRecord 이벤트에 Processed가 없으므로
                     // 실제 상세 결과 수를 처리 수로 사용한다.
                     _state.processed = p.Processed.HasValue ? Math.Max(_state.processed, p.Processed.Value) : Math.Max(_state.processed, _liveRecordCount);
-                    _liveBuffer.Add(p.LiveRecord);
+                    if(!_agentAnalysisOnly)_liveBuffer.Add(p.LiveRecord);
+                    else if((_liveRecordCount%Math.Max(1,_liveBatchSize))==0)progressBoundary=true;
                     if (_liveBuffer.Count >= Math.Max(1, _liveBatchSize))
                     {
                         batch = _liveBuffer.ToList();
@@ -2340,6 +2382,8 @@ namespace VisionQC.LocalAgent
             {
                 WorkspaceType = workspaceType,
                 OutputRoot = outputRoot,
+                CsvMaxRows = req.csvMaxRows > 0 ? req.csvMaxRows : 1000000,
+                CsvSplitByDate = req.csvSplitByDate,
                 CellIdCsvPath = integrated ? (iopt.cellIdCsvPath ?? "") : (opt.cellIdCsvPath ?? ""),
                 KeywordMode = integrated ? false : opt.keywordMode,
                 KeywordInputRoot = integrated ? "" : FirstNonEmpty(GetGreenKeywordImageRoots(opt).ToArray()),
@@ -3013,13 +3057,16 @@ namespace VisionQC.LocalAgent
         {
             try { _picker.Dispose(); } catch { }
             try { CompleteSimulationHistory("interrupted", "Agent 종료"); } catch { }
-            try { _history.Dispose(); } catch { }
+            try { _analysis.Dispose();
+            _history.Dispose(); } catch { }
             try { _historyStore.Dispose(); } catch { }
             try { _simulationStore.Dispose(); } catch { }
-            try { File.Delete(_simulationStore.DatabasePath); File.Delete(_simulationStore.DatabasePath + "-wal"); File.Delete(_simulationStore.DatabasePath + "-shm"); } catch { }
+            // Pending analysis is intentionally retained separately from saved history for restart recovery.
             try { _simulationCts?.Cancel(); } catch { }
             try { _serverCts.Cancel(); } catch { }
             try { _listener?.Stop(); } catch { }
+            if (_ownsPort) { try { _portMutex.ReleaseMutex(); } catch { } _ownsPort=false; }
+            _portMutex?.Dispose();
             lock (_sync)
             {
                 foreach (var c in _sse) try { c.Client.Close(); } catch { }

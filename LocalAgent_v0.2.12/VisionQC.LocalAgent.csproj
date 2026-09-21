@@ -73,11 +73,14 @@
     <Compile Include="Services\VpdlWorkerSelection.cs" />
     <Compile Include="Services\VpdlWorkerLocator.cs" />
     <Compile Include="Services\HistoryService.cs" />
+    <Compile Include="Services\AnalysisService.cs" />
     <Compile Include="Services\CsvHistoryFileImporter.cs" />
     <Compile Include="Services\ResultCsv.cs" />
+    <Compile Include="Services\PartitionedCsvWriter.cs" />
     <Compile Include="Services\WorkspaceIdentity.cs" />
     <Compile Include="Services\OverlayGeometry.cs" />
     <Compile Include="Persistence\SqliteRunStore.cs" />
+    <Compile Include="Persistence\AnalysisProjection.cs" />
     <Compile Include="Engine\Models.cs" />
     <Compile Include="Engine\GreenOverlayProcessor.cs" />
     <Compile Include="Engine\BlueCropCore.cs" />

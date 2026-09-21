@@ -27,7 +27,7 @@ namespace VisionQC.LocalAgent.Services
             string kind = GetString(data, "kind", "folder").Trim().ToLowerInvariant();
             string initial = GetString(data, "initialPath", "");
             string fileType = GetString(data, "fileType", kind == "file" ? "workspace" : "folder");
-            bool allowMultiple = kind == "folder" && GetBool(data, "multiple", false);
+            bool allowMultiple = (kind == "folder" || (kind == "file" && fileType == "csv")) && GetBool(data, "multiple", false);
             if (string.IsNullOrWhiteSpace(clientId))
                 return new { ok = false, pending = false, error = "브라우저 선택 세션 ID가 없습니다." };
             if (string.IsNullOrWhiteSpace(requestId)) requestId = Guid.NewGuid().ToString("N");
@@ -206,8 +206,7 @@ namespace VisionQC.LocalAgent.Services
                 _log("INFO", job.Kind == "file" ? "파일 선택 창 열림: " + job.FileType : (job.AllowMultiple ? "다중 폴더 선택 창 열림" : "폴더 선택 창 열림"));
                 if (job.Kind == "file")
                 {
-                    string selected = NativeShellPicker.PickFile(job.InitialPath, job.FileType);
-                    if (!string.IsNullOrWhiteSpace(selected)) selectedPaths.Add(selected);
+                    selectedPaths.AddRange(NativeShellPicker.PickFiles(job.InitialPath, job.FileType, job.AllowMultiple));
                 }
                 else selectedPaths.AddRange(NativeShellPicker.PickFolders(job.InitialPath, job.AllowMultiple));
 
