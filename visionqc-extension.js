@@ -1,7 +1,7 @@
 (() => {
   'use strict';
 
-  const VERSION = '4.8.4';
+  const VERSION = '4.8.5';
   const DEFAULT_POSITION_DEFS = [
     { key:'CA_TOP', name:'CA(TOP)' },
     { key:'AN_TOP', name:'AN(TOP)' },
@@ -27,9 +27,9 @@
   const NG_POSITION_PREFIX = 'ng-position:';
   const IMG_RE = /\.(png|jpe?g|bmp|gif|webp|tif?f)$/i;
   const LOCAL_AGENT_URL = 'http://127.0.0.1:17891';
-  const EXPECTED_AGENT_VERSION = '1.4.4';
-  const AGENT_INSTALLER_URL = './downloads/VisionQC_Agent_Installer_v1.4.4.exe';
-  const OFFLINE_PACKAGE_URL = './downloads/VisionQC_Offline_v4.8.4.zip';
+  const EXPECTED_AGENT_VERSION = '1.4.5';
+  const AGENT_INSTALLER_URL = './downloads/VisionQC_Agent_Installer_v1.4.5.exe';
+  const OFFLINE_PACKAGE_URL = './downloads/VisionQC_Offline_v4.8.5.zip';
   // SQLite에는 사용자가 명시적으로 남기려는 두 종류의 결과만 표시한다.
   // 이전 버전의 단발 검사(single-inspection) 이력은 보존하되 화면 집계에서는 제외한다.
   const PERSISTED_HISTORY_SOURCE_TYPES = ['simulation', 'csv-import', 'csv-file-stream'];
@@ -1191,9 +1191,8 @@
   };
 
   function applySimulationTooltips(root = document) {
-    if (state.page !== 'simulation') return;
     $$('input,select,textarea,button,label.vq43-sim-check', root).forEach((element) => {
-      if (!element.closest('.vq43-sim-page')) return;
+      if (!element.closest('.vq43-sim-page') && !element.dataset.vqTooltip) return;
       const input = element.matches('label.vq43-sim-check') ? element.querySelector('input') : element;
       const field = input?.dataset.simFallbackField || input?.dataset.simToolField || input?.dataset.simJudgementField || input?.dataset.simField;
       const action = element.dataset.vqAction;
@@ -1756,7 +1755,7 @@
         if(revision!==remote.revision)continue;
         state.model=full;state.dashboardModel=selected;if(!full.tools.includes(state.analysisTool))state.analysisTool=full.tools[0]||'';await loadAgentMissPage();applied=revision;remote.needsRestore=false;
         remote.dateWindow=(await analysisApi('dates',{analysisId:remote.analysisId,positions:state.dashboardPositions,date:state.dashboardDate,dateStart:remote.dateWindow?.start ?? -1})).page;
-        scheduleAnalysisSnapshot();if(state.page!=='classification')renderCurrentPage();
+        scheduleAnalysisSnapshot();if(state.page==='main'||state.page==='analysis')renderCurrentPage();
       }
     })().catch(error=>{remote.error=error.message;showToast(`분석 갱신 실패: ${error.message}`,true);}).finally(()=>{remote.refreshing=null;if(state.remoteAnalysis===remote&&state.page==='analysis'&&!remote.error)renderCurrentPage();});
     return remote.refreshing;
@@ -3235,7 +3234,7 @@
       }
       const response=await analysisApi('score-window',{...request,afterScore:-1,afterId:0});
       if(state.remoteAnalysis!==remote||JSON.stringify({...agentScoreRequest(),revision:remote.revision||0})!==key)return;
-      remote.scores={key,stats,minimum,page:response.page,offset:0};adoptAgentScorePage(response.page);
+      remote.scores={key,requestKey:JSON.stringify(request),stats,minimum,page:response.page,offset:0};adoptAgentScorePage(response.page);
     } catch(error){remote.scoreError=error.message;showToast(`Score 조회 실패: ${error.message}`,true);}
     finally {
       remote.scoresLoading=false;
@@ -3263,17 +3262,23 @@
 
   function renderAgentAnalysis() {
     const remote=state.remoteAnalysis,model=state.model;
-    if(!analysisRecordCount(model)||!model.tools.length)return emptyPage('Score 분석 데이터가 없습니다','Tool 결과를 포함한 CSV를 입력하세요.');
+    if((!analysisRecordCount(model)||!model.tools.length)&&!remote.needsRestore&&!remote.refreshing)return emptyPage('Score 분석 데이터가 없습니다','Tool 결과를 포함한 CSV를 입력하세요.');
     if(!model.tools.includes(state.analysisTool))state.analysisTool=model.tools[0];
     const scopes=[{value:'TOOL_OK',label:'선택 Tool의 OK Score'},{value:'TOOL_NG',label:'선택 Tool의 NG Score'},{value:'ACTUAL_NG_TOOL_NG',label:'NG Image를 NG로 검출한 Score'},{value:'ACTUAL_NG_TOOL_OK',label:'실제 미검 Cell의 Tool Score'}];
     const key=JSON.stringify({...agentScoreRequest(),revision:remote.revision||0});
-    const view=remote.scores?.key===key?remote.scores:null;
-    const filters=`<div class="vq43-filter">${customDropdown('position','Position',state.analysisPosition,[{value:'ALL',label:'전체 Position'},...model.positionSummaries.map(p=>({value:p.position,label:p.position}))])}${customDropdown('tool','Tool',state.analysisTool,model.tools.map(tool=>({value:tool,label:tool})))}${customDropdown('scope','분석 범위',state.analysisScope,scopes)}</div>`;
-    if(!view){
-      $('#vq43-page').innerHTML=`<div class="vq43-content"><h1 class="vq43-title">Tool별 Score 분석</h1>${filters}<div id="vq43-agent-score-status" class="vq43-note">에이전트에서 전체 Score를 집계하고 있습니다.</div></div>`;
-      remote.scoreError='';loadAgentScores();return;
+    const ready=remote.scores?.key===key;
+    const cached=remote.scores?.requestKey===JSON.stringify(agentScoreRequest())?remote.scores:null;
+    const view=ready?remote.scores:cached;
+    const statusText=ready?'':remote.scoreError||'에이전트에서 최신 Score를 집계하고 있습니다.';
+    const displayed=$('#vq43-page .vq43-analysis-page');
+    // Keep the last complete frame during live refresh; never replace it with a different loading layout.
+    if(!ready&&view&&displayed?.dataset.scoreKey===view.key){
+      const status=$('#vq43-agent-score-status');if(status)status.textContent=statusText;
+      if(!remote.scoreError)loadAgentScores();return;
     }
-    const total=view.stats.total,minimum=view.minimum;
+    const filters=`<div class="vq43-filter">${customDropdown('position','Position',state.analysisPosition,[{value:'ALL',label:'전체 Position'},...model.positionSummaries.map(p=>({value:p.position,label:p.position}))])}${customDropdown('tool','Tool',state.analysisTool,model.tools.map(tool=>({value:tool,label:tool})))}${customDropdown('scope','분석 범위',state.analysisScope,scopes)}</div>`;
+    const total=view?.stats.total||{count:0},minimum=view?.minimum||{min:null,eligible:0,total:0};
+    const scorePoints=view?state.analysisPoints:[];
     const scopeInfo = {
       TOOL_OK: { text: '실제 NG 이미지 경로와 관계없이 선택 Tool의 원본 OK 판정 Score만 표시합니다.', label: '선택 Tool의 OK Score', color: '초록: Tool OK Score' },
       TOOL_NG: { text: '실제 NG 이미지 경로와 관계없이 선택 Tool의 원본 NG 판정 Score만 표시합니다.', label: '선택 Tool의 NG Score', color: '빨강: Tool NG Score' },
@@ -3281,13 +3286,14 @@
       ACTUAL_NG_TOOL_OK: { text: '동일 날짜 · Cell ID · Position의 실제 NG 이미지가 있고, Threshold 적용 후 최종 시뮬레이션 판정이 OK인 미검 Cell의 선택 Tool Score를 표시합니다. 점의 OK/NG는 원본 Tool 판정입니다.', label: '실제 미검 Cell의 Tool Score', color: '실제 미검 Cell · 색상은 원본 Tool 판정' }
     }[state.analysisScope];
 
-    const summaryRow=label=>{const r=view.stats.byResult.find(r=>r.result===label)||{count:0};return `<div class="vq43-table-row"><span class="tool ${label === 'NG' ? 'vq43-red' : 'vq43-green'}">${label}</span><span>${numberText(r.count)}</span><span class="vq43-mono">${scoreText(r.mean)}</span><span class="vq43-mono vq43-amber">${scoreText(r.min)}</span><span class="vq43-mono">${scoreText(r.max)}</span><span class="vq43-mono">${scoreText(r.median)}</span></div>`;};
-    const weighted=view.stats.bins.map(bin=>({score:(Number(bin.bin)+.5)/20,result:bin.result,weight:Number(bin.count)}));
+    const summaryRow=label=>{const r=(view?.stats.byResult||[]).find(r=>r.result===label)||{count:0};return `<div class="vq43-table-row"><span class="tool ${label === 'NG' ? 'vq43-red' : 'vq43-green'}">${label}</span><span>${numberText(r.count)}</span><span class="vq43-mono">${scoreText(r.mean)}</span><span class="vq43-mono vq43-amber">${scoreText(r.min)}</span><span class="vq43-mono">${scoreText(r.max)}</span><span class="vq43-mono">${scoreText(r.median)}</span></div>`;};
+    const weighted=(view?.stats.bins||[]).map(bin=>({score:(Number(bin.bin)+.5)/20,result:bin.result,weight:Number(bin.count)}));
     $('#vq43-page').innerHTML = `
-      <div class="vq43-content vq43-analysis-page"><div class="vq43-eyebrow" style="color:#a78bfa">Detailed Analysis</div><h1 class="vq43-title">Tool별 Score 분석</h1><p class="vq43-subtitle">Tool 판정 결과와 Score를 조건별로 분리하여 분석합니다.</p>
-        <div class="vq43-analysis-upper-grid"><div class="vq43-analysis-left"><div class="vq43-filter">${customDropdown('position', 'Position', state.analysisPosition, [{ value: 'ALL', label: '전체 Position' }, ...model.positionSummaries.map(p=>p.position).map((position) => ({ value: position, label: position }))])}${customDropdown('tool', 'Tool', state.analysisTool, model.tools.map((tool) => ({ value: tool, label: tool })))}${customDropdown('scope', '분석 범위', state.analysisScope, [{ value: 'TOOL_OK', label: '선택 Tool의 OK Score' }, { value: 'TOOL_NG', label: '선택 Tool의 NG Score' }, { value: 'ACTUAL_NG_TOOL_NG', label: 'NG Image를 NG로 검출한 Score' }, { value: 'ACTUAL_NG_TOOL_OK', label: '실제 미검 Cell의 Tool Score' }])}</div><div class="vq43-note vq43-analysis-scope-note">${escapeHtml(scopeInfo.text)}</div><div class="vq43-kpi-grid">${kpi('Score 데이터', numberText(total.count), `OK ${numberText(view.stats.byResult.find(r=>r.result==='OK')?.count||0)} · NG ${numberText(view.stats.byResult.find(r=>r.result==='NG')?.count||0)}`)}${kpi('평균 Score', scoreText(total.mean), '그래프 파란 점선', 'blue')}${kpi('최소 Score', scoreText(total.min), '그래프 노란 강조', 'amber')}${kpi('최대 / 중앙값', scoreText(total.max), `Median ${scoreText(total.median)}`)}</div></div><div class="vq43-analysis-right"><div class="vq43-analysis-export"><div><strong>Score 조건 CSV 저장</strong><span>현재 Position · Tool · 분석 범위 안에서 Score 조건으로 필터합니다.</span></div><label>Score<input id="vq43-score-cutoff" type="number" inputmode="decimal" min="0.50" max="1.00" step="0.01" value="${state.analysisScoreCutoff.toFixed(2)}"></label>${customDropdown('compare', '조건', state.analysisScoreCompare, [{ value: 'GTE', label: '이상 (≥)' }, { value: 'LTE', label: '이하 (≤)' }])}<button class="vq43-btn vq43-btn-green" data-vq-action="download-score-filter">CSV 저장</button></div><section class="vq43-actual-ng-minimum"><div><strong>실제 NG 검출 최소 Score</strong><p>선택 Tool이 실제 NG 이미지를 NG로 검출한 점수만 대상으로 계산합니다. 다른 Tool이 함께 NG이고 아래 기준 이상이면 그 행은 최소값 후보에서 제외합니다.</p></div><label>다른 Tool NG 제외 기준<input id="vq43-actual-ng-exclusion-score" type="number" inputmode="decimal" min="0.50" max="1.00" step="0.01" value="${state.actualNgOtherToolExclusionScore.toFixed(2)}"></label><div class="vq43-actual-ng-minimum-value"><span>조건 적용 최소</span><b>${scoreText(minimum.min)}</b><small>후보 ${numberText(minimum.eligible)} · 제외 ${numberText(minimum.total-minimum.eligible)} / 전체 ${numberText(minimum.total)}</small></div></section><div class="vq43-table vq43-summary-table"><div class="vq43-table-row head"><span>구분</span><span>개수</span><span>평균</span><span>최소</span><span>최대</span><span>중앙값</span></div>${summaryRow('OK')}${summaryRow('NG')}</div></div></div>
-        <div class="vq43-chart-grid"><div class="vq43-chart-card"><div class="vq43-chart-head"><div><h3>Score 분포</h3><p>${escapeHtml(scopeInfo.color)}</p></div><span>▥</span></div><div class="vq43-chart-area">${total.count ? histogramSvg(weighted) : '<div class="vq43-chart-empty">해당 조건의 Score가 없습니다.</div>'}</div></div><div class="vq43-chart-card"><div class="vq43-chart-head"><div><h3>Cell별 Score</h3><p>낮은 Score부터 정렬 · 점 클릭 시 CSV FullPath 또는 실제 NG 이미지를 표시합니다.</p></div><button class="vq43-chart-expand-btn" type="button" data-vq-action="open-chart-modal" ${state.analysisPoints.length ? '' : 'disabled'}>⛶ 확대 보기</button></div><div class="vq43-history-navigation"><span>${numberText(view.offset+(state.analysisPoints.length?1:0))}–${numberText(view.offset+state.analysisPoints.length)} / ${numberText(total.count)}</span><button class="vq43-btn" data-agent-score-page="-1" ${view.offset===0?'disabled':''}>이전</button><button class="vq43-btn" data-agent-score-page="1" ${!view.page.hasMore?'disabled':''}>다음</button></div><div class="vq43-chart-area vq43-analysis-scatter">${state.analysisPoints.length ? scatterSvg(state.analysisPoints,{interactive:true}) : '<div class="vq43-chart-empty">해당 조건의 Score가 없습니다.</div>'}</div></div></div>
+      <div class="vq43-content vq43-analysis-page" data-score-key="${escapeHtml(view?.key||'')}"><div class="vq43-eyebrow" style="color:#a78bfa">Detailed Analysis</div><h1 class="vq43-title">Tool별 Score 분석</h1><p class="vq43-subtitle">Tool 판정 결과와 Score를 조건별로 분리하여 분석합니다.</p>
+        <div class="vq43-analysis-upper-grid"><div class="vq43-analysis-left"><div class="vq43-filter">${customDropdown('position', 'Position', state.analysisPosition, [{ value: 'ALL', label: '전체 Position' }, ...model.positionSummaries.map(p=>p.position).map((position) => ({ value: position, label: position }))])}${customDropdown('tool', 'Tool', state.analysisTool, model.tools.map((tool) => ({ value: tool, label: tool })))}${customDropdown('scope', '분석 범위', state.analysisScope, [{ value: 'TOOL_OK', label: '선택 Tool의 OK Score' }, { value: 'TOOL_NG', label: '선택 Tool의 NG Score' }, { value: 'ACTUAL_NG_TOOL_NG', label: 'NG Image를 NG로 검출한 Score' }, { value: 'ACTUAL_NG_TOOL_OK', label: '실제 미검 Cell의 Tool Score' }])}</div><div class="vq43-note vq43-analysis-scope-note">${escapeHtml(scopeInfo.text)}<div id="vq43-agent-score-status" role="status" style="min-height:16px">${escapeHtml(statusText)}</div></div><div class="vq43-kpi-grid">${kpi('Score 데이터', view?numberText(total.count):'—', `OK ${numberText((view?.stats.byResult||[]).find(r=>r.result==='OK')?.count||0)} · NG ${numberText((view?.stats.byResult||[]).find(r=>r.result==='NG')?.count||0)}`)}${kpi('평균 Score', scoreText(total.mean), '그래프 파란 점선', 'blue')}${kpi('최소 Score', scoreText(total.min), '그래프 노란 강조', 'amber')}${kpi('최대 / 중앙값', scoreText(total.max), `Median ${scoreText(total.median)}`)}</div></div><div class="vq43-analysis-right"><div class="vq43-analysis-export"><div><strong>Score 조건 CSV 저장</strong><span>현재 Position · Tool · 분석 범위 안에서 Score 조건으로 필터합니다.</span></div><label>Score<input id="vq43-score-cutoff" type="number" inputmode="decimal" min="0.50" max="1.00" step="0.01" value="${state.analysisScoreCutoff.toFixed(2)}"></label>${customDropdown('compare', '조건', state.analysisScoreCompare, [{ value: 'GTE', label: '이상 (≥)' }, { value: 'LTE', label: '이하 (≤)' }])}<button class="vq43-btn vq43-btn-green" data-vq-action="download-score-filter">CSV 저장</button></div><section class="vq43-actual-ng-minimum"><div><strong>실제 NG 검출 최소 Score</strong><p>선택 Tool이 실제 NG 이미지를 NG로 검출한 점수만 대상으로 계산합니다. 다른 Tool이 함께 NG이고 아래 기준 이상이면 그 행은 최소값 후보에서 제외합니다.</p></div><label>다른 Tool NG 제외 기준<input id="vq43-actual-ng-exclusion-score" type="number" inputmode="decimal" min="0.50" max="1.00" step="0.01" value="${state.actualNgOtherToolExclusionScore.toFixed(2)}"></label><div class="vq43-actual-ng-minimum-value"><span>조건 적용 최소</span><b>${scoreText(minimum.min)}</b><small>후보 ${numberText(minimum.eligible)} · 제외 ${numberText(minimum.total-minimum.eligible)} / 전체 ${numberText(minimum.total)}</small></div></section><div class="vq43-table vq43-summary-table"><div class="vq43-table-row head"><span>구분</span><span>개수</span><span>평균</span><span>최소</span><span>최대</span><span>중앙값</span></div>${summaryRow('OK')}${summaryRow('NG')}</div></div></div>
+        <div class="vq43-chart-grid"><div class="vq43-chart-card"><div class="vq43-chart-head"><div><h3>Score 분포</h3><p>${escapeHtml(scopeInfo.color)}</p></div><span>▥</span></div><div class="vq43-chart-area">${total.count ? histogramSvg(weighted) : '<div class="vq43-chart-empty">해당 조건의 Score가 없습니다.</div>'}</div></div><div class="vq43-chart-card"><div class="vq43-chart-head"><div><h3>Cell별 Score</h3><p>낮은 Score부터 정렬 · 점 클릭 시 CSV FullPath 또는 실제 NG 이미지를 표시합니다.</p></div><button class="vq43-chart-expand-btn" type="button" data-vq-action="open-chart-modal" ${scorePoints.length ? '' : 'disabled'}>⛶ 확대 보기</button></div><div class="vq43-history-navigation"><span>${numberText((view?.offset||0)+(scorePoints.length?1:0))}–${numberText((view?.offset||0)+scorePoints.length)} / ${numberText(total.count)}</span><button class="vq43-btn" data-agent-score-page="-1" ${(view?.offset||0)===0?'disabled':''}>이전</button><button class="vq43-btn" data-agent-score-page="1" ${!view?.page.hasMore?'disabled':''}>다음</button></div><div class="vq43-chart-area vq43-analysis-scatter">${scorePoints.length ? scatterSvg(scorePoints,{interactive:true}) : '<div class="vq43-chart-empty">해당 조건의 Score가 없습니다.</div>'}</div></div></div>
       </div>`;
+    if(!ready&&!remote.scoreError&&model.tools.length&&!remote.needsRestore)loadAgentScores();
     $$('[data-agent-score-page]').forEach(button=>button.onclick=()=>changeAgentScorePage(Number(button.dataset.agentScorePage)));
   }
 
@@ -6530,7 +6536,7 @@
   function resultInputRow(position) {
     const input = state.resultInputs[position], loading = state.loading === `result:${position}`;
     const meta=input?.remote?`${numberText(input.rowCount)}행 · Agent 분석 · Tool ${state.model?.positionToolSummaries?.find(p=>p.position===position)?.tools.length||0}개`:`${numberText(input?.rows.length||0)}행 · ${formatBytes(input?.fileSize||0)} · Tool ${Object.keys(input?.rows[0]?.tools || {}).length}개`;
-    return `<div class="vq43-input-row" data-vq-position="${position}"><div class="vq43-position-label">${position}</div><div>${input?`<div class="vq43-input-name">${escapeHtml(input.fileName)}</div><div class="vq43-input-meta">${meta}</div>`:'<div class="vq43-input-name" style="color:#475569">결과 파일 미입력</div>'}</div><div style="display:flex;gap:6px"><button class="vq43-btn vq43-btn-blue" data-vq-action="choose-result" ${state.loading?'disabled':''}>${loading?'읽는 중...':input?'교체':'파일 선택'}</button><button class="vq43-btn" data-vq-action="choose-result-excel" ${state.loading?'disabled':''} title="Excel 브라우저 분석 (50MB 이하)">Excel</button></div>${input?'<button class="vq43-icon-btn" data-vq-action="remove-result" title="제거">×</button>':'<span></span>'}</div>`;
+    return `<div class="vq43-input-row" data-vq-position="${position}"><div class="vq43-position-label">${position}</div><div>${input?`<div class="vq43-input-name">${escapeHtml(input.fileName)}</div><div class="vq43-input-meta">${meta}</div>`:'<div class="vq43-input-name" style="color:#475569">결과 파일 미입력</div>'}</div><div style="display:flex;gap:6px"><button class="vq43-btn vq43-btn-blue" data-vq-action="choose-result" data-vq-tooltip="CSV 파일을 여러 개 선택해 에이전트에서 분석합니다. 대용량·분할 CSV에 권장합니다. Agent 미연결 시 50MB 이하 파일 하나를 브라우저에서 읽습니다." title="다중 CSV · Agent 분석" ${state.loading?'disabled':''}>${loading?'읽는 중...':input?'CSV 교체':'CSV 선택'}</button><button class="vq43-btn" data-vq-action="choose-result-excel" ${state.loading?'disabled':''} title="Excel/CSV · 브라우저 분석 · 50MB 이하" data-vq-tooltip="XLSX 또는 CSV 파일 하나를 브라우저 메모리에서 분석합니다. 50MB 이하만 지원합니다. 현재 Agent 분석이 있으면 확인 후 입력을 교체합니다. 큰 Excel은 CSV로 저장한 뒤 CSV 선택을 사용하세요.">Excel 선택</button></div>${input?'<button class="vq43-icon-btn" data-vq-action="remove-result" title="제거">×</button>':'<span></span>'}</div>`;
   }
 
   function resetChartModalView() {

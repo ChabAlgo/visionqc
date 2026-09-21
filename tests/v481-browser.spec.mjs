@@ -129,6 +129,48 @@ test('Agent date navigation clamps left boundary and fills last ten dates',async
  expect((await page.evaluate(()=>window.__VISIONQC_DEBUG__.agentAnalysisSnapshot())).dateWindow.rows).toHaveLength(10);
 });
 
+test('Score layout stays mounted across delayed live refreshes and reload restore',async({page})=>{
+ await setup(page);
+ await page.evaluate(()=>window.__VISIONQC_DEBUG__.setPage('analysis'));
+ await expect.poll(async()=> (await page.evaluate(()=>window.__VISIONQC_DEBUG__.agentAnalysisSnapshot())).points).toBe(300);
+ for(let i=0;i<3;i++){
+  let release;const gate=new Promise(resolve=>release=resolve);let reached=false;
+  await page.route('http://127.0.0.1:*/api/analysis/statistics',async route=>{
+   reached=true;await gate;
+   await route.fulfill({json:done({total:{count:602+i,min:.6,max:.6,mean:.6,median:.6},byResult:[{result:'NG',count:602+i,min:.6,max:.6,mean:.6,median:.6}],bins:[{bin:12,result:'NG',count:602+i}]})});
+  });
+  await page.evaluate(()=>{window.scoreFrame=document.querySelector('.vq43-analysis-page');window.scoreChart=document.querySelector('.vq43-analysis-scatter');});
+  await page.evaluate(()=>window.__VISIONQC_DEBUG__.syncAgentLiveTest(4000000));
+  await expect.poll(()=>reached).toBe(true);
+  expect(await page.evaluate(()=>window.scoreFrame===document.querySelector('.vq43-analysis-page')&&window.scoreChart===document.querySelector('.vq43-analysis-scatter'))).toBe(true);
+  await expect(page.locator('#vq43-agent-score-status')).toContainText('집계');
+  release();await expect(page.locator('.vq43-kpi').first()).toContainText(String(602+i));
+  await page.unroute('http://127.0.0.1:*/api/analysis/statistics');
+ }
+ await page.route('http://127.0.0.1:*/api/status',route=>route.fulfill({json:{ok:true,agentVersion:'1.4.5',analysisApiVersion:2,vpdlAvailable:true,state:{running:false}}}));
+ await page.evaluate(()=>window.__VISIONQC_DEBUG__.saveAnalysisSnapshot());
+ await page.addInitScript(()=>{
+  window.scoreLayoutViolations=0;
+  new MutationObserver(()=>{const p=document.querySelector('.vq43-analysis-page');if(p&&!p.querySelector('.vq43-analysis-upper-grid'))window.scoreLayoutViolations++;}).observe(document,{childList:true,subtree:true});
+ });
+ await page.reload();
+ await expect(page.locator('.vq43-analysis-upper-grid')).toBeVisible();
+ await expect(page.locator('.vq43-kpi').first()).toContainText('601');
+ expect(await page.evaluate(()=>window.scoreLayoutViolations)).toBe(0);
+ await page.evaluate(()=>{window.__VISIONQC_DEBUG__.setPage('simulation');window.simFrame=document.querySelector('.vq43-sim-page');});
+ await expect(page.locator('.vq43-sim-page')).toBeVisible();
+ await page.evaluate(()=>window.__VISIONQC_DEBUG__.syncAgentLiveTest(4000000));
+ expect(await page.evaluate(()=>window.simFrame===document.querySelector('.vq43-sim-page'))).toBe(true);
+});
+
+test('CSV and Excel selectors explain processing and limits on hover and focus',async({page})=>{
+ await setup(page);await page.evaluate(()=>window.__VISIONQC_DEBUG__.setPage('settings'));
+ const csv=page.locator('[data-vq-action="choose-result"]').first(),excel=page.locator('[data-vq-action="choose-result-excel"]').first();
+ await expect(csv).toContainText('CSV');await expect(excel).toHaveText('Excel 선택');
+ await csv.hover();await expect(page.locator('#vq43-param-tooltip')).toContainText('여러 개');await expect(page.locator('#vq43-param-tooltip')).toHaveClass(/show/);
+ await excel.focus();await expect(page.locator('#vq43-param-tooltip')).toContainText('50MB');await expect(page.locator('#vq43-param-tooltip')).toContainText('브라우저 메모리');
+});
+
 test('Agent score layout preserves original two-column controls in both themes',async({page})=>{
  await page.setViewportSize({width:1920,height:1080});
  await setup(page);

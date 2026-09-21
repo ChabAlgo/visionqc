@@ -1,19 +1,19 @@
 {
-  "releaseTag": "visionqc-v4.8.4-agent-v1.4.4",
-  "webVersion": "4.8.4",
-  "agentVersion": "1.4.4",
-  "minimumAgentVersion": "1.4.4",
+  "releaseTag": "visionqc-v4.8.5-agent-v1.4.5",
+  "webVersion": "4.8.5",
+  "agentVersion": "1.4.5",
+  "minimumAgentVersion": "1.4.5",
   "compatibility": {
-    "web": "4.8.4",
-    "agent": "1.4.4"
+    "web": "4.8.5",
+    "agent": "1.4.5"
   },
   "artifacts": {
-    "agentInstaller": "downloads/VisionQC_Agent_Installer_v1.4.4.exe",
-    "offlinePackage": "downloads/VisionQC_Offline_v4.8.4.zip",
+    "agentInstaller": "downloads/VisionQC_Agent_Installer_v1.4.5.exe",
+    "offlinePackage": "downloads/VisionQC_Offline_v4.8.5.zip",
     "sha256": {
-      "agentInstaller": "E05E05DD1385D97304D8CBB0C6E0C51C544FA3F41E7872626410B9AE7E137A7A",
-      "offlinePackage": "1F250F86B37FB7BBA381E837014A6136B14C193621ACB69212BBDA0F242F8DDE"
+      "agentInstaller": "16CFBDFED08320B12658839539C8BE2C6858D9B79F7D0201AB4167DC065BD924",
+      "offlinePackage": "4E403BCE51E2CFA18629D53B8CC82C3B905C6BE0B66D18B14C79AF8E57530F5F"
     }
   },
-  "notes": "Score 분석 화면의 기존 좌우 배치, 설명, 그래프 구성을 복원. Agent 집계와 제한된 그래프 페이지 유지."
+  "notes": "Score 실시간 갱신 중 화면 유지, 최초 로딩 배치 통일, CSV/Excel 선택 설명 툴팁"
 }

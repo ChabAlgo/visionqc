@@ -1,2 +1,2 @@
-VisionQC DirectExport v4.8.4
-Local Agent recommended: v1.4.4
+VisionQC DirectExport v4.8.5
+Local Agent recommended: v1.4.5

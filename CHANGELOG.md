@@ -1,3 +1,7 @@
+# 4.8.5 / Agent 1.4.5
+
+- Preserve Score frame during live refresh and use the same initial loading layout; avoid rebuilding Simulation UI on analysis refresh. Explain CSV/Excel selection with hover/focus tooltips.
+
 # 4.8.4 / Agent 1.4.4
 
 - Restore the original Score Analysis two-column controls, notes and chart presentation for Agent-backed data. Keep bounded score paging and Agent aggregation.
