@@ -361,6 +361,7 @@ body[data-vq-page="classification"] #vq43-shell{display:none!important;pointer-e
 .vq43-threshold-input.invalid{border-color:#ef4444!important;box-shadow:0 0 0 2px rgba(239,68,68,.18)!important}
 .vq43-chart-expand-btn{border:1px solid rgba(59,130,246,.55);background:rgba(37,99,235,.16);color:#bfdbfe;border-radius:9px;padding:8px 12px;font-size:14px;font-weight:850;cursor:pointer}
 .vq43-chart-expand-btn:hover{background:rgba(37,99,235,.28)}.vq43-chart-expand-btn:disabled{opacity:.35;cursor:not-allowed}
+body.vq43-theme-light .vq43-chart-expand-btn{color:#1e40af}
 #vq43-chart-modal{position:fixed;z-index:2147483605;inset:0;background:rgba(0,0,0,.86);backdrop-filter:blur(6px);display:none;align-items:center;justify-content:center;padding:18px;pointer-events:none}
 #vq43-chart-modal.open{display:flex;pointer-events:auto}
 .vq43-chart-modal-card{width:min(1700px,97vw);height:min(920px,94vh);border:1px solid #3a4a65;border-radius:20px;background:#0b1426;box-shadow:0 32px 100px rgba(0,0,0,.7);overflow:hidden;display:flex;flex-direction:column;pointer-events:auto}

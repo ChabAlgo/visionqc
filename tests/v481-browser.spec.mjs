@@ -129,6 +129,39 @@ test('Agent date navigation clamps left boundary and fills last ten dates',async
  expect((await page.evaluate(()=>window.__VISIONQC_DEBUG__.agentAnalysisSnapshot())).dateWindow.rows).toHaveLength(10);
 });
 
+test('Agent score layout preserves original two-column controls in both themes',async({page})=>{
+ await page.setViewportSize({width:1920,height:1080});
+ await setup(page);
+ await page.evaluate(()=>window.__VISIONQC_DEBUG__.setPage('analysis'));
+ await expect(page.locator('.vq43-analysis-upper-grid')).toBeVisible();
+ for(const theme of ['dark','light']){
+  const geometry=await page.evaluate(()=>{
+   const box=s=>document.querySelector(s).getBoundingClientRect();
+   const left=box('.vq43-analysis-left'),right=box('.vq43-analysis-right');
+   const charts=[...document.querySelectorAll('.vq43-chart-card')].map(e=>e.getBoundingClientRect());
+   return {left:left.x,right:right.x,sameTop:Math.abs(left.y-right.y)<2,
+    leftOrder:[...document.querySelector('.vq43-analysis-left').children].map(e=>e.className),
+    rightOrder:[...document.querySelector('.vq43-analysis-right').children].map(e=>e.className),
+    chartsAligned:Math.abs(charts[0].y-charts[1].y)<2,chartsVisible:charts.every(b=>b.bottom<=innerHeight),
+    noOverflow:document.documentElement.scrollWidth<=innerWidth};
+  });
+  expect(geometry.left).toBeLessThan(geometry.right);
+  expect(geometry.sameTop).toBe(true);
+  expect(geometry.leftOrder).toEqual(['vq43-filter','vq43-note vq43-analysis-scope-note','vq43-kpi-grid']);
+  expect(geometry.rightOrder).toEqual(['vq43-analysis-export','vq43-actual-ng-minimum','vq43-table vq43-summary-table']);
+  expect(geometry.chartsAligned).toBe(true);expect(geometry.chartsVisible).toBe(true);expect(geometry.noOverflow).toBe(true);
+  if(theme==='light')await expect(page.locator('.vq43-chart-expand-btn')).toHaveCSS('color','rgb(30, 64, 175)');
+  await page.screenshot({path:`test-results/v484-score-${theme}.png`,fullPage:true});
+  if(theme==='dark')await page.locator('[data-vq-action="theme-toggle"]').click();
+ }
+ await page.locator('[data-agent-score-page="1"]').click();
+ await expect(page.locator('.vq43-history-navigation')).toContainText('301–600 / 601');
+ await page.locator('[data-agent-score-page="-1"]').click();
+ await expect(page.locator('.vq43-history-navigation')).toContainText('1–300 / 601');
+ await page.locator('[data-vq-action="open-chart-modal"]').click();
+ await expect(page.locator('#vq43-chart-modal')).toHaveClass(/open/);
+});
+
 test('Agent score graph uses exact full count and bounded equal-score pages',async({page})=>{
  const requests=await setup(page);
  await page.evaluate(()=>window.__VISIONQC_DEBUG__.setPage('analysis'));

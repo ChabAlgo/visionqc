@@ -1,6 +1,8 @@
 import { expect, test } from '@playwright/test';
 
 async function open(page) {
+  // These legacy synthetic fixtures must not adopt the locally running Agent.
+  await page.route('http://127.0.0.1:*/api/**', route => route.abort());
   await page.goto('/index.html?vqDebug=1&browserRegression=1', { waitUntil:'domcontentloaded' });
   await page.waitForFunction(() => Boolean(window.__VISIONQC_DEBUG__), null, { timeout:15000 });
 }

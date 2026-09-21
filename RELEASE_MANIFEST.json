@@ -1,19 +1,19 @@
 {
-  "releaseTag": "visionqc-v4.8.3-agent-v1.4.3",
-  "webVersion": "4.8.3",
-  "agentVersion": "1.4.3",
-  "minimumAgentVersion": "1.4.3",
+  "releaseTag": "visionqc-v4.8.4-agent-v1.4.4",
+  "webVersion": "4.8.4",
+  "agentVersion": "1.4.4",
+  "minimumAgentVersion": "1.4.4",
   "compatibility": {
-    "web": "4.8.3",
-    "agent": "1.4.3"
+    "web": "4.8.4",
+    "agent": "1.4.4"
   },
   "artifacts": {
-    "agentInstaller": "downloads/VisionQC_Agent_Installer_v1.4.3.exe",
-    "offlinePackage": "downloads/VisionQC_Offline_v4.8.3.zip",
+    "agentInstaller": "downloads/VisionQC_Agent_Installer_v1.4.4.exe",
+    "offlinePackage": "downloads/VisionQC_Offline_v4.8.4.zip",
     "sha256": {
-      "agentInstaller": "2E3E07CA01A073D3FFEB71F31B9735F5655739D816EDCE76D8C8064ABB4C2E70",
-      "offlinePackage": "E768FDDF3224EFEFBADF26BC9C95C15F75ABC95F3CAB0035288FE371AC86584B"
+      "agentInstaller": "E05E05DD1385D97304D8CBB0C6E0C51C544FA3F41E7872626410B9AE7E137A7A",
+      "offlinePackage": "1F250F86B37FB7BBA381E837014A6136B14C193621ACB69212BBDA0F242F8DDE"
     }
   },
-  "notes": "완료 CSV의 불필요한 parts.txt 제거, 병렬 병합 완료 후 임시 목록 정리, 다중 CSV 재입력 정합성 검증"
+  "notes": "Score 분석 화면의 기존 좌우 배치, 설명, 그래프 구성을 복원. Agent 집계와 제한된 그래프 페이지 유지."
 }

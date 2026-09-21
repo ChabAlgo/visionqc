@@ -1,3 +1,7 @@
+# 4.8.4 / Agent 1.4.4
+
+- Restore the original Score Analysis two-column controls, notes and chart presentation for Agent-backed data. Keep bounded score paging and Agent aggregation.
+
 # VisionQC 4.8.3 / Agent 1.4.3
 
 - 완료된 결과와 CSV 내보내기에서 불필요한 parts.txt 목록 제거.
