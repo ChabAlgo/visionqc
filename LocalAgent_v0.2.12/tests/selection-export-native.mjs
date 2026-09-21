@@ -1,5 +1,5 @@
 import {spawn} from 'node:child_process';
-import {mkdtempSync,mkdirSync,writeFileSync,readFileSync} from 'node:fs';
+import {mkdtempSync,mkdirSync,writeFileSync,readFileSync,readdirSync} from 'node:fs';
 import {join,resolve} from 'node:path';
 import {tmpdir} from 'node:os';
 import {setTimeout as delay} from 'node:timers/promises';
@@ -17,8 +17,9 @@ try{
  assert.equal(status?.analysisApiVersion,2);
  const lines=['Date,Time,Cell ID,Position,Total_result,WorkspaceKey,FoilDamage_result,FoilDamage_score'];
  for(const pos of ['AN(TOP)','CA(TOP)'])for(let day=1;day<=2;day++)for(let cell=0;cell<20;cell++)for(let duplicate=0;duplicate<2;duplicate++)lines.push(`2026-02-0${day},12:34:56,CELL${cell},${pos},${cell<17?'NG':'OK'},${pos},${cell<17?'NG':'OK'},${cell<10?.9:.7}`);
- const csv=join(root,'input.csv');writeFileSync(csv,lines.join('\r\n'));
- const imported=await finish(await request('/api/analysis/import/start',{filePaths:[csv]}));const analysisId=imported.analysisId;
+ const inputs=[join(root,'input_AN.csv'),join(root,'input_CA.csv')];
+ for(let i=0;i<2;i++)writeFileSync(inputs[i],[lines[0],...lines.slice(1).filter(row=>row.includes(i===0?'AN(TOP)':'CA(TOP)'))].join('\r\n'));
+ const imported=await finish(await request('/api/analysis/import/start',{filePaths:inputs}));const analysisId=imported.analysisId;
  const selection={analysisId,kind:'tool-ng',position:'AN(TOP)',tool:'FoilDamage',date:'2026-02-01',outputDirectory:output,maxRows:7};
  const exported=await finish(await request('/api/analysis/export',selection));assert.equal(exported.result.count,17);assert.equal(exported.result.files.length,3);
  assert.equal(exported.result.files.reduce((n,file)=>n+readFileSync(file,'utf8').trim().split(/\r?\n/).length-1,0),17);
@@ -32,6 +33,14 @@ try{
  do{await delay(20);job=await request('/api/history/export/status',{jobId:job.jobId});}while(job.running);
  assert.equal(job.completed,true);assert.equal(job.result.count,20);assert.equal(job.result.files.length,3);
  assert.equal((await request('/api/history/search',{positions:[]})).totalCount,0);
+ const all=await finish(await request('/api/analysis/export',{analysisId,kind:'selection',outputDirectory:output,maxRows:13,splitByDate:true}));
+ assert.equal(all.result.count,80);assert.equal(all.result.files.length,8);
+ assert.equal(readdirSync(output).some(name=>name.endsWith('.txt')),false);
+ const roundtrip=await finish(await request('/api/analysis/import/start',{filePaths:all.result.files}));
+ const model=await finish(await request('/api/analysis/dashboard',{analysisId:roundtrip.analysisId}));assert.equal(model.result.recordCount,80);
+ const restored=await request('/api/analysis/dates',{analysisId:roundtrip.analysisId,positions:['AN(TOP)'],date:'2026-02-01'});assert.equal(restored.page.summary.ngCount,10);assert.equal(restored.page.summary.totalCount,20);
+ const again=await finish(await request('/api/analysis/export',{...selection,analysisId:roundtrip.analysisId}));assert.equal(again.result.count,10);
+
  writeFileSync(join(root,'report.json'),JSON.stringify({passed:true,toolNg:17,afterThreshold:10,historyPage:10,historyExport:20},null,2));
  console.log('PASS: native HTTP Tool/date/Position export, threshold, history paging, empty selection. '+root);
 }finally{

@@ -1,6 +1,6 @@
 $ErrorActionPreference='Stop'
 $taskRepo=[IO.Path]::GetFullPath((Join-Path $PSScriptRoot '../..'))
-$manifest=Get-Content -Raw -LiteralPath (Join-Path $taskRepo 'RELEASE_MANIFEST.json') | ConvertFrom-Json
+$manifest=Get-Content -Raw -Encoding UTF8 -LiteralPath (Join-Path $taskRepo 'RELEASE_MANIFEST.json') | ConvertFrom-Json
 $installer=Join-Path $taskRepo $manifest.artifacts.agentInstaller
 if ((Get-Item -LiteralPath $installer).VersionInfo.FileVersion -ne ($manifest.agentVersion+'.0')) { throw 'Installer version mismatch' }
 $assembly=[Reflection.Assembly]::LoadFile($installer)

@@ -1723,6 +1723,8 @@ namespace VisionQC.LocalAgent
                         _state.message = "Green Simulation 완료";
                     }
                 }
+                // Position children keep their manifest until the coordinator has merged every part.
+                if (string.IsNullOrWhiteSpace(req.parallelPositionKey)) PartitionedCsvWriter.DiscardManifest(_state.resultCsv);
                 lock (_sync) { _state.running = false; _simulationEndedUtc = DateTime.UtcNow; }
                 FlushLiveBatch();
                 CompleteSimulationHistory("completed", _state.message);

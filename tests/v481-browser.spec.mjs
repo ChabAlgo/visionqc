@@ -45,6 +45,28 @@ async function setup(page){
  return requests;
 }
 
+test('Multiple CSV picker submits every selected file and exposes dashboard graph and Tool export',async({page})=>{
+ const requests=await setup(page);
+ const files=['C:\\Exports\\results_001.csv','C:\\Exports\\results_002.csv'];
+ await page.route('http://127.0.0.1:*/api/pick/start',async route=>{
+  requests.push({path:'/api/pick/start',body:route.request().postDataJSON()});await route.fulfill({json:{ok:true,path:files[0],paths:files}});
+ });
+ await page.route('http://127.0.0.1:*/api/analysis/import/start',async route=>{
+  requests.push({path:'/api/analysis/import/start',body:route.request().postDataJSON()});await route.fulfill({json:done(null)});
+ });
+ await page.evaluate(()=>window.__VISIONQC_DEBUG__.setPage('settings'));
+ await page.locator('[data-vq-action="choose-result"]').first().click();
+ await expect.poll(()=>requests.filter(r=>r.path==='/api/analysis/import/start').length).toBe(1);
+ expect(requests.find(r=>r.path==='/api/analysis/import/start').body.filePaths).toEqual(files);
+ expect(requests.find(r=>r.path==='/api/pick/start').body.multiple).toBe(true);
+ await expect(page.locator('#vq43-analysis-import-progress')).toHaveCount(0);
+ await page.evaluate(()=>window.__VISIONQC_DEBUG__.setPage('main'));
+ await expect(page.locator('[data-vq-action="download-tool-ng"]')).toBeVisible();
+ await expect(page.locator('[data-vq-action="download-chart-csv"]')).toBeVisible();
+ await expect(page.locator('.vq43-history-point')).toHaveCount(10);
+ expect(await page.evaluate(()=>window.__VISIONQC_DEBUG__.agentAnalysisSnapshot())).toMatchObject({records:0,rows:0,total:4000000});
+});
+
 test('Scoped Agent CSV requests preserve date, Tool and Position filters; history exports all matches',async({page})=>{
  const requests=await setup(page);
  await page.route('http://127.0.0.1:*/api/pick/start',route=>route.fulfill({json:{ok:true,path:'C:\\Exports'}}));

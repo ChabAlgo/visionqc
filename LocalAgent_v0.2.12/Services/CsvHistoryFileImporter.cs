@@ -147,6 +147,9 @@ namespace VisionQC.LocalAgent.Services
             string time = (timeValue ?? "").Trim();
             DateTime parsedDate;
             DateTime parsedTime;
+            // Aggregated Cell exports have a known date but no single observation time.
+            if (time.Length == 0 && DateTime.TryParseExact(date, new[] { "yyyyMMdd", "yyyy-MM-dd", "yyyy/MM/dd" }, CultureInfo.InvariantCulture, DateTimeStyles.None, out parsedDate))
+                return parsedDate.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture);
             if (DateTime.TryParseExact(date, new[] { "yyyyMMdd", "yyyy-MM-dd", "yyyy/MM/dd" }, CultureInfo.InvariantCulture, DateTimeStyles.None, out parsedDate) &&
                 DateTime.TryParseExact(time, new[] { "HHmmss", "HH:mm:ss", "HH:mm" }, CultureInfo.InvariantCulture, DateTimeStyles.None, out parsedTime))
                 return parsedDate.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture) + "T" + parsedTime.ToString("HH:mm:ss", CultureInfo.InvariantCulture);

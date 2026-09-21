@@ -13,14 +13,14 @@ const cleanCss = read('visionqc-v4433-clean.css');
 const html = read('index.html');
 const server = read('LocalAgent_v0.2.12/AgentServer.cs');
 
-test('v4.8.2 Web cache and Agent download targets are declared', () => {
-  assert.match(read('VERSION.txt'), /v4\.8\.2/);
-  assert.match(html, /visionqc-extension\.js\?v=4\.8\.2/);
+test('v4.8.3 Web cache and Agent download targets are declared', () => {
+  assert.match(read('VERSION.txt'), /v4\.8\.3/);
+  assert.match(html, /visionqc-extension\.js\?v=4\.8\.3/);
   assert.match(html, /visionqc-v470\.css\?v=4\.7\.9/);
-  assert.match(js, /const VERSION = '4\.8\.2'/);
-  assert.match(js, /const EXPECTED_AGENT_VERSION = '1\.4\.2'/);
-  assert.match(js, /VisionQC_Agent_Installer_v1\.4\.2\.exe/);
-  assert.match(js, /VisionQC_Offline_v4\.8\.2\.zip/);
+  assert.match(js, /const VERSION = '4\.8\.3'/);
+  assert.match(js, /const EXPECTED_AGENT_VERSION = '1\.4\.3'/);
+  assert.match(js, /VisionQC_Agent_Installer_v1\.4\.3\.exe/);
+  assert.match(js, /VisionQC_Offline_v4\.8\.3\.zip/);
 });
 
 test('persistent History page has filters, server-side pagination, daily NG chart and image viewer', () => {

@@ -15,6 +15,7 @@ class DataIntegrityTests
         Directory.CreateDirectory(root);
         Check(ResultCsv.SplitCaptureTimestamp("2026-08-07T01:20:30").SequenceEqual(new[]{"2026-08-07","01:20:30"}), "Capture Date/Time columns incorrect");
         Check(ResultCsv.SplitCaptureTimestamp(null).All(string.IsNullOrEmpty), "Unknown capture date invented");
+        Check(ResultCsv.SplitCaptureTimestamp("2026-08-07").SequenceEqual(new[]{"2026-08-07",""}), "Known date lost or unknown time invented");
         string a = Path.Combine(root, "a.csv"), b = Path.Combine(root, "b.csv");
         string workspace = Path.Combine(root,"workspace.vrws");
         File.WriteAllText(workspace,"original");
@@ -43,7 +44,7 @@ class DataIntegrityTests
         // Partition boundaries count CSV records, not physical lines. Interleaved dates exercise LRU reopen.
         string split = Path.Combine(root, "split.csv");
         string primary;
-        using (var writer = new PartitionedCsvWriter(split, 2, true))
+        using (var writer = new PartitionedCsvWriter(split, 2, true, writeManifest:true))
         {
             writer.WriteLine("Cell ID,CaptureTimestamp,Note");
             for (int round = 0; round < 3; round++) for (int day = 1; day <= 12; day++)
@@ -67,9 +68,26 @@ class DataIntegrityTests
             Check(count <= 2, "Data row cap exceeded"); rowCount += count;
         }
         Check(rowCount == 37 && parts.Any(x => x.Contains("unknown-date")), "Partition lost rows or unknown date");
+        // Parent merge consumes every child part before removing only its temporary inventory.
+        File.WriteAllText(b,"Cell ID,CaptureTimestamp,Note\r\nlast,2026-09-01T12:00:00,tail\r\n");
+        string mergeRoot=Path.Combine(root,"merged-parts");Directory.CreateDirectory(mergeRoot);
+        ResultCsv.Merge(mergeRoot,new[]{primary,b},2,true);
+        Check(!File.Exists(primary+".parts.txt") && parts.All(File.Exists),"Merge cleanup removed CSV or retained inventory");
+        Check(Directory.GetFiles(mergeRoot,"*.parts.txt").Length==0,"Final merge left text inventory");
+        int mergedRows=0;
+        foreach(string file in Directory.GetFiles(mergeRoot,"*.csv"))using(var reader=new StreamReader(file)){ResultCsv.ReadHeader(reader);while(ResultCsv.ReadRecord(reader)!=null)mergedRows++;}
+        Check(mergedRows==38,"Manifest cleanup lost a later/date-partitioned CSV");
+        string retained;
+        using(var writer=new PartitionedCsvWriter(Path.Combine(root,"retry.csv"),1,false,writeManifest:true)){writer.WriteLine("A,B");writer.WriteLine("1,2");writer.Flush();retained=writer.PrimaryPath;}
+        File.WriteAllText(b,"A,B\r\nbad\r\n");
+        Reject(()=>ResultCsv.Merge(mergeRoot,new[]{retained,b}));
+        Check(File.Exists(retained+".parts.txt"),"Failed merge destroyed retry inventory");
+        ResultCsv.Merge(mergeRoot,new[]{retained});
+        Check(!File.Exists(retained+".parts.txt")&&File.Exists(retained),"Single Position cleanup mismatch");
         string empty;
         using (var writer = new PartitionedCsvWriter(Path.Combine(root, "empty.csv"), 2)) { writer.WriteLine("Cell ID,Position"); empty = writer.PrimaryPath; }
         Check(File.ReadAllLines(empty).Length == 1, "Empty run lost header");
+        Check(!File.Exists(empty+".parts.txt"),"Normal CSV export created unnecessary text inventory");
         CultureInfo.CurrentCulture = new CultureInfo("de-DE");
         Check(ResultCsv.ParseScore("0,75") == .75 && ResultCsv.ParseScore("0.75") == .75 && ResultCsv.ParseScore("") == null, "Culture-dependent score");
         Reject(() => ResultCsv.ParseScore("75")); Reject(() => ResultCsv.ParseScore("NaN"));

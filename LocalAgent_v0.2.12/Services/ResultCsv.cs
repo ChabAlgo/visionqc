@@ -70,6 +70,9 @@ namespace VisionQC.LocalAgent.Services
         internal static string[] SplitCaptureTimestamp(string timestamp)
         {
             string text=(timestamp ?? "").Trim();
+            DateTime dateOnly;
+            if (text.Length == 10 && DateTime.TryParseExact(text,"yyyy-MM-dd",CultureInfo.InvariantCulture,DateTimeStyles.None,out dateOnly))
+                return new[]{dateOnly.ToString("yyyy-MM-dd",CultureInfo.InvariantCulture),""};
             if(text.Length<19) return new[]{"",""};
             DateTime date;
             string seconds=text.Substring(0,19).Replace('T',' ');
@@ -95,7 +98,7 @@ namespace VisionQC.LocalAgent.Services
             if (sources.Any(string.IsNullOrWhiteSpace)) throw new InvalidDataException("Position 결과 CSV 경로가 비어 있습니다.");
             var inputs = sources.SelectMany(PartitionedCsvWriter.Expand).Distinct(StringComparer.OrdinalIgnoreCase).ToList();
             foreach (var input in inputs) if (!File.Exists(input)) throw new FileNotFoundException("Position 결과 CSV가 없습니다.", input);
-            if (sources.Count == 1) return sources[0];
+            if (sources.Count == 1) { PartitionedCsvWriter.DiscardManifest(sources[0]); return sources[0]; }
             var headers = new List<List<string>>(); var union = new List<string>();
             foreach (string input in inputs)
                 using (var reader = new StreamReader(input, Encoding.Default, true))
@@ -137,6 +140,8 @@ namespace VisionQC.LocalAgent.Services
                 string destination = Path.Combine(outputRoot, Path.GetFileName(file));
                 File.Move(file, destination); published.Add(destination);
             }
+            // All parts are safely published. Parent workers no longer need the input manifests.
+            foreach (string source in sources) PartitionedCsvWriter.DiscardManifest(source);
             return Path.Combine(outputRoot, Path.GetFileName(first));
             }
             catch { foreach (string file in published) File.Delete(file); throw; }

@@ -16,6 +16,7 @@ namespace VisionQC.LocalAgent.Services
         private readonly string _basePath;
         private readonly long _maxRows;
         private readonly bool _byDate;
+        private readonly bool _writeManifest;
         private readonly Dictionary<string, Bucket> _buckets = new Dictionary<string, Bucket>();
         private readonly Dictionary<string, OpenFile> _open = new Dictionary<string, OpenFile>();
         private readonly List<string> _paths = new List<string>();
@@ -28,10 +29,11 @@ namespace VisionQC.LocalAgent.Services
         internal string PrimaryPath { get { EnsureEmptyOutput(); return _paths[0]; } }
         internal string[] Paths { get { return _paths.ToArray(); } }
 
-        internal PartitionedCsvWriter(string path, long maxRows = 1000000, bool byDate = false)
+        internal PartitionedCsvWriter(string path, long maxRows = 1000000, bool byDate = false, bool writeManifest = false)
         {
             if (maxRows <= 0) throw new ArgumentOutOfRangeException(nameof(maxRows));
             _basePath = Path.GetFullPath(path); _maxRows = maxRows; _byDate = byDate;
+            _writeManifest = writeManifest;
             Directory.CreateDirectory(Path.GetDirectoryName(_basePath));
         }
         public override void WriteLine(string value)
@@ -93,7 +95,7 @@ namespace VisionQC.LocalAgent.Services
         {
             foreach (var item in _open.Values) item.Writer.Flush();
             EnsureEmptyOutput();
-            if (_paths.Count == 0) return;
+            if (_paths.Count == 0 || !_writeManifest) return;
             string manifest = _paths[0] + ".parts.txt", temp = manifest + ".tmp";
             using (var writer = new StreamWriter(temp, false, Encoding))
             {
@@ -107,6 +109,18 @@ namespace VisionQC.LocalAgent.Services
             if (!_disposed && disposing) { try { Flush(); } finally { foreach (var path in _open.Keys.ToArray()) Close(path); _disposed = true; } }
             base.Dispose(disposing);
         }
+        internal static void DiscardManifest(string firstPath)
+        {
+            if (string.IsNullOrWhiteSpace(firstPath)) return;
+            // Only this run's sidecar, never its CSV or a directory-wide wildcard.
+            foreach (string suffix in new[] { ".parts.txt", ".parts.txt.tmp" })
+            {
+                try { File.Delete(firstPath + suffix); }
+                catch (IOException ex) { System.Diagnostics.Trace.TraceWarning("CSV sidecar cleanup: " + ex.Message); }
+                catch (UnauthorizedAccessException ex) { System.Diagnostics.Trace.TraceWarning("CSV sidecar cleanup: " + ex.Message); }
+            }
+        }
+
         internal static IEnumerable<string> Expand(string firstPath)
         {
             string manifest = firstPath + ".parts.txt";

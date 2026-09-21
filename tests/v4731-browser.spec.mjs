@@ -49,6 +49,8 @@ test('Tool card metadata wraps without overlap', async ({ page }) => {
 });
 
 test('loading a saved result clears a stale dashboard date and shows the new rows', async ({ page }) => {
+  // This verifies the browser fallback; a real installed Agent must not switch it to the native picker.
+  await page.route('http://127.0.0.1:*/api/**', route => route.abort());
   await page.addInitScript(() => {
     try { delete window.showOpenFilePicker; } catch {}
     localStorage.clear();

@@ -154,7 +154,7 @@ namespace VpdlGreenHeatmapOverlay
                         slotWriters[slot.Key] = writer;
                     }
 
-                    using (var integratedCsv = new PartitionedCsvWriter(integratedCsvPath, config.CsvMaxRows, config.CsvSplitByDate))
+                    using (var integratedCsv = new PartitionedCsvWriter(integratedCsvPath, config.CsvMaxRows, config.CsvSplitByDate, writeManifest: true))
                     {
                         WriteIntegratedSummaryHeader(integratedToolNames, integratedCsv);
                         int idx = 0;
@@ -885,7 +885,7 @@ namespace VpdlGreenHeatmapOverlay
                     _slotWriters[slot.Key] = writer;
                 }
 
-                _integratedCsv = new PartitionedCsvWriter(Path.Combine(_config.OutputRoot, string.Format("results_{0}.csv", _runStamp)), _config.CsvMaxRows, _config.CsvSplitByDate);
+                _integratedCsv = new PartitionedCsvWriter(Path.Combine(_config.OutputRoot, string.Format("results_{0}.csv", _runStamp)), _config.CsvMaxRows, _config.CsvSplitByDate, writeManifest: true);
                 WriteIntegratedSummaryHeader(_integratedToolNames, _integratedCsv);
             }
 

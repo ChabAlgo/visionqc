@@ -4,7 +4,7 @@ import {join,resolve} from 'node:path';
 import {tmpdir} from 'node:os';
 import {setTimeout as delay} from 'node:timers/promises';
 
-const [worker,fixture,mode='candidate']=process.argv.slice(2);
+const [worker,fixture,mode='candidate',layout='parallel']=process.argv.slice(2);
 if(!worker||!fixture)throw new Error('worker and fixture paths required');
 const root=mkdtempSync(join(tmpdir(),`VisionQC-481-${mode}-`)),port=17931,base=`http://127.0.0.1:${port}`;
 const config=JSON.parse(readFileSync(join(fixture,'request.json'),'utf8'));
@@ -16,8 +16,9 @@ for(const name of images)copyFileSync(join(source,name),join(input,name));
 config.positions.forEach(p=>{p.greenImageRoot=input;p.greenImageRoots=[input];});
 config.green.keywordMode=false;config.green.keywordInputRoots=[];config.green.cellIdCsvPath='';
 config.green.detailedDiagnostics=false;config.green.heatmapImageSave=false;
+if(layout==='single'){config.positions=config.positions.slice(0,1);config.parallelPositions=false;}
 config.outputRoot=join(root,'output');config.csvMaxRows=2;config.csvSplitByDate=true;config.agentAnalysis=mode==='candidate';
-config.webVersion='4.8.2';
+config.webVersion='4.8.3';
 const expected=images.length*config.positions.filter(p=>p.enabled!==false).length;
 let child;const report={root,mode,expected,simulations:[]};
 const request=async(path,body,timeout=30000)=>{
@@ -33,13 +34,14 @@ const start=async()=>{
 const stop=async()=>{if(child?.exitCode===null){try{await request('/api/agent/exit',{},10000);}catch{}for(let i=0;i<30&&child.exitCode===null;i++)await delay(200);if(child.exitCode===null)child.kill();}};
 try{
  await start();writeFileSync(join(root,'request.json'),JSON.stringify(config,null,2));
- for(let run=0;run<3;run++){
+ for(let run=0;run<(layout==='single'?1:3);run++){
    await request('/api/runtime/preload',config,240000);
    const launched=await request('/api/simulation/start',config);
    let state=launched.state;
    while(state.running){await delay(100);state=(await request('/api/status')).state;}
    if(state.error||state.processed!==expected)throw new Error('Inference count/error '+JSON.stringify(state));
    report.simulations.push({processed:state.processed,elapsedSeconds:state.elapsedSeconds,resultCsv:state.resultCsv});
+   if(mode==='candidate'&&readdirSync(join(root,'output'),{recursive:true}).some(name=>name.endsWith('.parts.txt')))throw new Error('Completed simulation left CSV inventory');
    const rows=await request('/api/simulation/results',{runId:state.simulationRunId,afterImageId:0,pageSize:1000});
    if(rows.records.length!==expected)throw new Error('Raw result count mismatch');
    report.scores=rows.records.map(r=>({cell:r.CellId,position:r.Position,tools:r.Tools}));
