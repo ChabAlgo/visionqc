@@ -1,7 +1,7 @@
 (() => {
   'use strict';
 
-  const VERSION = '4.8.6';
+  const VERSION = '4.8.7';
   const DEFAULT_POSITION_DEFS = [
     { key:'CA_TOP', name:'CA(TOP)' },
     { key:'AN_TOP', name:'AN(TOP)' },
@@ -27,9 +27,9 @@
   const NG_POSITION_PREFIX = 'ng-position:';
   const IMG_RE = /\.(png|jpe?g|bmp|gif|webp|tif?f)$/i;
   const LOCAL_AGENT_URL = 'http://127.0.0.1:17891';
-  const EXPECTED_AGENT_VERSION = '1.4.6';
-  const AGENT_INSTALLER_URL = './downloads/VisionQC_Agent_Installer_v1.4.6.exe';
-  const OFFLINE_PACKAGE_URL = './downloads/VisionQC_Offline_v4.8.6.zip';
+  const EXPECTED_AGENT_VERSION = '1.4.7';
+  const AGENT_INSTALLER_URL = './downloads/VisionQC_Agent_Installer_v1.4.7.exe';
+  const OFFLINE_PACKAGE_URL = './downloads/VisionQC_Offline_v4.8.7.zip';
   // SQLite에는 사용자가 명시적으로 남기려는 두 종류의 결과만 표시한다.
   // 이전 버전의 단발 검사(single-inspection) 이력은 보존하되 화면 집계에서는 제외한다.
   const PERSISTED_HISTORY_SOURCE_TYPES = ['simulation', 'csv-import', 'csv-file-stream'];
@@ -2624,12 +2624,17 @@
     const days = new Map();
     model.records.forEach(record=>{const date=dashboardDateForRecord(record);if(!date)return;const day=days.get(date)||{date,records:[]};day.records.push(record);days.set(date,day);});
     const daily=model.remote?(model.dailyUnit==='cell'?(model.daily||[]):[]):[...days.values()].sort((a,b)=>a.date.localeCompare(b.date)).map(day=>{const counts=cellNgCounts(day.records);return {date:day.date,...counts,ngRate:counts.ng/counts.total};});
-    const shown=daily.slice(-10), max=historyNgAxisMax(shown), w=700,h=190,top=25,bottom=35,left=55,plot=630;
-    const x=i=>left+plot/10*((10-shown.length)/2+i+.5),y=r=>top+(h-top-bottom)*(1-r/max);
-    const grid=[0,.25,.5,.75,1].map(r=>`<line x1="${left}" x2="${w-10}" y1="${y(max*r)}" y2="${y(max*r)}" stroke="#d9e2ee"/><text x="${left-8}" y="${y(max*r)+5}" text-anchor="end">${Number((max*r*100).toFixed(2))}%</text>`).join('');
-    const lines=shown.slice(1).map((d,i)=>`<line x1="${x(i)}" x2="${x(i+1)}" y1="${y(shown[i].ngRate)}" y2="${y(d.ngRate)}" stroke="#d9465d" stroke-width="2"/>`).join('');
-    const points=shown.map((d,i)=>`<circle cx="${x(i)}" cy="${y(d.ngRate)}" r="4" fill="#d9465d"/><text x="${x(i)}" y="${Math.max(15,y(d.ngRate)-9)}" text-anchor="middle">${(d.ngRate*100).toFixed(1)}%</text><text x="${x(i)}" y="${h-10}" text-anchor="middle">${escapeHtml(d.date.slice(5))}</text>`).join('');
-    const chart=shown.length?`<section class="chart"><h2><i>2</i>날짜별 NG율 <small>${escapeHtml(shown[0].date)} ~ ${escapeHtml(shown.at(-1).date)}${daily.length>10?' · 최근 10 / '+daily.length+'일':''}</small></h2><svg viewBox="0 0 ${w} ${h}" role="img" aria-label="날짜별 NG율">${grid}${lines}${points}</svg></section>`:'';
+    const max=historyNgAxisMax(daily),w=700,h=230,top=44,bottom=55,left=55,plot=630;
+    const charts=[];
+    for(let offset=0;offset<daily.length;offset+=20){
+      const shown=daily.slice(offset,offset+20);
+      const x=i=>left+plot/20*((20-shown.length)/2+i+.5),y=r=>top+(h-top-bottom)*(1-r/max);
+      const grid=[0,.25,.5,.75,1].map(r=>`<line x1="${left}" x2="${w-10}" y1="${y(max*r)}" y2="${y(max*r)}" stroke="#d9e2ee"/><text x="${left-8}" y="${y(max*r)+5}" text-anchor="end">${Number((max*r*100).toFixed(2))}%</text>`).join('');
+      const lines=shown.slice(1).map((d,i)=>`<line x1="${x(i)}" x2="${x(i+1)}" y1="${y(shown[i].ngRate)}" y2="${y(d.ngRate)}" stroke="#d9465d" stroke-width="2"/>`).join('');
+      const points=shown.map((d,i)=>`<circle data-date="${escapeHtml(d.date)}" cx="${x(i)}" cy="${y(d.ngRate)}" r="4" fill="#d9465d"/><text x="${x(i)}" y="${Math.max(15,y(d.ngRate)-9-(i%2?18:0))}" text-anchor="middle">${(d.ngRate*100).toFixed(1)}%</text><text x="${x(i)}" y="${h-38}" transform="rotate(-45 ${x(i)} ${h-38})" text-anchor="end">${escapeHtml(d.date.slice(5))}</text>`).join('');
+      charts.push(`<section class="chart"><h2><i>2</i>날짜별 NG율 <small>${escapeHtml(shown[0].date)} ~ ${escapeHtml(shown.at(-1).date)}</small></h2><svg viewBox="0 0 ${w} ${h}" role="img" aria-label="날짜별 NG율">${grid}${lines}${points}</svg></section>`);
+    }
+    const chart=charts.join('');
     const positionBars = `<section class="position-bars"><h3>Position별 NG율</h3>${positions.map(p=>`<div class="bar-row" style="--accent:${colorFor(p.position)}"><b>${escapeHtml(p.position)}</b><i><em style="width:${p.ngRate/Math.max(.01,...positions.map(p=>p.ngRate))*100}%"></em></i><strong>${rateText(p.ngRate)}</strong></div>`).join('')}</section>`;
     let cursor=0;
     const stops=positions.map(p=>{const start=cursor;cursor+=analysisMissCount(model)?p.misses/analysisMissCount(model)*100:0;return `${colorFor(p.position)} ${start}% ${cursor}%`;}).join(',');
@@ -2660,6 +2665,8 @@
       const remote=state.remoteAnalysis;
       reportWindow.document.body.textContent='에이전트에서 리포트 정보를 준비하고 있습니다…';
       try{
+        const datePage=(await analysisApi('dates',{analysisId:remote.analysisId,allDates:true})).page;
+        if(!datePage||datePage.rows.length!==Number(datePage.count))throw new Error(`전체 날짜 리포트를 위해 Agent ${EXPECTED_AGENT_VERSION}로 업데이트한 뒤 다시 생성하세요.`);
         const misses=[];
         // A summary PDF must not allocate millions of DOM nodes. Large ID lists stay in
         // the lossless streaming CSV export, with an explicit count in the report.
@@ -2677,7 +2684,7 @@
           if(misses.length!==analysisMissCount(model))throw new Error('리포트 미검 수량이 변경되었습니다. 다시 생성하세요.');
         }
         if(state.remoteAnalysis!==remote)throw new Error('분석 결과가 교체되었습니다.');
-        reportModel={...model,misses};
+        reportModel={...model,misses,daily:datePage.rows};
       }catch(error){reportWindow.document.body.textContent=`리포트 생성 실패: ${error.message}`;showToast(error.message,true);return;}
     }
     reportWindow.document.open();
@@ -5454,6 +5461,23 @@
     updateSimulationStatusDom();
   }
 
+  async function requestSimulationStart(request, previousRunId) {
+    try {
+      return await agentFetch('/api/simulation/start', { method:'POST', body:request, timeout:60000 });
+    } catch (error) {
+      if (!['REQUEST_TIMEOUT','AGENT_NETWORK'].includes(error.code)) throw error;
+      // A lost acknowledgement does not cancel the Agent run. Never resend a start.
+      try {
+        const actual = await agentFetch('/api/simulation/state', { timeout:15000 });
+        if (actual.simulationRunId && actual.simulationRunId !== previousRunId)
+          return { ok:!actual.error, error:actual.error, state:actual };
+      } catch (_) { }
+      const uncertain = new Error('Simulation 시작 응답이 지연되고 있습니다. Agent 실행 상태를 확인 중입니다.');
+      uncertain.code = 'SIMULATION_START_UNCONFIRMED';
+      throw uncertain;
+    }
+  }
+
   async function startSimulation() {
     if (state.simulationStartPending || state.simulationProgress?.running) {
       showToast('Simulation 시작 요청이 이미 처리 중이거나 실행 중입니다.');
@@ -5501,9 +5525,9 @@
       appendSimulationLog({level:'START',message:`Simulation 시작 요청 · Mode=${request.mode} · Position=${request.positions.map(p=>p.displayName).join(', ')} · Batch=${request.mode==='blue'?request.blue.printEvery:request.green.printEvery}`});
       state.simulationProgress = { ...state.simulationProgress, running:true, message:'Simulation 시작 요청 중...', error:'' };
       updateSimulationStatusDom();
-      const data = await agentFetch('/api/simulation/start', { method:'POST', body:request, timeout:10000 });
+      const data = await requestSimulationStart(request, String(state.simulationProgress?.simulationRunId || ''));
       if (!data.ok) throw new Error(data.error || 'Simulation 시작 실패');
-      state.simulationProgress = { ...state.simulationProgress, ...(data.state || {}), running:true };
+      state.simulationProgress = { ...state.simulationProgress, ...(data.state || {}), running:data.state?.running !== false };
       state.simulationLiveRunId = String(data.state?.simulationRunId || '');
       if (state.simulationLiveRunId) {
         Object.values(state.resultInputs).forEach(input => { input.rows = []; });
@@ -5515,6 +5539,12 @@
       }
       updateSimulationStatusDom();
     } catch (error) {
+      if (error.code === 'SIMULATION_START_UNCONFIRMED') {
+        state.simulationProgress = { ...state.simulationProgress, running:true, message:error.message, error:'' };
+        updateSimulationStatusDom();
+        showToast(error.message);
+        return;
+      }
       state.simulationLiveActive = false;
       state.simulationProgress = { ...state.simulationProgress, running:false, message:'Simulation 시작 실패', error:error.message || String(error) };
       updateSimulationStatusDom();
@@ -7319,6 +7349,7 @@
   function installDebugApi() {
     if (!new URLSearchParams(location.search).has('vqDebug') && !window.__VQ_DEBUG_REQUESTED__) return;
     window.__VISIONQC_DEBUG__ = {
+      requestSimulationStart,
       classificationCellSheets, buildClassificationWorkbook, formatHistoryTimestamp, offerSimulationHistorySave,
       setPage,
       async syncAgentLiveTest(processed,final=false,mode='green'){

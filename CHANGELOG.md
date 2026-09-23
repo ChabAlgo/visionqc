@@ -1,3 +1,8 @@
+# 4.8.7 / Agent 1.4.7
+- Simulation 시작 응답 대기 60초, 응답 누락 시 실행 상태 확인 및 중복 시작 방지.
+
+- Report-only daily NG charts include all dates in chronological blocks of at most 20. Preserve all non-chart report HTML/styles and dashboard date pagination.
+
 # 4.8.6 / Agent 1.4.6
 
 - Daily dashboard totals and NG rates count date + Cell ID once across selected Positions, with any final NG producing an NG Cell. Align PDF daily chart and retain incremental Cell counters.

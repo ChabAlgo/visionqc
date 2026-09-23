@@ -52,7 +52,12 @@ try{
  const restored=await request('/api/analysis/dates',{analysisId:roundtrip.analysisId,positions:['AN(TOP)'],date:'2026-02-01'});assert.equal(restored.page.summary.ngCount,10);assert.equal(restored.page.summary.totalCount,20);
  const again=await finish(await request('/api/analysis/export',{...selection,analysisId:roundtrip.analysisId}));assert.equal(again.result.count,10);
 
- writeFileSync(join(root,'report.json'),JSON.stringify({passed:true,toolNg:17,afterThreshold:10,historyPage:10,historyExport:20},null,2));
+ const calendar=join(root,'calendar.csv');
+ writeFileSync(calendar,['Date,Time,Cell ID,Position,Total_Result,FoilDamage_result,FoilDamage_score',...Array.from({length:41},(_,i)=>`${new Date(Date.UTC(2026,0,i+1)).toISOString().slice(0,10)},12:00:00,C${i},AN(TOP),NG,NG,0.9`)].join('\r\n'));
+ const calendarImport=await finish(await request('/api/analysis/import/start',{filePaths:[calendar]}));
+ const windowed=await request('/api/analysis/dates',{analysisId:calendarImport.analysisId});assert.equal(windowed.page.rows.length,10);
+ const complete=await request('/api/analysis/dates',{analysisId:calendarImport.analysisId,allDates:true});assert.equal(complete.page.rows.length,41);assert.equal(complete.page.count,41);assert.equal(complete.page.rows[0].date,'2026-01-01');assert.equal(complete.page.rows.at(-1).date,'2026-02-10');
+ writeFileSync(join(root,'report.json'),JSON.stringify({passed:true,toolNg:17,afterThreshold:10,historyPage:10,historyExport:20,reportDates:41},null,2));
  console.log('PASS: native HTTP Tool/date/Position export, threshold, history paging, empty selection. '+root);
 }finally{
  try{await request('/api/agent/exit',{});}catch{}

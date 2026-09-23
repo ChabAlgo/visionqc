@@ -1,19 +1,19 @@
 {
-  "releaseTag": "visionqc-v4.8.6-agent-v1.4.6",
-  "webVersion": "4.8.6",
-  "agentVersion": "1.4.6",
-  "minimumAgentVersion": "1.4.6",
+  "releaseTag": "visionqc-v4.8.7-agent-v1.4.7",
+  "webVersion": "4.8.7",
+  "agentVersion": "1.4.7",
+  "minimumAgentVersion": "1.4.7",
   "compatibility": {
-    "web": "4.8.6",
-    "agent": "1.4.6"
+    "web": "4.8.7",
+    "agent": "1.4.7"
   },
   "artifacts": {
-    "agentInstaller": "downloads/VisionQC_Agent_Installer_v1.4.6.exe",
-    "offlinePackage": "downloads/VisionQC_Offline_v4.8.6.zip",
+    "agentInstaller": "downloads/VisionQC_Agent_Installer_v1.4.7.exe",
+    "offlinePackage": "downloads/VisionQC_Offline_v4.8.7.zip",
     "sha256": {
-      "agentInstaller": "19B57BE3709C045F0E3BFBABCF4ED7DD89AC7EA7F89EE0CC7C22792A4A438C92",
-      "offlinePackage": "621D1928AFF2949AC686A9B8440436EC359CC25201CFA79DF8D4123B33AF659A"
+      "agentInstaller": "AB61D622280A98E49D9C548A1959F69B5C275FE9FA7AFFDECBCD8C42B3D1E26F",
+      "offlinePackage": "167FEC5AE70EAC59F43CE3F7724D31AB37082F127013B5897B24AB5949E89B99"
     }
   },
-  "notes": "날짜별 검사 NG율과 집계를 날짜 + Cell ID 기준으로 변경. 선택 Position 중 하나라도 NG이면 NG Cell."
+  "notes": "리포트 날짜별 NG율을 전체 날짜, 한 그래프 최대 20일씩 표시. 나머지 리포트 양식과 테마 유지."
 }

@@ -1,4 +1,31 @@
 import {test,expect} from '@playwright/test';
+import {readFile} from 'node:fs/promises';
+
+test('report includes every date in rows of twenty and changes nothing outside charts',async({page,context})=>{
+ await page.route('http://127.0.0.1:*/api/**',route=>route.abort());
+ await page.goto('/index.html?vqDebug=1&browserRegression=1');await page.waitForFunction(()=>window.__VISIONQC_DEBUG__);
+ const render=async(target,count)=>target.evaluate(count=>{
+  const rows=Array.from({length:count},(_,i)=>({cellId:'CELL'+i,position:'AN(TOP)',captureTimestamp:new Date(Date.UTC(2026,0,1+i)).toISOString(),sourceFileName:'Full_dates.csv',workspaceName:'Production.vrws',totalResult:i%3?'NG':'OK',tools:{Crack:{tool:'Crack',result:i%3?'NG':'OK',score:.9}}}));
+  window.__VISIONQC_DEBUG__.seedRows(rows);return window.__VISIONQC_DEBUG__.buildReportHtml();
+ },count);
+ const report=await context.newPage();
+ for(const count of [0,1,20,21,40,41,300]){
+  const html=await render(page,count);await report.setContent(html);
+  await expect(report.locator('.chart')).toHaveCount(Math.ceil(count/20));
+  await expect(report.locator('.chart circle')).toHaveCount(count);
+  const sizes=await report.locator('.chart').evaluateAll(charts=>charts.map(c=>c.querySelectorAll('circle').length));
+  expect(sizes.every(size=>size>0&&size<=20)).toBe(true);
+  const dates=await report.locator('.chart circle').evaluateAll(nodes=>nodes.map(n=>n.dataset.date));
+  expect(new Set(dates).size).toBe(count);expect(dates).toEqual([...dates].sort());
+  if(count===41){
+   // Captured from v4.8.7 (add35a6), removing only .chart sections.
+   const outside=await readFile(new URL('./fixtures/report-layout-v486.html',import.meta.url),'utf8');
+   expect(await report.evaluate(()=>{const doc=document.documentElement.cloneNode(true);doc.querySelectorAll('.chart').forEach(n=>n.remove());return doc.outerHTML;})).toBe(outside);
+   await report.pdf({path:'C:/Temp/vq487-41-days.pdf',preferCSSPageSize:true,printBackground:true});
+  }
+ }
+ await report.close();
+});
 test('report uses captured CSV and workspace, readable thresholds and plain selectable missed IDs',async({page,context})=>{
  await page.goto('/index.html?vqDebug=1&browserRegression=1');await page.waitForFunction(()=>window.__VISIONQC_DEBUG__);
  const html=await page.evaluate(()=>{window.__VISIONQC_DEBUG__.seedReportMetadata();return window.__VISIONQC_DEBUG__.buildReportHtml();});

@@ -349,7 +349,7 @@ WHERE @date='' OR a.day=@date GROUP BY a.position",cancellation,"@date",date??""
             return column+" IN (SELECT position FROM selected_positions)";
         }
 
-        internal object DateWindow(int offset,string anchor,CancellationToken cancellation,string[] positions=null,string selectedDate="")
+        internal object DateWindow(int offset,string anchor,CancellationToken cancellation,string[] positions=null,string selectedDate="",bool allDates=false)
         {
             lock(_sync)
             {
@@ -360,7 +360,8 @@ WHERE @date='' OR a.day=@date GROUP BY a.position",cancellation,"@date",date??""
                 start=Math.Max(0,Math.Min(Math.Max(0,count-10),start));
                 // All Positions use existing incremental Cell counters; selected Positions are merged by day + Cell.
                 string cellSource=positions==null ? "SELECT day,total,ng FROM cell_stats" : "SELECT day,COUNT(*) AS total,SUM(ng) AS ng FROM (SELECT day,cell,MAX(ng) AS ng FROM cells WHERE "+where+" GROUP BY day,cell) GROUP BY day";
-                var rows=Query("SELECT day AS date,total,ng FROM ("+cellSource+") WHERE day<>'' ORDER BY day LIMIT 10 OFFSET @offset",cancellation,"@offset",start);
+                if(allDates)start=0;
+                var rows=Query("SELECT day AS date,total,ng FROM ("+cellSource+") WHERE day<>'' ORDER BY day"+(allDates?"":" LIMIT 10 OFFSET @offset"),cancellation,"@offset",start);
                 foreach(var row in rows)row["ngRate"]=Number(row,"total")==0?0:(double)Number(row,"ng")/Number(row,"total");
                 var summary=Query("SELECT COALESCE(SUM(total),0) AS totalCount,COALESCE(SUM(ng),0) AS ngCount FROM ("+cellSource+") WHERE @date='' OR day=@date",cancellation,"@date",selectedDate??"")[0];
                 summary["unknown"]=Query("SELECT COALESCE(SUM(raw_rows),0) AS count FROM position_stats WHERE "+where+" AND day='' AND (@date='' OR day=@date)",cancellation,"@date",selectedDate??"")[0]["count"];

@@ -62,6 +62,7 @@ namespace VisionQC.LocalAgent.Services
             public bool splitByDate {get;set;}
             public int dateStart {get;set;}=-1;
             public string dateAnchor {get;set;}
+            public bool allDates {get;set;}
         }
         internal AnalysisService(string root) { _root = Path.GetFullPath(root); Directory.CreateDirectory(_root); }
 
@@ -230,7 +231,7 @@ namespace VisionQC.LocalAgent.Services
             lock(_sync)
             {
                 var job=Resolve(request.analysisId);if(job.Running||!job.Completed)return StatusObject(job);
-                return new {ok=true,analysisId=job.Id,page=job.Projection.DateWindow(request.dateStart,request.dateAnchor,job.Cancellation.Token,request.positions,request.date)};
+                return new {ok=true,analysisId=job.Id,page=job.Projection.DateWindow(request.dateStart,request.dateAnchor,job.Cancellation.Token,request.positions,request.date,request.allDates)};
             }
         }
         internal object ActualNg(string body)

@@ -23,7 +23,7 @@ async function setup(page){
      if(method==='dashboard')response=done(model);
      if(method==='dates'){
        const start=Math.max(0,Math.min(13,body.dateStart==null||body.dateStart<0?13:body.dateStart));
-       response={ok:true,page:{rows:days.slice(start,start+10),start,count:23,firstDate:days[0].date,lastDate:days.at(-1).date}};
+       response={ok:true,page:{rows:body.allDates?days:days.slice(start,start+10),start:body.allDates?0:start,count:23,firstDate:days[0].date,lastDate:days.at(-1).date}};
      }
      if(method==='misses'){
        const first=body.afterCell?Number(body.afterCell.slice(4))+1:1;
@@ -147,7 +147,7 @@ test('Score layout stays mounted across delayed live refreshes and reload restor
   release();await expect(page.locator('.vq43-kpi').first()).toContainText(String(602+i));
   await page.unroute('http://127.0.0.1:*/api/analysis/statistics');
  }
- await page.route('http://127.0.0.1:*/api/status',route=>route.fulfill({json:{ok:true,agentVersion:'1.4.6',analysisApiVersion:2,vpdlAvailable:true,state:{running:false}}}));
+ await page.route('http://127.0.0.1:*/api/status',route=>route.fulfill({json:{ok:true,agentVersion:'1.4.7',analysisApiVersion:2,vpdlAvailable:true,state:{running:false}}}));
  await page.evaluate(()=>window.__VISIONQC_DEBUG__.saveAnalysisSnapshot());
  await page.addInitScript(()=>{
   window.scoreLayoutViolations=0;
@@ -161,6 +161,15 @@ test('Score layout stays mounted across delayed live refreshes and reload restor
  await expect(page.locator('.vq43-sim-page')).toBeVisible();
  await page.evaluate(()=>window.__VISIONQC_DEBUG__.syncAgentLiveTest(4000000));
  expect(await page.evaluate(()=>window.simFrame===document.querySelector('.vq43-sim-page'))).toBe(true);
+});
+
+test('Agent report fetches every date while dashboard stays at ten',async({page})=>{
+ const requests=await setup(page);
+ const popup=page.waitForEvent('popup');await page.locator('[data-vq-action="export-summary-report"]').click();const report=await popup;
+ await expect(report.locator('.chart circle')).toHaveCount(23);await expect(report.locator('.chart')).toHaveCount(2);
+ expect(requests.some(r=>r.path.endsWith('/dates')&&r.body.allDates===true)).toBe(true);
+ expect((await page.evaluate(()=>window.__VISIONQC_DEBUG__.agentAnalysisSnapshot())).dateWindow.rows).toHaveLength(10);
+ await report.close();
 });
 
 test('Old Agent Position totals are not labeled as Cell totals',async({page})=>{
