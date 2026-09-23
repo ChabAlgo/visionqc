@@ -26,6 +26,17 @@ try{
  await finish(await request('/api/analysis/thresholds',{analysisId,thresholds:[{position:'AN(TOP)',tool:'FoilDamage',value:.8}]}));
  assert.equal((await finish(await request('/api/analysis/export',selection))).result.count,10);
  const dates=await request('/api/analysis/dates',{analysisId,positions:['AN(TOP)'],date:'2026-02-01'});assert.deepEqual(dates.page.summary,{totalCount:20,ngCount:10,unknown:0});
+ const both=await request('/api/analysis/dates',{analysisId});
+ assert.deepEqual(both.page.summary,{totalCount:40,ngCount:34,unknown:0});
+ assert.deepEqual(both.page.rows.map(d=>[d.total,d.ng]),[[20,17],[20,17]]);
+ const selectedBoth=await request('/api/analysis/dates',{analysisId,positions:['AN(TOP)','CA(TOP)'],date:'2026-02-01'});
+ assert.deepEqual(selectedBoth.page.summary,{totalCount:20,ngCount:17,unknown:0});
+ assert.equal((await request('/api/analysis/dates',{analysisId,positions:[]})).page.summary.totalCount,0);
+ await finish(await request('/api/analysis/thresholds',{analysisId,thresholds:[{position:'AN(TOP)',tool:'FoilDamage',value:.8},{position:'CA(TOP)',tool:'FoilDamage',value:.95}]}));
+ assert.equal((await request('/api/analysis/dates',{analysisId,date:'2026-02-01'})).page.summary.ngCount,10);
+ await finish(await request('/api/analysis/thresholds',{analysisId,thresholds:[{position:'AN(TOP)',tool:'FoilDamage',value:.8},{position:'CA(TOP)',tool:'FoilDamage',value:.5}]}));
+ const dashboard=await finish(await request('/api/analysis/dashboard',{analysisId}));
+ assert.deepEqual(dashboard.result.daily.map(d=>[d.total,d.ng]),[[20,17],[20,17]]);
  await finish(await request('/api/analysis/save-history',{analysisId}));
  const filters={positions:['AN(TOP)'],fromDate:'2026-02-01',toDate:'2026-02-01',pageSize:10};
  const history=await request('/api/history/search',filters);assert.equal(history.totalCount,20);assert.equal(history.items.length,10);

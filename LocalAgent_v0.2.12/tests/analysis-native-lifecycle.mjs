@@ -18,7 +18,7 @@ config.green.keywordMode=false;config.green.keywordInputRoots=[];config.green.ce
 config.green.detailedDiagnostics=false;config.green.heatmapImageSave=false;
 if(layout==='single'){config.positions=config.positions.slice(0,1);config.parallelPositions=false;}
 config.outputRoot=join(root,'output');config.csvMaxRows=2;config.csvSplitByDate=true;config.agentAnalysis=mode==='candidate';
-config.webVersion='4.8.5';
+config.webVersion='4.8.6';
 const expected=images.length*config.positions.filter(p=>p.enabled!==false).length;
 let child;const report={root,mode,expected,simulations:[]};
 const request=async(path,body,timeout=30000)=>{

@@ -2,7 +2,7 @@ import {test,expect} from '@playwright/test';
 
 const id='0123456789abcdef0123456789abcdef';
 const days=Array.from({length:23},(_,i)=>({date:`2026-02-${String(i+1).padStart(2,'0')}`,total:100,ng:5,ngRate:.05}));
-const model={remote:true,recordCount:4000000,rawRowCount:4000000,uniqueCellCount:2000000,ngCellCount:100000,ngCellRate:.05,
+const model={remote:true,dailyUnit:'cell',recordCount:4000000,rawRowCount:4000000,uniqueCellCount:2000000,ngCellCount:100000,ngCellRate:.05,
  missCount:201,actualUniqueCount:301,matchedActualCount:301,unmatchedActualCount:0,duplicateCount:0,totalNg:200000,unknownRows:0,
  tools:['Crack'],daily:days.slice(-10),dateRange:{firstDate:days[0].date,lastDate:days.at(-1).date,dateCount:23},
  workspaces:[{position:'AN(TOP)',workspaceName:'TestWorkspace.vrws'}],
@@ -147,7 +147,7 @@ test('Score layout stays mounted across delayed live refreshes and reload restor
   release();await expect(page.locator('.vq43-kpi').first()).toContainText(String(602+i));
   await page.unroute('http://127.0.0.1:*/api/analysis/statistics');
  }
- await page.route('http://127.0.0.1:*/api/status',route=>route.fulfill({json:{ok:true,agentVersion:'1.4.5',analysisApiVersion:2,vpdlAvailable:true,state:{running:false}}}));
+ await page.route('http://127.0.0.1:*/api/status',route=>route.fulfill({json:{ok:true,agentVersion:'1.4.6',analysisApiVersion:2,vpdlAvailable:true,state:{running:false}}}));
  await page.evaluate(()=>window.__VISIONQC_DEBUG__.saveAnalysisSnapshot());
  await page.addInitScript(()=>{
   window.scoreLayoutViolations=0;
@@ -161,6 +161,15 @@ test('Score layout stays mounted across delayed live refreshes and reload restor
  await expect(page.locator('.vq43-sim-page')).toBeVisible();
  await page.evaluate(()=>window.__VISIONQC_DEBUG__.syncAgentLiveTest(4000000));
  expect(await page.evaluate(()=>window.simFrame===document.querySelector('.vq43-sim-page'))).toBe(true);
+});
+
+test('Old Agent Position totals are not labeled as Cell totals',async({page})=>{
+ await setup(page);
+ const legacy={...model};delete legacy.dailyUnit;
+ await page.route('http://127.0.0.1:*/api/analysis/dashboard',route=>route.fulfill({json:done(legacy)}));
+ await page.evaluate(()=>window.__VISIONQC_DEBUG__.syncAgentLiveTest(4000000));
+ await expect(page.locator('.vq43-main-history-dashboard')).toContainText('업데이트');
+ await expect(page.locator('.vq43-main-history-kpis')).toHaveCount(0);
 });
 
 test('CSV and Excel selectors explain processing and limits on hover and focus',async({page})=>{

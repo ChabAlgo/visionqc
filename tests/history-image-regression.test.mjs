@@ -116,5 +116,6 @@ test('analysis identity keeps different capture dates separate while deduplicati
   const live = js.slice(js.indexOf('function appendRowToLiveDashboardDates'), js.indexOf('function liveAnalysisModel'));
   assert.match(aggregate, /const key = analysisRowKey\(row\)/);
   assert.equal((live.match(/const key = analysisRowKey\(row\)/g) || []).length, 2);
-  assert.match(js, /날짜가 다르면 별도 검사 건으로 계산합니다/);
+  assert.match(js, /날짜가 다르면 별도 검사 건입니다/);
+  assert.match(js, /Cell ID는 Position 수와 관계없이 한 번만 계산합니다/);
 });

@@ -284,7 +284,7 @@ ORDER BY t.score,t.tool_result_id LIMIT @limit"))
                     {"positions",Read("SELECT position,SUM(total) AS total,SUM(ng) AS ng,SUM(raw_rows) AS rawRows FROM position_stats"+filter+" GROUP BY position",date)},
                     {"tools",Read("SELECT position,tool,SUM(ng) AS ng,SUM(total) AS total FROM tool_stats"+filter+" GROUP BY position,tool",date)},
                     {"dateCount",Read("SELECT COUNT(DISTINCT day) AS total FROM position_stats WHERE day<>''",date)},
-                    {"dates",Read("SELECT day AS date,SUM(total) AS total,SUM(ng) AS ng FROM position_stats WHERE day<>'' GROUP BY day ORDER BY day DESC LIMIT 10 OFFSET @offset",date,Math.Max(0,dateOffset))}
+                    {"dates",Read("SELECT day AS date,total,ng FROM cell_stats WHERE day<>'' ORDER BY day DESC LIMIT 10 OFFSET @offset",date,Math.Max(0,dateOffset))}
                 };
             }
         }
@@ -358,9 +358,12 @@ WHERE @date='' OR a.day=@date GROUP BY a.position",cancellation,"@date",date??""
                 long count=Number(range,"count"),start=offset<0?Math.Max(0,count-10):offset;
                 if(!string.IsNullOrEmpty(anchor))start=Number(Query("SELECT COUNT(DISTINCT day) AS count FROM position_stats WHERE "+where+" AND day<>'' AND day<@date",cancellation,"@date",anchor)[0],"count");
                 start=Math.Max(0,Math.Min(Math.Max(0,count-10),start));
-                var rows=Query("SELECT day AS date,SUM(total) AS total,SUM(ng) AS ng FROM position_stats WHERE "+where+" AND day<>'' GROUP BY day ORDER BY day LIMIT 10 OFFSET @offset",cancellation,"@offset",start);
+                // All Positions use existing incremental Cell counters; selected Positions are merged by day + Cell.
+                string cellSource=positions==null ? "SELECT day,total,ng FROM cell_stats" : "SELECT day,COUNT(*) AS total,SUM(ng) AS ng FROM (SELECT day,cell,MAX(ng) AS ng FROM cells WHERE "+where+" GROUP BY day,cell) GROUP BY day";
+                var rows=Query("SELECT day AS date,total,ng FROM ("+cellSource+") WHERE day<>'' ORDER BY day LIMIT 10 OFFSET @offset",cancellation,"@offset",start);
                 foreach(var row in rows)row["ngRate"]=Number(row,"total")==0?0:(double)Number(row,"ng")/Number(row,"total");
-                var summary=Query("SELECT COALESCE(SUM(total),0) AS totalCount,COALESCE(SUM(ng),0) AS ngCount,COALESCE(SUM(CASE WHEN day='' THEN raw_rows ELSE 0 END),0) AS unknown FROM position_stats WHERE "+where+" AND (@date='' OR day=@date)",cancellation,"@date",selectedDate??"")[0];
+                var summary=Query("SELECT COALESCE(SUM(total),0) AS totalCount,COALESCE(SUM(ng),0) AS ngCount FROM ("+cellSource+") WHERE @date='' OR day=@date",cancellation,"@date",selectedDate??"")[0];
+                summary["unknown"]=Query("SELECT COALESCE(SUM(raw_rows),0) AS count FROM position_stats WHERE "+where+" AND day='' AND (@date='' OR day=@date)",cancellation,"@date",selectedDate??"")[0]["count"];
                 return new {rows,start,count,firstDate=range["firstDate"],lastDate=range["lastDate"],summary};
             }
         }
@@ -398,7 +401,7 @@ AND lower(other.tool)<>lower(t.tool) AND other.max_ng>=@exclusion) GROUP BY t.po
                         return new {tool=t["tool"],ng=Number(t,"ng"),denominator=ng,rate=ng==0?0:(double)Number(t,"ng")/ng,minNgScore=minimum==null?null:minimum["minNgScore"],threshold=t["threshold"],actualNgExclusionThreshold=exclusion};
                     }).ToArray()});
                 }
-                var dates=Query("SELECT day AS date,SUM(total) AS total,SUM(ng) AS ng FROM position_stats WHERE day<>'' GROUP BY day ORDER BY day DESC LIMIT 10",cancellation);
+                var dates=Query("SELECT day AS date,total,ng FROM cell_stats WHERE day<>'' ORDER BY day DESC LIMIT 10",cancellation);
                 dates.Reverse();foreach(var row in dates)row["ngRate"]=Number(row,"total")==0?0:(double)Number(row,"ng")/Number(row,"total");
                 var range=Query("SELECT MIN(NULLIF(day,'')) AS firstDate,MAX(NULLIF(day,'')) AS lastDate,COUNT(DISTINCT NULLIF(day,'')) AS dateCount FROM position_stats",cancellation)[0];
                 var workspaces=Query("SELECT position,workspace_name AS workspaceName,workspace_key AS workspaceKey FROM workspace_refs ORDER BY position,workspace_name LIMIT 10001",cancellation);
@@ -407,7 +410,7 @@ AND lower(other.tool)<>lower(t.tool) AND other.max_ng>=@exclusion) GROUP BY t.po
                 return new {remote=true,recordCount=Number(totals,"total"),rawRowCount=Number(totals,"rawRows"),uniqueCellCount=cellCount,ngCellCount,ngCellRate=cellCount==0?0:(double)ngCellCount/cellCount,
                     missCount=actual.Sum(a=>Number(a,"misses")),actualUniqueCount=actual.Sum(a=>Number(a,"actualNg")),matchedActualCount=actual.Sum(a=>Number(a,"matched")),unmatchedActualCount=actual.Sum(a=>Number(a,"unmatched")),
                     duplicateCount=Number(totals,"duplicateGroups"),positionSummaries,positionToolSummaries=positionTools,tools=tools.Select(t=>Convert.ToString(t["tool"])).Distinct().OrderBy(t=>t).ToArray(),
-                    daily=dates,dateRange=range,workspaces,totalNg=Number(totals,"ng"),cursor=Cursor,
+                    daily=dates,dailyUnit="cell",dateRange=range,workspaces,totalNg=Number(totals,"ng"),cursor=Cursor,
                     unknownRows=Query("SELECT COALESCE(SUM(raw_rows),0) AS count FROM position_stats WHERE day=''",cancellation)[0]["count"]};
             }
         }

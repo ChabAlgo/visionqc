@@ -1,3 +1,7 @@
+# 4.8.6 / Agent 1.4.6
+
+- Daily dashboard totals and NG rates count date + Cell ID once across selected Positions, with any final NG producing an NG Cell. Align PDF daily chart and retain incremental Cell counters.
+
 # 4.8.5 / Agent 1.4.5
 
 - Preserve Score frame during live refresh and use the same initial loading layout; avoid rebuilding Simulation UI on analysis refresh. Explain CSV/Excel selection with hover/focus tooltips.

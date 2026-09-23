@@ -61,7 +61,7 @@ test('class preset JSON backs up slots and draft, restores after browser storage
  const picker=page.getByLabel('Class Presets JSON 가져오기');
  await picker.setInputFiles({name:'backup.json',mimeType:'application/json',buffer:backup});
  await expect(names.first()).toHaveValue('정상 백업');
- expect(await page.evaluate(()=>JSON.parse(localStorage.getItem('visionqc-class-settings-profiles-v1')))).toEqual(before);
+ await expect.poll(()=>page.evaluate(()=>JSON.parse(localStorage.getItem('visionqc-class-settings-profiles-v1')))).toEqual(before);
  const invalid=structuredClone(data);invalid.presets.class1.classConfigs[1].hotkey=invalid.presets.class1.classConfigs[0].hotkey;
  await picker.setInputFiles({name:'invalid.json',mimeType:'application/json',buffer:Buffer.from(JSON.stringify(invalid))});
  await expect.poll(()=>dialogs.at(-1)).toContain('JSON 가져오기 실패');

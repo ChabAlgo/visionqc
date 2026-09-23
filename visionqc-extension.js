@@ -1,7 +1,7 @@
 (() => {
   'use strict';
 
-  const VERSION = '4.8.5';
+  const VERSION = '4.8.6';
   const DEFAULT_POSITION_DEFS = [
     { key:'CA_TOP', name:'CA(TOP)' },
     { key:'AN_TOP', name:'AN(TOP)' },
@@ -27,9 +27,9 @@
   const NG_POSITION_PREFIX = 'ng-position:';
   const IMG_RE = /\.(png|jpe?g|bmp|gif|webp|tif?f)$/i;
   const LOCAL_AGENT_URL = 'http://127.0.0.1:17891';
-  const EXPECTED_AGENT_VERSION = '1.4.5';
-  const AGENT_INSTALLER_URL = './downloads/VisionQC_Agent_Installer_v1.4.5.exe';
-  const OFFLINE_PACKAGE_URL = './downloads/VisionQC_Offline_v4.8.5.zip';
+  const EXPECTED_AGENT_VERSION = '1.4.6';
+  const AGENT_INSTALLER_URL = './downloads/VisionQC_Agent_Installer_v1.4.6.exe';
+  const OFFLINE_PACKAGE_URL = './downloads/VisionQC_Offline_v4.8.6.zip';
   // SQLite에는 사용자가 명시적으로 남기려는 두 종류의 결과만 표시한다.
   // 이전 버전의 단발 검사(single-inspection) 이력은 보존하되 화면 집계에서는 제외한다.
   const PERSISTED_HISTORY_SOURCE_TYPES = ['simulation', 'csv-import', 'csv-file-stream'];
@@ -2435,7 +2435,7 @@
       return;
     }
     if (!accumulator.dashboardDates.has(date))
-      accumulator.dashboardDates.set(date, { recordMap:new Map(), total:0, ng:0 });
+      accumulator.dashboardDates.set(date, { recordMap:new Map(), total:0, ng:0, cells:new Map(), cellNg:0 });
     const bucket = accumulator.dashboardDates.get(date);
     const key = analysisRowKey(row);
     const previous = bucket.recordMap.get(key);
@@ -2444,6 +2444,10 @@
     if (!previous) bucket.total += 1;
     else if (previous.totalResult === 'NG') bucket.ng -= 1;
     if (record.totalResult === 'NG') bucket.ng += 1;
+    const cellKey=analysisCellKey(record),before=bucket.cells.get(cellKey)||0;
+    const after=before-(previous?.totalResult==='NG'?1:0)+(record.totalResult==='NG'?1:0);
+    bucket.cells.set(cellKey,after);
+    bucket.cellNg+=(after>0?1:0)-(before>0?1:0);
     bucket.recordMap.set(key, record);
   }
 
@@ -2618,8 +2622,8 @@
     const tableRows = positions.map(item=>`<tr><td>${escapeHtml(item.position)}</td><td>${numberText(item.total)}</td><td>${numberText(item.ng)}</td><td class="ng">${rateText(item.ngRate)}</td><td>${numberText(item.actualNg)}</td><td>${numberText(item.detected)}</td><td class="miss">${numberText(item.misses)}</td>${positions.some(p=>p.unmatched)?`<td>${numberText(item.unmatched)}</td>`:''}</tr>`).join('');
     const tools = `<table class="tool-table"><thead><tr><th>Position</th><th>Tool</th><th>Threshold</th><th>NG</th><th>구성 비율</th></tr></thead><tbody>${model.positionToolSummaries.filter(item=>positions.some(p=>p.position===item.position)).map((item,pi)=>item.tools.map((tool,ti)=>`<tr style="--accent:${colorFor(item.position)};background:${pi%2?'#fff':'#f3f7fc'}"><td>${ti===0?escapeHtml(item.position):''}</td><td>${escapeHtml(tool.tool)}</td><td class="threshold">${Number(tool.threshold ?? getThreshold(item.position,tool.tool)).toFixed(4)}</td><td>${numberText(tool.ng)}</td><td><div class="tool-ratio"><i><em style="width:${Math.min(100,tool.rate*100)}%"></em></i><b>${rateText(tool.rate)}</b></div></td></tr>`).join('')).join('')}</tbody></table>`;
     const days = new Map();
-    model.records.forEach(record=>{const date=dashboardDateForRecord(record);if(!date)return;const day=days.get(date)||{date,total:0,ng:0};day.total++;if(record.totalResult==='NG')day.ng++;days.set(date,day);});
-    const daily=model.remote?(model.daily||[]):[...days.values()].sort((a,b)=>a.date.localeCompare(b.date)).map(day=>({...day,ngRate:day.ng/day.total}));
+    model.records.forEach(record=>{const date=dashboardDateForRecord(record);if(!date)return;const day=days.get(date)||{date,records:[]};day.records.push(record);days.set(date,day);});
+    const daily=model.remote?(model.dailyUnit==='cell'?(model.daily||[]):[]):[...days.values()].sort((a,b)=>a.date.localeCompare(b.date)).map(day=>{const counts=cellNgCounts(day.records);return {date:day.date,...counts,ngRate:counts.ng/counts.total};});
     const shown=daily.slice(-10), max=historyNgAxisMax(shown), w=700,h=190,top=25,bottom=35,left=55,plot=630;
     const x=i=>left+plot/10*((10-shown.length)/2+i+.5),y=r=>top+(h-top-bottom)*(1-r/max);
     const grid=[0,.25,.5,.75,1].map(r=>`<line x1="${left}" x2="${w-10}" y1="${y(max*r)}" y2="${y(max*r)}" stroke="#d9e2ee"/><text x="${left-8}" y="${y(max*r)+5}" text-anchor="end">${Number((max*r*100).toFixed(2))}%</text>`).join('');
@@ -2774,22 +2778,28 @@
   // 메인 대시보드는 SQLite 누적 이력이 아니라, 현재 화면에서 분석 중인 하나의 결과 집합만 표시한다.
   // aggregateRows()는 같은 날짜의 Cell ID + Position 중복만 하나의 record로 통합한다.
   // 날짜가 다른 동일 Cell ID는 서로 다른 검사 건이므로 전체보기에서 각각 계산한다.
+  function cellNgCounts(records) {
+    const cells=new Map();
+    records.forEach(record=>{const key=analysisCellKey(record);cells.set(key,!!cells.get(key)||record.totalResult==='NG');});
+    return {total:cells.size,ng:[...cells.values()].filter(Boolean).length};
+  }
+
   function currentAnalysisDashboardData() {
     if(state.remoteAnalysis && state.model?.remote){
       const model=state.dashboardModel || state.model;
       const summary=state.remoteAnalysis.dateWindow?.summary;
-      return {totalCount:summary?.totalCount??model.recordCount,ngCount:summary?.ngCount??model.totalNg,uniqueCellCount:summary?.totalCount??model.recordCount,daily:state.model.daily,unknown:summary?.unknown??model.unknownRows};
+      return {totalCount:summary?.totalCount??model.uniqueCellCount,ngCount:summary?.ngCount??model.ngCellCount,uniqueCellCount:summary?.totalCount??model.uniqueCellCount,daily:state.model.daily,unknown:summary?.unknown??model.unknownRows};
     }
     const records = (Array.isArray(state.dashboardModel?.records) ? state.dashboardModel.records : (state.model?.records || [])).filter(r=>state.dashboardPositions===null||state.dashboardPositions.includes(r.position));
     const live = state.simulationLiveAccumulator;
     if (live && !state.dashboardDate && state.dashboardPositions===null) {
       const daily = [...live.dashboardDates.entries()]
-        .map(([date, bucket]) => ({ date, total:bucket.total, ng:bucket.ng, ngRate:bucket.total ? bucket.ng / bucket.total : 0 }))
+        .map(([date, bucket]) => ({ date, total:bucket.cells.size, ng:bucket.cellNg, ngRate:bucket.cells.size ? bucket.cellNg / bucket.cells.size : 0 }))
         .sort((a, b) => a.date.localeCompare(b.date));
       return {
-        totalCount:live.recordMap.size,
-        ngCount:Number(live.totalRecordNg || 0),
-        uniqueCellCount:live.recordMap.size,
+        totalCount:live.cellStats.size,
+        ngCount:Number(live.ngCellCount || 0),
+        uniqueCellCount:live.cellStats.size,
         daily,
         unknown:Number(live.dashboardUnknownRows || 0)
       };
@@ -2802,11 +2812,11 @@
     const dailyMap = new Map();
     dailyRows.forEach((rows,date) => {
       const items = aggregateRows(rows); applyThresholdSimulation(items);
-      dailyMap.set(date, { date, total:items.length, ng:items.filter(r=>r.totalResult==='NG').length });
+      dailyMap.set(date, { date, ...cellNgCounts(items) });
     });
     const daily = Array.from(dailyMap.values()).sort((a, b) => a.date.localeCompare(b.date)).map((item) => ({ ...item, ngRate:item.total ? item.ng / item.total : 0 }));
-    const ngCount = records.filter((record) => record.totalResult === 'NG').length;
-    return { totalCount:records.length, ngCount, uniqueCellCount:records.length, daily, unknown:allRows.filter(row=>!dashboardDateForRow(row)).length };
+    const counts=cellNgCounts(records);
+    return { totalCount:counts.total, ngCount:counts.ng, uniqueCellCount:counts.total, daily, unknown:allRows.filter(row=>!dashboardDateForRow(row)).length };
   }
 
   function chartPositionControls(scope) {
@@ -2817,8 +2827,9 @@
   }
 
   function mainHistoryDashboardPanel() {
+    if(state.model?.remote&&state.model.dailyUnit!=='cell')return `<section class="vq43-section vq43-main-history-dashboard"><h3>날짜별 검사 NG율 · Cell 기준</h3><p class="vq43-note">Cell ID 기준 날짜 집계를 사용하려면 Agent ${EXPECTED_AGENT_VERSION}로 업데이트하세요. 이전 Agent의 Position 기준 수치는 표시하지 않습니다.</p></section>`;
     const data = currentAnalysisDashboardData();
-    return `<section class="vq43-section vq43-main-history-dashboard"><div class="vq43-section-title"><span class="vq43-step blue">H</span><div><h3>날짜별 검사 NG율 · 현재 분석 결과</h3><p>현재 실행한 시뮬레이션 또는 현재 불러온 CSV 분석 결과만 집계합니다. 같은 날짜의 Cell ID + Position 중복은 한 번만 계산하고, 날짜가 다르면 별도 검사 건으로 계산합니다. 날짜를 누르면 메인 대시보드 전체가 해당 날짜로 집계됩니다. 전체보기로 모든 날짜 결과를 합산합니다.</p></div><button class="vq43-btn" data-vq-action="dashboard-all">전체보기</button><button class="vq43-btn vq43-btn-blue" data-vq-action="history-open">검사 이력 열기</button></div><div class="vq43-main-history-kpis"><span>검사 Cell·Position <b>${numberText(data.totalCount)}</b></span><span class="ng">NG Cell·Position <b>${numberText(data.ngCount)}</b></span><span>고유 Cell·Position <b>${numberText(data.uniqueCellCount)}</b></span><span class="ng">NG율 <b>${rateText(data.totalCount ? data.ngCount / data.totalCount : 0)}</b></span></div>${state.dashboardDate ? '<p class="vq43-note">선택 날짜: '+escapeHtml(state.dashboardDate)+'</p>' : ''}${data.unknown ? '<p class="vq43-note">날짜 미인식 '+numberText(data.unknown)+'행: 전체 집계에는 포함되며 날짜 그래프에서는 제외됩니다. 파일명 규칙을 확인하세요.</p>' : ''}${chartPositionControls('main')}${historyDateBars(data.daily)}</section>`;
+    return `<section class="vq43-section vq43-main-history-dashboard"><div class="vq43-section-title"><span class="vq43-step blue">H</span><div><h3>날짜별 검사 NG율 · 현재 분석 결과</h3><p>현재 실행한 시뮬레이션 또는 현재 불러온 CSV 분석 결과만 집계합니다. 같은 날짜의 Cell ID는 Position 수와 관계없이 한 번만 계산합니다. 선택한 Position 중 하나라도 Threshold 적용 후 NG이면 해당 Cell을 NG로 계산하며, 날짜가 다르면 별도 검사 건입니다. 날짜를 누르면 메인 대시보드 전체가 해당 날짜로 집계됩니다. 전체보기로 모든 날짜 결과를 합산합니다.</p></div><button class="vq43-btn" data-vq-action="dashboard-all">전체보기</button><button class="vq43-btn vq43-btn-blue" data-vq-action="history-open">검사 이력 열기</button></div><div class="vq43-main-history-kpis"><span>검사 Cell <b>${numberText(data.totalCount)}</b></span><span class="ng">NG Cell <b>${numberText(data.ngCount)}</b></span><span>고유 Cell <b>${numberText(data.uniqueCellCount)}</b></span><span class="ng">NG율 <b>${rateText(data.totalCount ? data.ngCount / data.totalCount : 0)}</b></span></div>${state.dashboardDate ? '<p class="vq43-note">선택 날짜: '+escapeHtml(state.dashboardDate)+'</p>' : ''}${data.unknown ? '<p class="vq43-note">날짜 미인식 '+numberText(data.unknown)+'행: 전체 집계에는 포함되며 날짜 그래프에서는 제외됩니다. 파일명 규칙을 확인하세요.</p>' : ''}${chartPositionControls('main')}${historyDateBars(data.daily)}</section>`;
   }
 
 

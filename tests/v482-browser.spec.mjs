@@ -33,6 +33,25 @@ test('Tool exports exact dated NG Cells and respects threshold without duplicate
  await page.locator('[data-vq-action="dashboard-all"]').click();
  rows=await csv(page,selector);expect(rows).toHaveLength(21);
 });
+
+test('Daily NG counts Cells once across Positions and dates with any selected NG',async({page})=>{
+ await page.route('http://127.0.0.1:*/api/**',route=>route.abort());
+ await start(page);
+ const kpis=page.locator('.vq43-main-history-kpis');
+ await expect(kpis.locator('b').nth(0)).toHaveText('40');await expect(kpis.locator('b').nth(1)).toHaveText('34');
+ expect((await page.evaluate(()=>window.__VISIONQC_DEBUG__.dateSnapshot())).days.map(d=>[d.total,d.ng])).toEqual([[20,17],[20,17]]);
+ await page.locator('[data-vq-action="dashboard-day"][data-vq-history-day="2026-02-01"]').click();
+ const threshold=page.locator('.vq43-threshold-input[data-position="AN(TOP)"]');
+ await threshold.fill('0.80');await threshold.dispatchEvent('change');
+ await expect(kpis.locator('b').nth(0)).toHaveText('20');await expect(kpis.locator('b').nth(1)).toHaveText('17');
+ const report=await page.evaluate(()=>window.__VISIONQC_DEBUG__.buildReportHtml());
+ expect(report).toContain('>85.0%</text>');expect(report).not.toContain('>67.5%</text>');
+ await page.locator('[data-chart-position="CA(TOP)"]').uncheck();
+ await expect(kpis.locator('b').nth(0)).toHaveText('20');await expect(kpis.locator('b').nth(1)).toHaveText('10');
+ await expect(kpis.locator('b').nth(3)).toHaveText('50.00%');
+ await page.locator('[data-chart-position="AN(TOP)"]').uncheck();
+ await expect(kpis.locator('b').nth(0)).toHaveText('0');
+});
 test('Date graph Position selection and CSV include OK Cells and honor empty selection',async({page})=>{
  await start(page);
  await page.locator('[data-chart-position="CA(TOP)"]').uncheck();

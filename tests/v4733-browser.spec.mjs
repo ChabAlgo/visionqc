@@ -39,9 +39,9 @@ test('live aggregation matches a complete rebuild across batches and duplicate c
   expect(result.appendedRows).toBe(4);
   expect(result.incremental).toEqual(result.complete);
   expect(result.equal).toBe(true);
-  expect(result.dashboard).toMatchObject({ totalCount:3, ngCount:2, uniqueCellCount:3, unknown:0 });
+  expect(result.dashboard).toMatchObject({ totalCount:2, ngCount:2, uniqueCellCount:2, unknown:0 });
   expect(result.dashboard.daily).toEqual([
-    { date:'2026-09-13', total:2, ng:1, ngRate:.5 },
+    { date:'2026-09-13', total:1, ng:1, ngRate:1 },
     { date:'2026-09-14', total:1, ng:1, ngRate:1 }
   ]);
 });
