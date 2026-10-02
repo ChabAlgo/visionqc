@@ -6135,7 +6135,7 @@
     const keywordMode = mode === 'green' ? !!form.green.keywordMode : mode === 'integrated' ? !!form.integrated.keywordMode : false;
     return simulationPositionDefs().map(({key,label}) => {
       const p = form.positions[key], enabled = active.includes(key);
-      const head = `<div class="vq43-sim-position-ident"><label class="vq43-sim-position-enable"><input type="checkbox" data-sim-active-position="${key}" data-sim-mode="${mode}" ${enabled?'checked':''}><strong>${escapeHtml(label)}</strong></label>${positionAliasesInput(positionDefByKey(key))}<button class="vq43-sim-remove-position" data-vq-action="simulation-remove-position" data-sim-key="${key}" title="Position 전체 제거">×</button></div>`;
+      const head = `<div class="vq43-sim-position-ident"><label class="vq43-sim-position-enable"><input type="checkbox" data-sim-active-position="${key}" data-sim-mode="${mode}" ${enabled?'checked':''}><strong>${escapeHtml(label)}</strong></label><button class="vq43-sim-remove-position" data-vq-action="simulation-remove-position" data-sim-key="${key}" title="Position 전체 제거">×</button></div>`;
       if (mode === 'green') {
         return `<div class="vq43-sim-position-row-new">${head}${simPathField('position',key,'greenWorkspacePath','Workspace','Green Runtime Workspace','file','workspace')}${simPathField('position',key,'greenImageRoot','Image Folder','Green 이미지 폴더','folder','folder',keywordMode)}${workspaceSelectHtml(key,'green','greenStreamName',p.greenStreamName,'Green')}${keywordMode?`<label class="vq43-sim-compact-field"><span>Keyword</span><input data-sim-scope="position" data-sim-field="greenKeyword" data-sim-key="${key}" value="${escapeHtml(p.greenKeyword)}"></label>`:''}${workspaceInfoSummary(key,'green')}</div>`;
       }

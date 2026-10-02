@@ -11,8 +11,8 @@
     "agentInstaller": "downloads/VisionQC_Agent_Installer_v1.4.9.exe",
     "offlinePackage": "downloads/VisionQC_Offline_v4.8.9.zip",
     "sha256": {
-      "agentInstaller": "0966513122EEB5A922943A15F9530687481AAD4A90F859B7B5D22A21AB8AD11A",
-      "offlinePackage": "99C92E3D2889E63652D27BA54C1847B0509030790A8B48E9E120919EC277B6D7"
+      "agentInstaller": "206BA20E6A296C40ADE996B6CE581C31318AD2040B81D95BF88D104B323C61A3",
+      "offlinePackage": "BC8719ED5ED8F3220A5B11DFA2B1F3305C894ABCC7382083EEFB6A2DC2AA2259"
     }
   },
   "notes": "포지션 대표 이름 및 다중 별칭, 중복/충돌 안내, 기존 DB 원본 보존 통합 조회."
