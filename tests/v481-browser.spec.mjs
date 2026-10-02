@@ -276,3 +276,17 @@ test('ten thousand classification files keep arrow navigation responsive with Ag
  expect(elapsed[28]).toBeLessThan(500);
  expect((await page.evaluate(()=>window.__VISIONQC_DEBUG__.agentAnalysisSnapshot())).rows).toBe(0);
 });
+
+test('Agent alphabetic summaries render in configured order for cards, tools and date selectors',async({page})=>{
+ const originalPositions=model.positionSummaries, originalTools=model.positionToolSummaries;
+ const alphabetical=['AN(BOT)','AN(TOP)','CA(BOT)','CA(TOP)'];
+ model.positionSummaries=alphabetical.map(position=>({...originalPositions[0],position}));
+ model.positionToolSummaries=alphabetical.map(position=>({...originalTools[0],position}));
+ try {
+  await setup(page);
+  const expected=['CA(TOP)','AN(TOP)','CA(BOT)','AN(BOT)'];
+  await expect(page.locator('.vq43-position-card .vq43-card-head strong')).toHaveText(expected);
+  await expect(page.locator('.vq43-tool-position-card .vq43-card-head strong')).toHaveText(expected);
+  expect(await page.locator('[data-chart-scope="main"][data-chart-position]').evaluateAll(elements=>elements.map(e=>e.dataset.chartPosition))).toEqual(expected);
+ } finally {model.positionSummaries=originalPositions;model.positionToolSummaries=originalTools;}
+});

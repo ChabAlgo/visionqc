@@ -1,19 +1,19 @@
 {
-  "releaseTag": "visionqc-v4.8.7-agent-v1.4.7",
-  "webVersion": "4.8.7",
-  "agentVersion": "1.4.7",
-  "minimumAgentVersion": "1.4.7",
+  "releaseTag": "visionqc-v4.8.8-agent-v1.4.8",
+  "webVersion": "4.8.8",
+  "agentVersion": "1.4.8",
+  "minimumAgentVersion": "1.4.8",
   "compatibility": {
-    "web": "4.8.7",
-    "agent": "1.4.7"
+    "web": "4.8.8",
+    "agent": "1.4.8"
   },
   "artifacts": {
-    "agentInstaller": "downloads/VisionQC_Agent_Installer_v1.4.7.exe",
-    "offlinePackage": "downloads/VisionQC_Offline_v4.8.7.zip",
+    "agentInstaller": "downloads/VisionQC_Agent_Installer_v1.4.8.exe",
+    "offlinePackage": "downloads/VisionQC_Offline_v4.8.8.zip",
     "sha256": {
-      "agentInstaller": "AB61D622280A98E49D9C548A1959F69B5C275FE9FA7AFFDECBCD8C42B3D1E26F",
-      "offlinePackage": "167FEC5AE70EAC59F43CE3F7724D31AB37082F127013B5897B24AB5949E89B99"
+      "agentInstaller": "7EFFA815BDD0271F423CDFC857205BF782F59E3A544801E8E6BB5733739AD35B",
+      "offlinePackage": "21259712D1930721F06A1C1175B7F0DB63E8A30D6FB1F1DB96DE0B00EFC0E242"
     }
   },
-  "notes": "리포트 날짜별 NG율을 전체 날짜, 한 그래프 최대 20일씩 표시. 나머지 리포트 양식과 테마 유지."
+  "notes": "이미지 제외 상위 폴더 이동, 포지션 구성 순서 표시, 전체 NG 루트 다중 추가."
 }

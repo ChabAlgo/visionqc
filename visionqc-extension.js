@@ -1,7 +1,7 @@
 (() => {
   'use strict';
 
-  const VERSION = '4.8.7';
+  const VERSION = '4.8.8';
   const DEFAULT_POSITION_DEFS = [
     { key:'CA_TOP', name:'CA(TOP)' },
     { key:'AN_TOP', name:'AN(TOP)' },
@@ -27,9 +27,9 @@
   const NG_POSITION_PREFIX = 'ng-position:';
   const IMG_RE = /\.(png|jpe?g|bmp|gif|webp|tif?f)$/i;
   const LOCAL_AGENT_URL = 'http://127.0.0.1:17891';
-  const EXPECTED_AGENT_VERSION = '1.4.7';
-  const AGENT_INSTALLER_URL = './downloads/VisionQC_Agent_Installer_v1.4.7.exe';
-  const OFFLINE_PACKAGE_URL = './downloads/VisionQC_Offline_v4.8.7.zip';
+  const EXPECTED_AGENT_VERSION = '1.4.8';
+  const AGENT_INSTALLER_URL = './downloads/VisionQC_Agent_Installer_v1.4.8.exe';
+  const OFFLINE_PACKAGE_URL = './downloads/VisionQC_Offline_v4.8.8.zip';
   // SQLite에는 사용자가 명시적으로 남기려는 두 종류의 결과만 표시한다.
   // 이전 버전의 단발 검사(single-inspection) 이력은 보존하되 화면 집계에서는 제외한다.
   const PERSISTED_HISTORY_SOURCE_TYPES = ['simulation', 'csv-import', 'csv-file-stream'];
@@ -228,6 +228,10 @@
   const normalizePositionToken = (value) => String(value ?? '').toUpperCase().replace(/[^A-Z0-9]/g, '');
   const positionDefs = () => state.positions?.length ? state.positions : DEFAULT_POSITION_DEFS;
   const positionNames = () => positionDefs().map(x => x.name);
+  function configuredPositionOrder(items, nameOf = item => item.position) {
+    const ranks = new Map(positionNames().map((name, index) => [name.toUpperCase(), index]));
+    return [...items].sort((a, b) => (ranks.get(String(nameOf(a)).toUpperCase()) ?? ranks.size) - (ranks.get(String(nameOf(b)).toUpperCase()) ?? ranks.size));
+  }
   const positionDefByKey = (key) => positionDefs().find(x => x.key === key) || null;
   const positionDefByName = (name) => positionDefs().find(x => x.name === name) || null;
   const normalizePosition = (value) => {
@@ -794,6 +798,7 @@
     else if (action === 'modal-overlay-image') selectModalOverlayImage(control.dataset.vqModalOverlay || '');
     else if (action === 'modal-move-delet') moveCurrentActualNgImage();
     else if (action === 'choose-ng-folder') chooseNgFolder();
+    else if (action === 'add-ng-folder') chooseNgFolder(true);
     else if (action === 'clear-inputs') clearAnalysisInputs();
     else if (action === 'miss-tab') {
       state.selectedMissPosition = control.closest('[data-vq-position]')?.dataset.vqPosition || state.selectedMissPosition;
@@ -1381,24 +1386,25 @@
         }
       }
 
-      const ngSaved = handles.find((item) => item.key === NG_ROOT_KEY);
-      if (ngSaved?.handle) {
-        if (await hasPermission(ngSaved.handle)) {
-          try {
-            const scanned = await scanNgDirectory(ngSaved.handle, false);
-            state.ngRootName = scanned.rootName;
-            state.ngImages = scanned.images;
-            state.ngWarnings = scanned.warnings;
-            positionNames().forEach(position => {
-              if (scanned.images.some(image => image.position === position)) state.ngFolderNames[position] = `${scanned.rootName} / ${position}`;
-            });
-          } catch (error) { state.restoreWarnings.push(error.message || '실제 NG 폴더 복원 실패'); }
-        } else {
-          state.ngRootName = ngSaved.name || '';
-          state.restoreWarnings.push('저장된 실제 NG 폴더 권한이 해제되어 다시 선택해야 합니다.');
+      for (const ngSaved of handles.filter(item => (item.key === NG_ROOT_KEY || item.key.startsWith(`${NG_ROOT_KEY}:`)) && !item.key.endsWith(':exclusion-parent'))) {
+        if (ngSaved?.handle) {
+          if (await hasPermission(ngSaved.handle)) {
+            try {
+              const scanned = await scanNgDirectory(ngSaved.handle, false, ngSaved.key);
+              state.ngRootName = [state.ngRootName, scanned.rootName].filter(Boolean).join(' / ');
+              state.ngImages = state.ngImages.concat(scanned.images);
+              state.ngWarnings.push(...scanned.warnings);
+              positionNames().forEach(position => {
+                if (scanned.images.some(image => image.position === position)) state.ngFolderNames[position] = [state.ngFolderNames[position], `${scanned.rootName} / ${position}`].filter(Boolean).join(' / ');
+              });
+            } catch (error) { state.restoreWarnings.push(error.message || '실제 NG 폴더 복원 실패'); }
+          } else {
+            state.ngRootName = ngSaved.name || '';
+            state.restoreWarnings.push('저장된 실제 NG 폴더 권한이 해제되어 다시 선택해야 합니다.');
+          }
         }
-      }
 
+      }
       for (const position of positionNames()) {
         const saved = handles.find((item) => item.key === `${NG_POSITION_PREFIX}${position}`);
         if (!saved?.handle) continue;
@@ -1914,7 +1920,7 @@
     }
   }
 
-  async function chooseNgFolder() {
+  async function chooseNgFolder(append = false) {
     if (state.loading) return;
     try {
       state.loading = 'ng'; renderSettings();
@@ -1922,20 +1928,33 @@
         let handle;
         try { handle = await window.showDirectoryPicker({ mode: 'read' }); }
         catch (error) { if (error.name === 'AbortError') return; throw error; }
-        const scanned = await scanNgDirectory(handle, true);
-        state.ngRootName = scanned.rootName; state.ngImages = scanned.images; state.ngWarnings = scanned.warnings;
-        state.ngFolderNames = {};
+        const saved = await loadHandles();
+        const roots = saved.filter(entry => (entry.key === NG_ROOT_KEY || entry.key.startsWith(`${NG_ROOT_KEY}:`)) && !entry.key.endsWith(':exclusion-parent'));
+        const existing = [];
+        for (const entry of roots) {
+          if (entry.handle?.isSameEntry && await entry.handle.isSameEntry(handle)) existing.push(entry.key);
+        }
+        const rootKey = existing[0] || `${NG_ROOT_KEY}:${crypto.randomUUID()}`;
+        const scanned = await scanNgDirectory(handle, true, rootKey);
+        await saveHandle(rootKey, handle);
+        state.ngImages = (append ? state.ngImages.filter(image => !existing.includes(image.rootHandleKey)) : []).concat(scanned.images);
+        state.ngRootName = append ? [state.ngRootName, scanned.rootName].filter(Boolean).join(' / ') : scanned.rootName;
+        state.ngWarnings = (append ? state.ngWarnings : []).concat(scanned.warnings);
+        if (!append) state.ngFolderNames = {};
         positionNames().forEach(position => {
-          if (scanned.images.some(image => image.position === position)) state.ngFolderNames[position] = `${scanned.rootName} / ${position}`;
+          if (scanned.images.some(image => image.position === position)) state.ngFolderNames[position] = [append ? state.ngFolderNames[position] : '', `${scanned.rootName} / ${position}`].filter(Boolean).join(' / ');
         });
-        await saveHandle(NG_ROOT_KEY, handle);
-        for (const position of positionNames()) {
-          try { for (const entry of await loadHandles()) if (entry.key===`${NG_POSITION_PREFIX}${position}` || entry.key.startsWith(`${NG_POSITION_PREFIX}${position}:`)) await deleteHandle(entry.key); } catch (_) { }
+        if (!append) {
+          for (const entry of saved) {
+            if ((entry.key === NG_ROOT_KEY || entry.key.startsWith(`${NG_ROOT_KEY}:`) || entry.key.startsWith(NG_POSITION_PREFIX)) && entry.key !== rootKey && entry.key !== `${rootKey}:exclusion-parent`) await deleteHandle(entry.key);
+          }
         }
       } else {
         const files = await pickFile('image/*', true);
         const scanned = scanNgFiles(files);
-        state.ngRootName = scanned.rootName; state.ngImages = scanned.images; state.ngWarnings = [...scanned.warnings, '새로고침 후 NG 폴더를 다시 선택해야 할 수 있습니다.'];
+        const batchKey = crypto.randomUUID();
+        scanned.images.forEach(image=>{image.key=`${batchKey}|${image.key}`;});
+        state.ngRootName = scanned.rootName; state.ngImages = (append ? state.ngImages : []).concat(scanned.images); state.ngWarnings = [...(append ? state.ngWarnings : []), ...scanned.warnings, '새로고침 후 NG 폴더를 다시 선택해야 할 수 있습니다.'];
         state.ngFolderNames = {};
         positionNames().forEach(position => {
           if (scanned.images.some(image => image.position === position)) state.ngFolderNames[position] = `${scanned.rootName} / ${position}`;
@@ -1948,7 +1967,7 @@
     } finally { state.loading = ''; renderSettings(); }
   }
 
-  async function scanNgDirectory(rootHandle, requestPermission = true) {
+  async function scanNgDirectory(rootHandle, requestPermission = true, rootKey = NG_ROOT_KEY) {
     if (rootHandle.queryPermission) {
       let permission = await rootHandle.queryPermission({ mode: 'read' });
       if (permission !== 'granted' && requestPermission && rootHandle.requestPermission) permission = await rootHandle.requestPermission({ mode: 'read' });
@@ -1984,7 +2003,7 @@
     if (unknownPosition) warnings.push(`Position 폴더 밖 이미지 ${numberText(unknownPosition)}개 제외`);
     if (limitToLoadedResults) warnings.push(`불러온 결과 CSV에 있는 Cell ID만 빠르게 색인했습니다 (${numberText(images.length)}개).`);
     if (!images.length) warnings.push('분석 가능한 실제 NG 이미지가 없습니다.');
-    images.forEach((image) => { image.actualNg = true; image.rootHandleKey = NG_ROOT_KEY; });
+    images.forEach((image) => { image.actualNg = true; image.rootHandleKey = rootKey; image.key = `${rootKey}|${image.key}`; });
     return { rootName: rootHandle.name || 'NG Images', images, warnings };
   }
 
@@ -2085,7 +2104,7 @@
         catch (error) { if (error.name === 'AbortError') return; throw error; }
         const saved = await loadHandles();
         const existing = [];
-        for (const entry of saved.filter(entry=>(entry.key===`${NG_POSITION_PREFIX}${position}` || entry.key.startsWith(`${NG_POSITION_PREFIX}${position}:`)))) {
+        for (const entry of saved.filter(entry=>!entry.key.endsWith(':exclusion-parent') && (entry.key===`${NG_POSITION_PREFIX}${position}` || entry.key.startsWith(`${NG_POSITION_PREFIX}${position}:`)))) {
           if (entry.handle?.isSameEntry && await entry.handle.isSameEntry(handle)) existing.push(entry.key);
         }
         const rootKey = existing[0] || `${NG_POSITION_PREFIX}${position}:${crypto.randomUUID()}`;
@@ -2715,8 +2734,8 @@
           ${kpi('Cell NG율', rateText(model.ngCellRate), rateBar(model.ngCellRate, true), 'blue', true)}
           ${kpi('미검 Cell·Position', numberText(analysisMissCount(model)), '실제 NG + 시뮬레이션 OK', 'amber')}
         </div></section>
-        <section class="vq43-section"><div class="vq43-section-title"><span class="vq43-step">2</span><div><h3>Position별 NG</h3><p>Threshold 적용 결과이며 입력하지 않은 Position은 미입력으로 구분</p></div></div><div class="vq43-position-grid">${model.positionSummaries.map(positionCard).join('')}</div></section>
-        <section class="vq43-section"><div class="vq43-section-title vq43-threshold-section-title"><span class="vq43-step">3</span><div><h3>Position별 Tool NG 구성</h3><p>원래 NG 결과 중 Score가 Threshold 이상인 Tool만 NG로 유지하여 재계산</p></div><button class="vq43-btn vq43-btn-amber" data-vq-action="reset-thresholds">Threshold 0.50 초기화</button></div>${positionToolCharts(model.positionToolSummaries)}<div class="vq43-note" style="margin-top:12px">Threshold는 CSV에서 원래 NG로 판정된 결과만 필터링합니다. 원래 OK 결과를 NG로 전환하지 않습니다. 동일 Cell에서 여러 Tool이 동시에 NG일 수 있어 Tool 비율 합계는 100%를 초과할 수 있습니다.</div></section>
+        <section class="vq43-section"><div class="vq43-section-title"><span class="vq43-step">2</span><div><h3>Position별 NG</h3><p>Threshold 적용 결과이며 입력하지 않은 Position은 미입력으로 구분</p></div></div><div class="vq43-position-grid">${configuredPositionOrder(model.positionSummaries).map(positionCard).join('')}</div></section>
+        <section class="vq43-section"><div class="vq43-section-title vq43-threshold-section-title"><span class="vq43-step">3</span><div><h3>Position별 Tool NG 구성</h3><p>원래 NG 결과 중 Score가 Threshold 이상인 Tool만 NG로 유지하여 재계산</p></div><button class="vq43-btn vq43-btn-amber" data-vq-action="reset-thresholds">Threshold 0.50 초기화</button></div>${positionToolCharts(configuredPositionOrder(model.positionToolSummaries))}<div class="vq43-note" style="margin-top:12px">Threshold는 CSV에서 원래 NG로 판정된 결과만 필터링합니다. 원래 OK 결과를 NG로 전환하지 않습니다. 동일 Cell에서 여러 Tool이 동시에 NG일 수 있어 Tool 비율 합계는 100%를 초과할 수 있습니다.</div></section>
         ${matchDiagnostic(model)}
         <section class="vq43-section" style="padding-bottom:28px"><div class="vq43-section-title"><span class="vq43-step amber">!</span><div><h3>Position별 미검 Cell ID</h3><p>실제 NG 이미지가 존재하지만 Threshold 적용 시뮬레이션 결과가 OK인 Cell</p></div></div>
           <div class="vq43-miss-toolbar"><div class="vq43-tabs">${positions.map((position) => `<button class="vq43-tab ${state.selectedMissPosition === position ? 'active' : ''}" data-vq-action="miss-tab" data-vq-position="${position}">${position}<b>${(model.remote ? model.positionSummaries.find(p=>p.position===position)?.misses || 0 : model.misses.filter((item) => item.position === position).length)}</b></button>`).join('')}</div><button class="vq43-btn vq43-btn-green" data-vq-action="download-misses" ${misses.length ? '' : 'disabled'}>선택 Position 미검 CSV</button></div>
@@ -2830,7 +2849,7 @@
     const history=scope==='history';
     const positions=history?(state.historyData?.filterOptions?.positions||[]):(state.model?.positionSummaries||[]).filter(p=>p.input).map(p=>p.position);
     const selected=history?(state.historyFilters.positions??(state.historyFilters.position?[state.historyFilters.position]:null)):state.dashboardPositions;
-    return `<div class="vq482-chart-selection"><div aria-label="그래프 Position 선택">${positions.map(p=>`<label><input type="checkbox" data-chart-scope="${scope}" data-chart-position="${escapeHtml(p)}" ${(selected==null||selected.includes(p))?'checked':''}>${escapeHtml(p)}</label>`).join('')}</div><button class="vq43-btn vq43-btn-green" data-vq-action="download-chart-csv" data-chart-scope="${scope}" ${state.historyExporting&&history?'disabled':''}>${state.historyExporting&&history?'저장 중…':'CSV Download'}</button></div>`;
+    return `<div class="vq482-chart-selection"><div aria-label="그래프 Position 선택">${configuredPositionOrder(positions, p=>p).map(p=>`<label><input type="checkbox" data-chart-scope="${scope}" data-chart-position="${escapeHtml(p)}" ${(selected==null||selected.includes(p))?'checked':''}>${escapeHtml(p)}</label>`).join('')}</div><button class="vq43-btn vq43-btn-green" data-vq-action="download-chart-csv" data-chart-scope="${scope}" ${state.historyExporting&&history?'disabled':''}>${state.historyExporting&&history?'저장 중…':'CSV Download'}</button></div>`;
   }
 
   function mainHistoryDashboardPanel() {
@@ -6567,7 +6586,7 @@
         ${namingProfileCardHtml()}
         <section class="vq43-settings-card"><div class="vq43-settings-title"><span class="vq43-settings-icon cyan">${railIconSvg('settings')}</span><div><h3>1. Position 구성</h3><p>이름 변경/추가/삭제 시 모든 분석·시뮬레이션 화면에 동일하게 반영됩니다.</p></div></div><div class="vq43-position-config-list">${positionRows}</div><div class="vq43-position-add-row"><input id="vq43-new-position-name" placeholder="예: CA(MID), AN(SIDE), CUSTOM-01"><button class="vq43-btn vq43-btn-blue" data-vq-action="position-add">+ Position 추가</button></div></section>
         <section class="vq43-settings-card"><div class="vq43-settings-title"><span class="vq43-settings-icon">▦</span><div><h3>1. Position별 시뮬레이션 결과 파일</h3><p>CSV 또는 XLSX · Cell ID, Total_result, Tool_result, Tool_score 열 자동 인식</p></div></div><div class="vq43-input-list">${positions.map(resultInputRow).join('')}</div></section>
-        <section class="vq43-settings-card"><div class="vq43-settings-title"><span class="vq43-settings-icon amber">▣</span><div><h3>2. 실제 최종 NG 이미지 경로</h3><p>각 Position별 폴더를 독립적으로 선택/교체할 수 있습니다. 전체 루트를 한 번에 읽는 기존 방식도 유지합니다.</p></div><button class="vq43-btn vq43-btn-amber" data-vq-action="choose-ng-folder" ${state.loading?'disabled':''}>${state.loading==='ng'?'◌ 전체 루트 읽는 중...':'▣ 전체 NG 루트 선택'}</button></div><div class="vq43-ng-position-list">${ngRows}</div></section>
+        <section class="vq43-settings-card"><div class="vq43-settings-title"><span class="vq43-settings-icon amber">▣</span><div><h3>2. 실제 최종 NG 이미지 경로</h3><p>각 Position별 폴더를 독립적으로 선택/교체할 수 있습니다. 전체 루트를 한 번에 읽는 기존 방식도 유지합니다.</p></div><button class="vq43-btn vq43-btn-amber" data-vq-action="choose-ng-folder" title="기존 실제 NG 입력을 선택한 전체 루트로 교체합니다." ${state.loading?'disabled':''}>${state.loading==='ng'?'◌ 전체 루트 읽는 중...':'▣ 전체 NG 루트 선택'}</button><button class="vq43-btn vq43-btn-amber" data-vq-action="add-ng-folder" title="기존 입력을 유지하고 전체 NG 루트를 추가합니다. 이름이 같아도 다른 경로의 폴더는 각각 추가됩니다. 같은 폴더를 다시 선택하면 다시 읽습니다." ${state.loading?'disabled':''}>＋ 전체 NG 루트 추가</button></div><div class="vq43-ng-position-list">${ngRows}</div></section>
         <section class="vq43-settings-card"><div class="vq43-settings-title"><span class="vq43-settings-icon green">✓</span><div><h3>분석 준비 상태</h3><p>현재 입력 데이터의 집계 결과</p></div></div><div class="vq43-ready-grid"><div><span>결과 Position</span><b>${positions.filter((position)=>state.resultInputs[position]).length} / ${positions.length}</b></div><div><span>고유 Cell</span><b>${numberText(model.uniqueCellCount)}</b></div><div><span>실제 NG 고유값</span><b>${numberText(model.actualUniqueCount || 0)}</b></div><div><span>CSV 매칭</span><b class="vq43-blue">${numberText(model.matchedActualCount || 0)}</b></div><div><span>미매칭</span><b class="vq43-red">${numberText(model.unmatchedActualCount || 0)}</b></div><div><span>미검</span><b class="vq43-amber">${numberText(analysisMissCount(model))}</b></div></div>${model.actualUniqueCount ? matchDiagnostic(model) : ''}</section>
         <section class="vq43-settings-card"><div class="vq43-settings-title"><span class="vq43-settings-icon green">▤</span><div><h3>SQLite 분석 이력</h3><p>CSV 분석 결과를 명시적으로 영구 저장합니다. 원본 이미지 파일은 복사하지 않고 FullPath·Cell ID·결과·Tool Score·파일명 규칙만 보관합니다.</p></div><button class="vq43-btn vq43-btn-green" data-vq-action="save-csv-history" ${state.historyImporting || !(state.remoteAnalysis?analysisRecordCount(state.model):Object.values(state.resultInputs || {}).some(input=>input?.rows?.length))?'disabled':''}>${state.historyImporting?'SQLite 저장 중...':'현재 CSV 이력 저장'}</button></div></section>
         ${(warningList.length || (model.duplicateCount ?? model.duplicates.length)) ? `<section class="vq43-warning"><strong>⚠ 확인 필요</strong>${warningList.map((warning)=>`<div>• ${escapeHtml(warning)}</div>`).join('')}${(model.duplicateCount ?? model.duplicates.length)?`<div>• 중복 Cell ID + Position ${numberText((model.duplicateCount ?? model.duplicates.length))}건: 하나라도 NG이면 NG로 통합하고 Score 원본 행은 유지합니다.</div>`:''}</section>`:''}
@@ -7261,12 +7280,29 @@
     throw new Error('DELET 폴더에서 사용할 파일 이름을 만들지 못했습니다.');
   }
 
+  async function exclusionParentHandle(root, rootKey) {
+    if (root.name.toUpperCase() === 'DELET') throw new Error('DELET 폴더 자체는 실제 NG 검사 루트로 사용할 수 없습니다.');
+    const key = `${rootKey}:exclusion-parent`;
+    let parent = await loadHandleByKey(key);
+    let relative = parent ? await parent.resolve(root) : null;
+    if (!relative || relative.length !== 1) {
+      if (!window.showDirectoryPicker) throw new Error('상위 폴더 선택을 지원하는 브라우저가 필요합니다.');
+      window.alert(`다음 창에서 "${root.name}" 폴더의 바로 위 상위 폴더를 선택해 주세요. 제외 이미지는 이 위치의 DELET 폴더로 이동합니다.`);
+      parent = await window.showDirectoryPicker({mode:'readwrite', id:'visionqc-exclusion-parent'});
+      relative = await parent.resolve(root);
+      if (!relative || relative.length !== 1) throw new Error('실제 NG 폴더의 바로 위 상위 폴더를 선택해야 합니다. 원본은 이동하지 않았습니다.');
+    }
+    if (!(await ensureWritableHandle(parent))) throw new Error('상위 폴더 쓰기 권한이 필요합니다.');
+    await saveHandle(key, parent);
+    return parent;
+  }
+
   async function moveCurrentActualNgImage() {
     if (state.modalMovePending) return;
     const selectedImage = currentModalImage();
     const image = state.ngImages.find(item=>item.key===selectedImage?.key) || selectedImage;
     if (!image?.actualNg || !image.fileHandle || !image.rootHandleKey) return;
-    if (!window.confirm('이 이미지를 실제 NG 목록에서 제외하시겠습니까?\n원본은 삭제하지 않고 선택한 실제 NG 폴더의 DELET 폴더로 이동합니다.')) return;
+    if (!window.confirm('이 이미지를 실제 NG 목록에서 제외하시겠습니까?\n선택한 실제 NG 폴더의 상위 폴더에 있는 DELET 폴더로 이동합니다.')) return;
     const priorItem = state.modalItem;
     const priorIndex = state.modalSequenceIndex;
     const priorImageIndex = state.modalIndex;
@@ -7276,13 +7312,17 @@
     try {
       const root = await loadHandleByKey(image.rootHandleKey);
       if (!root) throw new Error('저장된 실제 NG 폴더를 찾지 못했습니다. 폴더를 다시 선택해 주세요.');
+      // CSV paths may be absolute: resolve the actual handle under its selected root.
+      const resolved = await root.resolve(image.fileHandle);
+      if (!resolved || !resolved.length) throw new Error('원본 이미지가 선택한 실제 NG 폴더 안에 없습니다. 폴더를 다시 선택해 주세요.');
+      const relativeParts = resolved.slice();
+      const sourceName = relativeParts.pop();
+      const parent = await exclusionParentHandle(root, image.rootHandleKey);
       if (!(await ensureWritableHandle(root))) throw new Error('실제 NG 폴더 쓰기 권한이 필요합니다.');
-      const relativeParts = String(image.relativePath || '').split(/[\\/]+/).filter(Boolean);
-      if (relativeParts[0]?.toLowerCase() === String(root.name || '').toLowerCase()) relativeParts.shift();
-      const sourceName = relativeParts.pop() || image.fileHandle.name;
       let sourceParent = root;
       for (const part of relativeParts) sourceParent = await sourceParent.getDirectoryHandle(part, { create:false });
-      let targetParent = await root.getDirectoryHandle('DELET', { create:true });
+      let targetParent = await parent.getDirectoryHandle('DELET', { create:true });
+      targetParent = await targetParent.getDirectoryHandle(root.name, { create:true });
       for (const part of relativeParts) targetParent = await targetParent.getDirectoryHandle(part, { create:true });
       const targetName = await uniqueFileName(targetParent, sourceName);
       const sourceFile = await image.fileHandle.getFile();
@@ -7317,7 +7357,7 @@
         else if (!changeModalSequenceItem(1)) closeModal();
       }
       try { await saveAnalysisSnapshot(); } catch(error) { showToast('제외는 완료했지만 복원 정보 저장에 실패했습니다: '+error.message,true); }
-      showToast('이미지를 실제 NG 폴더의 DELET 폴더로 이동했습니다.');
+      showToast('이미지를 상위 폴더의 DELET/' + root.name + ' 폴더로 이동했습니다.');
     } catch (error) {
       console.error(error);
       showToast('이미지를 이동하지 못했습니다: ' + (error.message || error), true);
@@ -7483,6 +7523,8 @@
       saveAnalysisSnapshot,
       importNgCellCsv,
       chooseNgPositionFolder,
+      chooseNgFolder,
+      configuredPositionOrder,
       analysisInputSnapshot() { return { images:state.ngImages.map(image=>({key:image.key,cellId:image.cellId,rootHandleKey:image.rootHandleKey})), summaries:state.model.positionSummaries, misses:state.model.misses.map(item=>item.key) }; },
       openFirstMiss() { state.selectedMissPosition=state.model.misses[0]?.position;setPage('main');openMissModal(state.model.misses[0]?.key); },
       seedRows(rows) {
