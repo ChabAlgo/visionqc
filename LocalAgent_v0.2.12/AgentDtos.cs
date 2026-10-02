@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
 using VisionQC.LocalAgent.Domain;
 
@@ -107,6 +107,7 @@ namespace VisionQC.LocalAgent
     // SQLite 이력은 항상 Agent에서 페이지 단위로 조회합니다. 대량 이력을 브라우저 배열로 전송하지 않습니다.
     public sealed class AgentHistorySearchRequest
     {
+        public List<PositionAliasDefinition> positionDefinitions { get; set; }
         public List<string> positions { get; set; }
         public string fromDate { get; set; }
         public string toDate { get; set; }
@@ -201,6 +202,7 @@ namespace VisionQC.LocalAgent
 
     public sealed class AgentHistoryFileImportRequest
     {
+        public List<PositionAliasDefinition> positionDefinitions { get; set; }
         public string filePath { get; set; }
         public string sourceName { get; set; }
         public string mode { get; set; }
@@ -299,8 +301,16 @@ namespace VisionQC.LocalAgent
         public string sampleImagePath { get; set; }
     }
 
+    public sealed class PositionAliasDefinition
+    {
+        public string key {get;set;}
+        public string name {get;set;}
+        public List<string> aliases {get;set;}
+    }
+
     public sealed class AgentPositionRequest
     {
+        public List<string> aliases { get; set; }
         public string key { get; set; }
         public string displayName { get; set; }
         public bool enabled { get; set; }

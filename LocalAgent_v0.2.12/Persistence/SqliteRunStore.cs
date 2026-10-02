@@ -335,6 +335,7 @@ SELECT last_insert_rowid();";
             using (var connection = new SQLiteConnection("Data Source=" + _databasePath + ";Version=3;Foreign Keys=True;Read Only=False;"))
             {
                 connection.Open();
+                if(PositionAliases.Active(request.positionDefinitions))PositionAliases.CreateView(connection,"main","images",request.positionDefinitions);
                 PrepareCellIdFilter(connection, request);
                 PopulateFilterOptions(connection, response, request);
                 using (var command = connection.CreateCommand())
@@ -605,7 +606,7 @@ ORDER BY image_id ASC LIMIT @limit;";
             {
                 using(var connection=new SQLiteConnection("Data Source="+_databasePath+";Version=3;Read Only=False;"))
                 {
-                    connection.Open();PrepareCellIdFilter(connection,request);
+                    connection.Open();if(PositionAliases.Active(request.positionDefinitions))PositionAliases.CreateView(connection,"main","images",request.positionDefinitions);PrepareCellIdFilter(connection,request);
                     var tools=ReadDistinctStrings(connection,"SELECT DISTINCT tool_name FROM tool_results ORDER BY tool_name");
                     var headers=new List<string>{"Date","Time","Cell ID","Position","Total_result","FullPath","ProcessedPath","WorkspaceType","WorkspaceName","WorkspaceKey","Source_File","Source_Row"};
                     foreach(string tool in tools)headers.AddRange(new[]{tool+"_result",tool+"_score"});
@@ -808,6 +809,7 @@ CREATE INDEX IF NOT EXISTS idx_tool_results_run_tool ON tool_results(run_id, too
                     using (var command = connection.CreateCommand())
                     {
                         command.CommandText = @"CREATE INDEX IF NOT EXISTS idx_images_processed_path ON images(processed_path);
+CREATE INDEX IF NOT EXISTS idx_images_position_alias ON images(position_key);
 CREATE INDEX IF NOT EXISTS idx_images_workspace ON images(workspace_type, workspace_key, position_key);
 CREATE INDEX IF NOT EXISTS idx_images_history_dedupe ON images(cell_id, position_key, workspace_key, inspected_at_utc, image_id);
 CREATE INDEX IF NOT EXISTS idx_images_history_dedupe_date ON images(cell_id, position_key, workspace_key, capture_timestamp, inspected_at_utc, image_id);

@@ -15,11 +15,11 @@ const coreServer = read('CoreWorker/CoreAgentServer.cs');
 const coreProject = read('CoreWorker/VisionQC.CoreWorker.csproj');
 const workerBuild = read('BUILD_VPDL_WORKERS.ps1');
 
-test('Agent v1.4.8 version is consistent', () => {
-  assert.match(program, /AgentVersion = "1\.4\.8"/);
-  assert.match(read('CoreWorker/Program.cs'), /AgentVersion = "1\.4\.8"/);
-  assert.match(read('Properties/AssemblyInfo.cs'), /AssemblyVersion\("1\.4\.8\.0"\)/);
-  assert.match(read('BUILD_RELEASE_x64.cmd'), /v1\.4\.8/);
+test('Agent v1.4.9 version is consistent', () => {
+  assert.match(program, /AgentVersion = "1\.4\.9"/);
+  assert.match(read('CoreWorker/Program.cs'), /AgentVersion = "1\.4\.9"/);
+  assert.match(read('Properties/AssemblyInfo.cs'), /AssemblyVersion\("1\.4\.9\.0"\)/);
+  assert.match(read('BUILD_RELEASE_x64.cmd'), /v1\.4\.9/);
 });
 
 test('HTTP server delegates picker lifecycle to the isolated picker service', () => {
@@ -55,7 +55,7 @@ test('naming profile parsing is a reusable Agent service with a bounded preview 
   assert.match(parser, /DateTime\.TryParseExact\(value, "yyyyMMdd"/);
   assert.match(parser, /DateTime\.TryParseExact\(value, "HHmmss"/);
   assert.match(parser, /token\.All\(char\.IsLetterOrDigit\)/);
-  assert.match(read('Services/PositionResolver.cs'), /fileName\.IndexOf\(x\.displayName/);
+  assert.match(read('Services/PositionResolver.cs'), /PositionAliases\.FileMatches\(fileName,name\)/);
 });
 
 test('single Green inspection is exposed separately and requires reusable runtime', () => {

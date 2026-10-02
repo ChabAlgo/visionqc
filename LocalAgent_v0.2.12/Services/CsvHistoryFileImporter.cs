@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
 using System.Globalization;
 using System.IO;
@@ -38,6 +38,7 @@ namespace VisionQC.LocalAgent.Services
                 if (!File.Exists(path) || !string.Equals(Path.GetExtension(path), ".csv", StringComparison.OrdinalIgnoreCase))
                     throw new InvalidDataException("CSV 파일을 찾을 수 없습니다: " + path);
             if (request == null) request = new AgentHistoryFileImportRequest();
+            var positions = new PositionAliases(request.positionDefinitions);
             string sourceName = string.Join("; ", paths.Select(Path.GetFileName));
             SqliteRunStore.RunStoreSession session = null;
             bool completed = false;
@@ -89,7 +90,7 @@ namespace VisionQC.LocalAgent.Services
                             fullPath = columns.Value(values, columns.FullPath),
                             processedPath = columns.Value(values, columns.ProcessedPath),
                             cellId = columns.Value(values, columns.CellId),
-                            position = FirstNonEmpty(columns.Value(values, columns.Position), FirstNonEmpty(filePosition,request.defaultPosition)),
+                            position = positions.Canonical(FirstNonEmpty(columns.Value(values, columns.Position), FirstNonEmpty(filePosition,request.defaultPosition))),
                             workspaceType = columns.Value(values, columns.WorkspaceType),
                             workspaceName = columns.Value(values, columns.WorkspaceName),
                             workspaceKey = columns.Value(values, columns.WorkspaceKey),

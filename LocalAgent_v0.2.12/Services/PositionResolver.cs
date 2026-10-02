@@ -13,7 +13,7 @@ namespace VisionQC.LocalAgent.Services
             string fileName = Path.GetFileNameWithoutExtension(imagePath ?? "") ?? "";
             var matches = (positions ?? Enumerable.Empty<AgentPositionRequest>())
                 .Where(x => x != null && x.enabled && !string.IsNullOrWhiteSpace(x.displayName))
-                .Where(x => fileName.IndexOf(x.displayName, StringComparison.OrdinalIgnoreCase) >= 0)
+                .Where(x => new[]{x.displayName}.Concat(x.aliases??new List<string>()).Any(name=>PositionAliases.FileMatches(fileName,name)))
                 .OrderByDescending(x => x.displayName.Length)
                 .ToList();
             return new PositionResolution { matches = matches };

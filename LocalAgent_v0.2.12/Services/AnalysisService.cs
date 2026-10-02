@@ -30,6 +30,7 @@ namespace VisionQC.LocalAgent.Services
         internal sealed class Request
         {
             public string analysisId { get; set; }
+            public List<PositionAliasDefinition> positionDefinitions {get;set;}
             public string[] filePaths { get; set; }
             public Dictionary<string,string> filePositions {get;set;}
             public string[] excludedPositions {get;set;}
@@ -159,7 +160,7 @@ namespace VisionQC.LocalAgent.Services
             lock(_sync)
             {
                 var job=Resolve(request.analysisId);if(job.Running)return new {ok=false,busy=true,error="분석 갱신 중입니다."};
-                StartOperation(job,()=>job.Result=job.Projection.Dashboard(request.date,request.exclusionThreshold,job.Cancellation.Token));
+                StartOperation(job,()=>{job.Projection.ConfigurePositions(request.positionDefinitions,job.Cancellation.Token);job.Result=job.Projection.Dashboard(request.date,request.exclusionThreshold,job.Cancellation.Token);});
                 return StatusObject(job);
             }
         }

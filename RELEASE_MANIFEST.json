@@ -1,19 +1,19 @@
 {
-  "releaseTag": "visionqc-v4.8.8-agent-v1.4.8",
-  "webVersion": "4.8.8",
-  "agentVersion": "1.4.8",
-  "minimumAgentVersion": "1.4.8",
+  "releaseTag": "visionqc-v4.8.9-agent-v1.4.9",
+  "webVersion": "4.8.9",
+  "agentVersion": "1.4.9",
+  "minimumAgentVersion": "1.4.9",
   "compatibility": {
-    "web": "4.8.8",
-    "agent": "1.4.8"
+    "web": "4.8.9",
+    "agent": "1.4.9"
   },
   "artifacts": {
-    "agentInstaller": "downloads/VisionQC_Agent_Installer_v1.4.8.exe",
-    "offlinePackage": "downloads/VisionQC_Offline_v4.8.8.zip",
+    "agentInstaller": "downloads/VisionQC_Agent_Installer_v1.4.9.exe",
+    "offlinePackage": "downloads/VisionQC_Offline_v4.8.9.zip",
     "sha256": {
-      "agentInstaller": "7EFFA815BDD0271F423CDFC857205BF782F59E3A544801E8E6BB5733739AD35B",
-      "offlinePackage": "21259712D1930721F06A1C1175B7F0DB63E8A30D6FB1F1DB96DE0B00EFC0E242"
+      "agentInstaller": "0966513122EEB5A922943A15F9530687481AAD4A90F859B7B5D22A21AB8AD11A",
+      "offlinePackage": "99C92E3D2889E63652D27BA54C1847B0509030790A8B48E9E120919EC277B6D7"
     }
   },
-  "notes": "이미지 제외 상위 폴더 이동, 포지션 구성 순서 표시, 전체 NG 루트 다중 추가."
+  "notes": "포지션 대표 이름 및 다중 별칭, 중복/충돌 안내, 기존 DB 원본 보존 통합 조회."
 }

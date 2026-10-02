@@ -6,6 +6,7 @@ using System.Globalization;
 using System.IO;
 using System.Linq;
 using System.Threading;
+using System.Web.Script.Serialization;
 using VisionQC.LocalAgent.Services;
 
 namespace VisionQC.LocalAgent.Persistence
@@ -17,6 +18,8 @@ namespace VisionQC.LocalAgent.Persistence
         private readonly SQLiteConnection _connection;
         private readonly object _sync = new object();
         private readonly string _runId;
+        private string _positionDefinitionsJson="[]";
+        private bool _positionAliasesActive;
         internal Action<string,double> Timing;
         internal AnalysisProjection(string sourcePath, string cachePath, string runId)
         {
@@ -31,8 +34,13 @@ namespace VisionQC.LocalAgent.Persistence
             using (var command = _connection.CreateCommand())
             {
                 command.CommandText = "ATTACH DATABASE @path AS source;";
-                command.Parameters.AddWithValue("@path", sourcePath); command.ExecuteNonQuery();
+                command.Parameters.AddWithValue("@path", sourcePath); NormalizeCommand(command).ExecuteNonQuery();
             }
+            Execute("CREATE TABLE IF NOT EXISTS position_configuration(id INTEGER PRIMARY KEY,json TEXT NOT NULL);");
+            using(var saved=Command("SELECT json FROM position_configuration WHERE id=1")) _positionDefinitionsJson=Convert.ToString(saved.ExecuteScalar());
+            if(string.IsNullOrWhiteSpace(_positionDefinitionsJson))_positionDefinitionsJson="[]";
+            var savedDefinitions=new JavaScriptSerializer().Deserialize<List<PositionAliasDefinition>>(_positionDefinitionsJson);
+            _positionAliasesActive=PositionAliases.Active(savedDefinitions);
             Execute(@"PRAGMA journal_mode=WAL; PRAGMA synchronous=NORMAL; PRAGMA cache_size=-32768;
 PRAGMA source.cache_size=-16384; PRAGMA temp_store=FILE;
 CREATE TABLE IF NOT EXISTS meta(run_id TEXT PRIMARY KEY, cursor INTEGER NOT NULL);
@@ -56,12 +64,13 @@ CREATE TABLE IF NOT EXISTS unknown_stats(day TEXT,position TEXT,count INTEGER,PR
 CREATE TABLE IF NOT EXISTS workspace_refs(position TEXT,workspace_name TEXT,workspace_key TEXT,PRIMARY KEY(position,workspace_name,workspace_key)) WITHOUT ROWID;
 CREATE TABLE IF NOT EXISTS stats_ready(id INTEGER PRIMARY KEY);
 CREATE TEMP TABLE affected(day TEXT,cell TEXT,position TEXT,PRIMARY KEY(day,cell,position)) WITHOUT ROWID;");
+            if(_positionAliasesActive)PositionAliases.CreateView(_connection,"source","canonical_images",savedDefinitions);
             using (var command = Command("SELECT run_id FROM meta LIMIT 1"))
             {
                 var existing = command.ExecuteScalar();
                 if (existing != null && Convert.ToString(existing) != _runId) throw new InvalidDataException("Analysis cache belongs to another run");
             }
-            using (var command = Command("INSERT OR IGNORE INTO meta VALUES(@run,0)")) command.ExecuteNonQuery();
+            using (var command = Command("INSERT OR IGNORE INTO meta VALUES(@run,0)")) NormalizeCommand(command).ExecuteNonQuery();
             using (var command = Command("SELECT COUNT(*) FROM stats_ready WHERE id=2")) if (Convert.ToInt64(command.ExecuteScalar()) == 0)
             {
                 using (var tx = _connection.BeginTransaction(System.Data.IsolationLevel.ReadCommitted)) using (var initialize = Command(RebuildCountersSql()+@"
@@ -73,12 +82,36 @@ INSERT INTO stats_ready VALUES(2);"))
             catch { _connection.Dispose(); throw; }
         }
 
+        internal void ConfigurePositions(List<PositionAliasDefinition> definitions, CancellationToken cancellation)
+        {
+            if(definitions==null)return;
+            var resolver=new PositionAliases(definitions);
+            string json=new JavaScriptSerializer().Serialize(definitions);
+            if(json==_positionDefinitionsJson)return;
+            lock(_sync)
+            {
+                cancellation.ThrowIfCancellationRequested();
+                bool active=PositionAliases.Active(definitions), rebuild=active||_positionAliasesActive;
+                if(active)PositionAliases.CreateView(_connection,"source","canonical_images",definitions);
+                using(var tx=_connection.BeginTransaction(System.Data.IsolationLevel.ReadCommitted))
+                using(var command=Command("INSERT OR REPLACE INTO position_configuration VALUES(1,@json);"+(rebuild?"DELETE FROM cells;DELETE FROM tools;DELETE FROM position_stats;DELETE FROM cell_stats;DELETE FROM tool_stats;DELETE FROM unknown_stats;DELETE FROM workspace_refs;UPDATE meta SET cursor=0 WHERE run_id=@run;":"")))
+                {command.Transaction=tx;command.Parameters.AddWithValue("@json",json);NormalizeCommand(command).ExecuteNonQuery();tx.Commit();}
+                _positionDefinitionsJson=json;_positionAliasesActive=active;
+                if(rebuild)while(Advance(cancellation,10000)){}
+            }
+        }
+
+        private SQLiteCommand NormalizeCommand(SQLiteCommand command)
+        {
+            if(_positionAliasesActive)command.CommandText=command.CommandText.Replace("source.images","temp.canonical_images").Replace(" INDEXED BY idx_images_cell_capture","");
+            return command;
+        }
         private SQLiteCommand Command(string sql)
         {
-            var command = _connection.CreateCommand(); command.CommandText = sql;
+            var command = _connection.CreateCommand(); command.CommandText = _positionAliasesActive ? sql.Replace("source.images", "temp.canonical_images").Replace(" INDEXED BY idx_images_cell_capture", "") : sql;
             command.Parameters.AddWithValue("@run", _runId); return command;
         }
-        private void Execute(string sql) { using (var command = Command(sql)) command.ExecuteNonQuery(); }
+        private void Execute(string sql) { using (var command = Command(sql)) NormalizeCommand(command).ExecuteNonQuery(); }
         internal long Cursor { get { lock (_sync) using (var c = Command("SELECT cursor FROM meta WHERE run_id=@run")) return Convert.ToInt64(c.ExecuteScalar()); } }
 
         // LIMIT bounds each source snapshot even after a long disconnect. Cancellation rolls back its cursor.
@@ -107,12 +140,12 @@ WHERE run_id=@run AND image_id>@after ORDER BY image_id LIMIT @limit)"))
                     const string day = "substr(COALESCE(i.capture_timestamp,''),1,10)";
                     string rows = " FROM source.images i WHERE i.run_id=@run AND i.image_id>@after AND i.image_id<=@next";
                     command.CommandText = "DELETE FROM affected; INSERT INTO affected SELECT " + day + ",i.cell_id,i.position_key" + rows + " GROUP BY 1,2,3;";
-                    command.ExecuteNonQuery();
+                    NormalizeCommand(command).ExecuteNonQuery();
                     elapsed("affected");
-                    command.CommandText = CountersSql(-1,true); command.ExecuteNonQuery(); elapsed("subtract-counters");
+                    command.CommandText = CountersSql(-1,true); NormalizeCommand(command).ExecuteNonQuery(); elapsed("subtract-counters");
                     command.CommandText = "INSERT INTO cells(day,cell,position,rows,base_ng,base_ok) SELECT " + day + @",i.cell_id,i.position_key,COUNT(*),MAX(i.total_result='NG'),MAX(i.total_result='OK')" + rows + @" GROUP BY 1,2,3
 ON CONFLICT(day,cell,position) DO UPDATE SET rows=rows+excluded.rows,base_ng=MAX(base_ng,excluded.base_ng),base_ok=MAX(base_ok,excluded.base_ok);";
-                    command.ExecuteNonQuery();
+                    NormalizeCommand(command).ExecuteNonQuery();
                     elapsed("cell-facts");
                     command.CommandText = "INSERT INTO tools(day,cell,position,tool,base_ng,base_ok,min_score,min_ng,max_ng,min_ok) SELECT " + day + @",i.cell_id,i.position_key,t.tool_name,
 MAX(t.result='NG'),MAX(t.result='OK'),MIN(t.score),MIN(CASE WHEN t.result='NG' THEN t.score END),MAX(CASE WHEN t.result='NG' THEN t.score END),MIN(CASE WHEN t.result='OK' THEN t.score END)
@@ -124,13 +157,13 @@ min_score=CASE WHEN min_score IS NULL THEN excluded.min_score WHEN excluded.min_
 min_ng=CASE WHEN min_ng IS NULL THEN excluded.min_ng WHEN excluded.min_ng IS NULL THEN min_ng ELSE MIN(min_ng,excluded.min_ng) END,
 max_ng=CASE WHEN max_ng IS NULL THEN excluded.max_ng WHEN excluded.max_ng IS NULL THEN max_ng ELSE MAX(max_ng,excluded.max_ng) END,
 min_ok=CASE WHEN min_ok IS NULL THEN excluded.min_ok WHEN excluded.min_ok IS NULL THEN min_ok ELSE MIN(min_ok,excluded.min_ok) END;";
-                    command.ExecuteNonQuery();
+                    NormalizeCommand(command).ExecuteNonQuery();
                     elapsed("tool-facts");
-                    command.CommandText = RecalculateSql(true); command.ExecuteNonQuery(); elapsed("thresholds");
-                    command.CommandText = CountersSql(1,true); command.ExecuteNonQuery(); elapsed("add-counters");
-                    command.CommandText="INSERT OR IGNORE INTO workspace_refs SELECT i.position_key,COALESCE(i.workspace_name,''),COALESCE(i.workspace_key,'')"+rows+" GROUP BY 1,2,3;";command.ExecuteNonQuery();
+                    command.CommandText = RecalculateSql(true); NormalizeCommand(command).ExecuteNonQuery(); elapsed("thresholds");
+                    command.CommandText = CountersSql(1,true); NormalizeCommand(command).ExecuteNonQuery(); elapsed("add-counters");
+                    command.CommandText="INSERT OR IGNORE INTO workspace_refs SELECT i.position_key,COALESCE(i.workspace_name,''),COALESCE(i.workspace_key,'')"+rows+" GROUP BY 1,2,3;";NormalizeCommand(command).ExecuteNonQuery();
                     cancellation.ThrowIfCancellationRequested();
-                    command.CommandText = "UPDATE meta SET cursor=@next WHERE run_id=@run"; command.ExecuteNonQuery();
+                    command.CommandText = "UPDATE meta SET cursor=@next WHERE run_id=@run"; NormalizeCommand(command).ExecuteNonQuery();
                     tx.Commit(); elapsed("commit"); return true;
                     }
                 }
@@ -168,15 +201,15 @@ THEN EXISTS(SELECT 1 FROM tools t WHERE t.day=cells.day AND t.cell=cells.cell AN
             using(cancellation.Register(()=>command.Cancel()))
             {
                 cancellation.ThrowIfCancellationRequested();
-                command.Transaction = tx; command.ExecuteNonQuery();
+                command.Transaction = tx; NormalizeCommand(command).ExecuteNonQuery();
                 foreach (var value in values)
                 {
                     if (double.IsNaN(value.value) || double.IsInfinity(value.value) || value.value < 0 || value.value > 1) throw new InvalidDataException("Invalid threshold");
                     command.CommandText = "INSERT INTO thresholds VALUES(@position,@tool,@value)";
                     command.Parameters.Clear(); command.Parameters.AddWithValue("@position", value.position);
-                    command.Parameters.AddWithValue("@tool", value.tool); command.Parameters.AddWithValue("@value", value.value); command.ExecuteNonQuery();
+                    command.Parameters.AddWithValue("@tool", value.tool); command.Parameters.AddWithValue("@value", value.value); NormalizeCommand(command).ExecuteNonQuery();
                 }
-                cancellation.ThrowIfCancellationRequested(); command.CommandText = RecalculateSql(false)+RebuildCountersSql(); command.ExecuteNonQuery();
+                cancellation.ThrowIfCancellationRequested(); command.CommandText = RecalculateSql(false)+RebuildCountersSql(); NormalizeCommand(command).ExecuteNonQuery();
                 cancellation.ThrowIfCancellationRequested(); tx.Commit();
             }
         }
@@ -192,10 +225,10 @@ THEN EXISTS(SELECT 1 FROM tools t WHERE t.day=cells.day AND t.cell=cells.cell AN
             {
                 command.Transaction=tx;cancellation.ThrowIfCancellationRequested();
                 command.CommandText=@"CREATE TABLE IF NOT EXISTS actual_stage(day TEXT NOT NULL,cell TEXT NOT NULL,position TEXT NOT NULL,path TEXT NOT NULL,wildcard INTEGER NOT NULL,PRIMARY KEY(day,cell,position,path,wildcard)) WITHOUT ROWID;
-CREATE TABLE IF NOT EXISTS actual_stage_token(id INTEGER PRIMARY KEY,token TEXT NOT NULL);";command.ExecuteNonQuery();
+CREATE TABLE IF NOT EXISTS actual_stage_token(id INTEGER PRIMARY KEY,token TEXT NOT NULL);";NormalizeCommand(command).ExecuteNonQuery();
                 if(action=="begin")
                 {
-                    command.CommandText="DELETE FROM actual_stage;DELETE FROM actual_stage_token;INSERT INTO actual_stage_token VALUES(1,@token);";command.Parameters.AddWithValue("@token",batchId);command.ExecuteNonQuery();
+                    command.CommandText="DELETE FROM actual_stage;DELETE FROM actual_stage_token;INSERT INTO actual_stage_token VALUES(1,@token);";command.Parameters.AddWithValue("@token",batchId);NormalizeCommand(command).ExecuteNonQuery();
                 }
                 else
                 {
@@ -211,10 +244,10 @@ CREATE TABLE IF NOT EXISTS actual_stage_token(id INTEGER PRIMARY KEY,token TEXT 
                     {
                         cancellation.ThrowIfCancellationRequested();if(++count>1000)throw new InvalidDataException("Actual-NG batches must contain at most 1000 rows");
                         if(value==null||string.IsNullOrWhiteSpace(value.cell)||string.IsNullOrWhiteSpace(value.position))throw new InvalidDataException("Actual NG Cell/Position is empty");
-                        command.Parameters["@day"].Value=value.day??"";command.Parameters["@cell"].Value=value.cell;command.Parameters["@position"].Value=value.position;command.Parameters["@path"].Value=value.path??"";command.Parameters["@wildcard"].Value=value.wildcard?1:0;command.ExecuteNonQuery();
+                        command.Parameters["@day"].Value=value.day??"";command.Parameters["@cell"].Value=value.cell;command.Parameters["@position"].Value=value.position;command.Parameters["@path"].Value=value.path??"";command.Parameters["@wildcard"].Value=value.wildcard?1:0;NormalizeCommand(command).ExecuteNonQuery();
                     }
                 }
-                if(action=="commit") {command.CommandText="DELETE FROM actual_ng;INSERT INTO actual_ng SELECT * FROM actual_stage;DELETE FROM actual_stage;DELETE FROM actual_stage_token;";command.ExecuteNonQuery();}
+                if(action=="commit") {command.CommandText="DELETE FROM actual_ng;INSERT INTO actual_ng SELECT * FROM actual_stage;DELETE FROM actual_stage;DELETE FROM actual_stage_token;";NormalizeCommand(command).ExecuteNonQuery();}
                 cancellation.ThrowIfCancellationRequested();tx.Commit();
             }
         }
@@ -223,7 +256,7 @@ CREATE TABLE IF NOT EXISTS actual_stage_token(id INTEGER PRIMARY KEY,token TEXT 
             lock(_sync) using(var tx=_connection.BeginTransaction(System.Data.IsolationLevel.ReadCommitted))
             using(var command=Command("DELETE FROM actual_ng"))
             {
-                command.Transaction=tx;command.ExecuteNonQuery();
+                command.Transaction=tx;NormalizeCommand(command).ExecuteNonQuery();
                 command.CommandText="INSERT OR IGNORE INTO actual_ng VALUES(@day,@cell,@position,@path,@wildcard)";
                 command.Parameters.Clear();
                 foreach(string key in new[]{"@day","@cell","@position","@path","@wildcard"}) command.Parameters.AddWithValue(key,"");
@@ -234,7 +267,7 @@ CREATE TABLE IF NOT EXISTS actual_stage_token(id INTEGER PRIMARY KEY,token TEXT 
                     if(string.IsNullOrWhiteSpace(value.cell) || string.IsNullOrWhiteSpace(value.position)) throw new InvalidDataException("Actual NG Cell/Position is empty");
                     command.Parameters["@day"].Value=value.day ?? "";command.Parameters["@cell"].Value=value.cell;
                     command.Parameters["@position"].Value=value.position;command.Parameters["@path"].Value=value.path ?? "";
-                    command.Parameters["@wildcard"].Value=value.wildcard ? 1 : 0;command.ExecuteNonQuery();
+                    command.Parameters["@wildcard"].Value=value.wildcard ? 1 : 0;NormalizeCommand(command).ExecuteNonQuery();
                 }
                 cancellation.ThrowIfCancellationRequested();tx.Commit();
             }
@@ -345,7 +378,7 @@ WHERE @date='' OR a.day=@date GROUP BY a.position",cancellation,"@date",date??""
             if(positions.Length>1000)throw new InvalidDataException("Position selection exceeds 1000");
             Execute("CREATE TEMP TABLE IF NOT EXISTS selected_positions(position TEXT PRIMARY KEY); DELETE FROM selected_positions;");
             using(var command=Command("INSERT OR IGNORE INTO selected_positions VALUES(@position)"))
-            {var parameter=command.Parameters.Add("@position",System.Data.DbType.String);foreach(var position in positions){parameter.Value=position??"";command.ExecuteNonQuery();}}
+            {var parameter=command.Parameters.Add("@position",System.Data.DbType.String);foreach(var position in positions){parameter.Value=position??"";NormalizeCommand(command).ExecuteNonQuery();}}
             return column+" IN (SELECT position FROM selected_positions)";
         }
 

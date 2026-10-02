@@ -903,3 +903,8 @@ body.vq43-theme-light .vq43-history-arrow:hover:not(:disabled) { background:#dbe
 body.vq43-theme-light .vq48-output-partition input[type=number]{background:#fff;color:#172b45;border-color:#94a9c2;color-scheme:light}
 body.vq43-theme-light .vq482-tool-csv{background:#ecfdf5;color:#065f46;border-color:#6aaf99}
 :root .vq43-agent-import-progress{position:fixed;z-index:2147483000;bottom:24px;left:50%;transform:translateX(-50%);display:flex;align-items:center;gap:20px;padding:14px 20px;background:#10213a;color:#e2e8f0;border:1px solid #3284ef;border-radius:12px;box-shadow:0 8px 30px #0006;font-size:15px;max-width:90vw}
+
+.vq489-position-aliases{display:flex;flex-direction:column;gap:4px;min-width:0;font-size:11px;color:var(--vq43-muted,#8fa4c1)}
+.vq489-position-aliases input{width:100%;min-width:0;box-sizing:border-box;background:var(--vq43-panel,#0d1728);color:var(--vq43-text,#e8f0ff);border:1px solid #334155;border-radius:8px;padding:8px}
+.vq43-position-add-row{flex-wrap:wrap}
+.vq43-sim-position-ident .vq489-position-aliases{max-width:200px}

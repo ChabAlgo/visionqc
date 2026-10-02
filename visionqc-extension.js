@@ -1,7 +1,7 @@
 (() => {
   'use strict';
 
-  const VERSION = '4.8.8';
+  const VERSION = '4.8.9';
   const DEFAULT_POSITION_DEFS = [
     { key:'CA_TOP', name:'CA(TOP)' },
     { key:'AN_TOP', name:'AN(TOP)' },
@@ -27,9 +27,9 @@
   const NG_POSITION_PREFIX = 'ng-position:';
   const IMG_RE = /\.(png|jpe?g|bmp|gif|webp|tif?f)$/i;
   const LOCAL_AGENT_URL = 'http://127.0.0.1:17891';
-  const EXPECTED_AGENT_VERSION = '1.4.8';
-  const AGENT_INSTALLER_URL = './downloads/VisionQC_Agent_Installer_v1.4.8.exe';
-  const OFFLINE_PACKAGE_URL = './downloads/VisionQC_Offline_v4.8.8.zip';
+  const EXPECTED_AGENT_VERSION = '1.4.9';
+  const AGENT_INSTALLER_URL = './downloads/VisionQC_Agent_Installer_v1.4.9.exe';
+  const OFFLINE_PACKAGE_URL = './downloads/VisionQC_Offline_v4.8.9.zip';
   // SQLite에는 사용자가 명시적으로 남기려는 두 종류의 결과만 표시한다.
   // 이전 버전의 단발 검사(single-inspection) 이력은 보존하되 화면 집계에서는 제외한다.
   const PERSISTED_HISTORY_SOURCE_TYPES = ['simulation', 'csv-import', 'csv-file-stream'];
@@ -68,7 +68,7 @@
       let key = String(item?.key || '').trim().replace(/[^A-Za-z0-9_-]/g, '_');
       if (!key || seenKeys.has(key.toUpperCase())) key = `POS_${Date.now().toString(36).toUpperCase()}_${index}`;
       seenKeys.add(key.toUpperCase()); seenNames.add(nameKey);
-      out.push({ key, name });
+      out.push({ key, name, aliases:Array.isArray(item.aliases) ? item.aliases.map(String).map(x=>x.trim()).filter(Boolean) : [] });
     });
     return out.length ? out : DEFAULT_POSITION_DEFS.map(x => ({...x}));
   };
@@ -225,7 +225,7 @@
   const normalizeHeader = (value) => String(value ?? '').trim();
   const normalizeHeaderKey = (value) => normalizeHeader(value).replace(/\s+/g, '').toLowerCase();
   const normalizePath = (value) => String(value || '').replace(/\\/g, '/').replace(/^\/+|\/+$/g, '');
-  const normalizePositionToken = (value) => String(value ?? '').toUpperCase().replace(/[^A-Z0-9]/g, '');
+  const normalizePositionToken = (value) => String(value ?? '').toUpperCase().replace(/[^\p{L}\p{N}]/gu, '');
   const positionDefs = () => state.positions?.length ? state.positions : DEFAULT_POSITION_DEFS;
   const positionNames = () => positionDefs().map(x => x.name);
   function configuredPositionOrder(items, nameOf = item => item.position) {
@@ -234,15 +234,41 @@
   }
   const positionDefByKey = (key) => positionDefs().find(x => x.key === key) || null;
   const positionDefByName = (name) => positionDefs().find(x => x.name === name) || null;
+  let positionTokenIndex = null;
   const normalizePosition = (value) => {
     const text = String(value ?? '').trim();
     if (!text) return null;
-    const exact = positionNames().find(position => position.toUpperCase() === text.toUpperCase());
-    if (exact) return exact;
     const token = normalizePositionToken(text);
-    return positionNames().find(position => normalizePositionToken(position) === token) || null;
+    if (!token) return null;
+    if(!positionTokenIndex){positionTokenIndex=new Map();for(const def of positionDefs())for(const name of [def.name,...(def.aliases||[])]){const key=normalizePositionToken(name);const bucket=positionTokenIndex.get(key)||[];if(!bucket.some(item=>item.key===def.key))bucket.push(def);positionTokenIndex.set(key,bucket);}}
+    const matches = positionTokenIndex.get(token)||[];
+    if (matches.length>1) throw new Error(`포지션 매칭 충돌: ${text} → ${matches.map(x=>x.name).join(', ')}`);
+    return matches[0]?.name || null;
   };
-  const persistPositions = () => safeStorageSet(POSITION_CONFIG_KEY, JSON.stringify(positionDefs()));
+  const positionDefinitions = () => positionDefs().map(def=>({key:def.key,name:def.name,aliases:[...(def.aliases||[])]}));
+  const parsePositionAliases = value => [...new Set(String(value||'').split(/[,;\n]+/).map(x=>x.trim()).filter(Boolean))];
+  function validatePositionDefinition(name, aliases, exceptKey='') {
+    if (!name.trim()) throw new Error('Position 이름을 입력하세요.');
+    for (const value of [name,...aliases]) {
+      if (!normalizePositionToken(value) || /[\\/:*?"<>|\x00-\x1f]/.test(value) || /[. ]$/.test(value) || value.length>100 || /^(CON|PRN|AUX|NUL|COM[1-9]|LPT[1-9])(?:\.|$)/i.test(value)) throw new Error(`사용할 수 없는 포지션 이름/별칭: ${value}`);
+      for (const def of positionDefs().filter(d=>d.key!==exceptKey)) {
+        if ([def.name,...(def.aliases||[])].some(x=>normalizePositionToken(x)===normalizePositionToken(value))) throw new Error(`중복된 포지션 이름/별칭: ${value} — ${def.name}에서 사용 중입니다.`);
+      }
+    }
+  }
+  function updatePositionAliases(key,value) {
+    const def=positionDefByKey(key);if(!def)return;
+    if(state.simulationProgress?.running)return window.alert('시뮬레이션 종료 후 별칭을 변경하세요.');
+    const aliases=parsePositionAliases(value);
+    try {validatePositionDefinition(def.name,aliases,key);} catch(error){window.alert(error.message);renderCurrentPage();bindPageControls();return;}
+    def.aliases=aliases;persistPositions();state.historyLoaded=false;
+    rebuildModel();renderCurrentPage();bindPageControls();showToast(`${def.name} 별칭을 저장했습니다.`);
+  }
+  function positionAliasesInput(def) {
+    return `<label class="vq489-position-aliases">매칭 별칭<input data-position-alias-key="${escapeHtml(def.key)}" aria-label="${escapeHtml(def.name)} 매칭 별칭" value="${escapeHtml((def.aliases||[]).join(', '))}" placeholder="예: CA(TOP), CA_TOP" title="쉼표로 여러 별칭을 구분합니다. 폴더·CSV·단일 이미지 검사에서 같은 포지션으로 인식합니다. 다른 포지션과 중복 등록할 수 없습니다."></label>`;
+  }
+
+  const persistPositions = () => {positionTokenIndex=null;safeStorageSet(POSITION_CONFIG_KEY, JSON.stringify(positionDefs()));};
   const positionColorMap = () => {
     const palette = ['#2563eb','#ef3340','#0f9f9a','#ff8500','#8b5cf6','#06b6d4','#84cc16','#ec4899','#f59e0b','#14b8a6','#6366f1','#f43f5e'];
     return Object.fromEntries(positionNames().map((name,index) => [name, palette[index % palette.length]]));
@@ -1118,6 +1144,7 @@
       input.onchange = () => syncSimulationActiveCheckbox(input);
       input.onclick = (event) => event.stopPropagation();
     });
+    $$('input[data-position-alias-key]', shell).forEach(input=>{input.onchange=()=>updatePositionAliases(input.dataset.positionAliasKey,input.value);});
     $$('input[data-position-name-key]', shell).forEach((input) => {
       input.onkeydown = (event) => {
         event.stopPropagation();
@@ -1643,7 +1670,7 @@
   }
 
   async function fetchAgentDashboard(analysisId, date='') {
-    const status=await agentAnalysisOperation('dashboard',{analysisId,date,exclusionThreshold:state.actualNgOtherToolExclusionScore});
+    const status=await agentAnalysisOperation('dashboard',{analysisId,date,positionDefinitions:positionDefinitions(),exclusionThreshold:state.actualNgOtherToolExclusionScore});
     return emptyRemoteModel(status.result);
   }
 
@@ -1663,7 +1690,7 @@
       const filePaths=[...new Set(Object.values(inputs).flat())];
       const filePositions=Object.fromEntries(Object.entries(inputs).flatMap(([key,paths])=>paths.map(path=>[path,key])));
       const imported=await agentAnalysisOperation('import/start',{
-        filePaths,filePositions,excludedPositions,options:{defaultPosition:position,namingProfile:state.namingProfile,webVersion:VERSION,mode:'csv-analysis'}
+        filePaths,filePositions,excludedPositions,options:{defaultPosition:position,namingProfile:state.namingProfile,positionDefinitions:positionDefinitions(),webVersion:VERSION,mode:'csv-analysis'}
       }, status=>{
         const progress=$('#vq43-analysis-import-progress');
         if(progress){progress.querySelector('span').textContent=`읽기 ${numberText(status.imported)}행 · 집계 ${numberText(status.projectedCursor)}행`;
@@ -1748,6 +1775,8 @@
       while(state.remoteAnalysis===remote && applied!==remote.revision) {
         const revision=remote.revision;
         await waitAnalysisOperation(await analysisApi('status',{analysisId:remote.analysisId}));
+        const definitionsSignature=JSON.stringify(positionDefinitions());
+        if(remote.positionDefinitionsSignature!==definitionsSignature){await agentAnalysisOperation('dashboard',{analysisId:remote.analysisId,positionDefinitions:positionDefinitions()});remote.positionDefinitionsSignature=definitionsSignature;remote.actualInput=null;remote.syncActual=true;remote.syncThresholds=true;}
         if(remote.syncActual){remote.syncActual=false;
           if(remote.actualInput!==state.ngImages||remote.actualInputCount!==state.ngImages.length){await syncAgentActualNg(remote.analysisId);remote.actualInput=state.ngImages;remote.actualInputCount=state.ngImages.length;}}
         if(remote.syncThresholds){
@@ -1987,7 +2016,9 @@
           await walk(handle, next);
         }
         else if (handle.kind === 'file' && IMG_RE.test(name)) {
-          const position = next.map(normalizePosition).find(Boolean);
+          const matches=[...new Set(next.map(normalizePosition).filter(Boolean))];
+          if(matches.length>1)throw new Error(`포지션 매칭 충돌: ${next.join('/')} → ${matches.join(', ')}`);
+          const position = matches[0];
           if (!position) { unknownPosition += 1; continue; }
           const cellId = extractCellId(name) || extractCellId(next.join('/'));
           if (!cellId) { invalidCell += 1; continue; }
@@ -2162,7 +2193,9 @@
     let invalidCell = 0, unknownPosition = 0;
     files.forEach((file) => {
       const relativePath = normalizePath(file.webkitRelativePath || file.name);
-      const position = relativePath.split('/').map(normalizePosition).find(Boolean);
+      const matches = [...new Set(relativePath.split('/').map(normalizePosition).filter(Boolean))];
+      if (matches.length > 1) throw new Error(`포지션 충돌: ${relativePath} (${matches.join(', ')})`);
+      const position = matches[0];
       if (!position) { unknownPosition += 1; return; }
       const cellId = extractCellId(file.name) || extractCellId(relativePath);
       if (!cellId) { invalidCell += 1; return; }
@@ -3075,7 +3108,7 @@
       const picked=await requestSimulationPicker('/api/pick/folder',{initialPath:form.outputRoot||''});
       if(!picked?.ok||!picked.path)return;
       if(state.page==='history'){renderHistory();bindPageControls();}
-      let job=await agentFetch('/api/history/export/start',{method:'POST',body:{filters,outputDirectory:picked.path,maxRows:form.csvMaxRows,splitByDate:form.csvSplitByDate}});
+      let job=await agentFetch('/api/history/export/start',{method:'POST',body:{filters:{...filters,positionDefinitions:positionDefinitions()},outputDirectory:picked.path,maxRows:form.csvMaxRows,splitByDate:form.csvSplitByDate}});
       if(!job.ok)throw new Error(job.error||'CSV 저장 시작 실패');
       const jobId=job.jobId;
       do{
@@ -3709,7 +3742,7 @@
     if (state.page === 'history') renderHistory();
     try {
       const requestedFilters=JSON.parse(JSON.stringify({ ...state.historyFilters, sourceTypes:PERSISTED_HISTORY_SOURCE_TYPES }));
-      const data = await agentFetch('/api/history/search', { method:'POST', timeout:30000, body:requestedFilters });
+      const data = await agentFetch('/api/history/search', { method:'POST', timeout:30000, body:{...requestedFilters,positionDefinitions:positionDefinitions()} });
       if (!data.ok) throw new Error(data.error || 'SQLite 이력 조회 실패');
       state.historyData = data;
       state.historyAppliedFilters = requestedFilters;
@@ -3740,7 +3773,7 @@
     try {
       const picked = await requestSimulationPicker('/api/pick/file', { fileType:'csv', initialPath:state.historyFileImport?.filePath || '' });
       if (!picked?.ok || !picked.path) return;
-      const started = await agentFetch('/api/history/import-file/start', { method:'POST', timeout:10000, body:{ filePath:picked.path, mode:'csv-analysis', webVersion:VERSION, namingProfile:state.namingProfile } });
+      const started = await agentFetch('/api/history/import-file/start', { method:'POST', timeout:10000, body:{ filePath:picked.path, mode:'csv-analysis', webVersion:VERSION, namingProfile:state.namingProfile, positionDefinitions:positionDefinitions() } });
       if (!started.ok) throw new Error(started.error || '대용량 CSV 저장 시작 실패');
       state.historyFileImport = started;
       if (state.page === 'history') renderHistory();
@@ -4882,11 +4915,12 @@
     persistThresholds();
   }
 
-  function addPositionDefinition(name) {
+  function addPositionDefinition(name, aliases = []) {
     const clean = String(name || '').trim();
     if (!clean) { showToast('Position 이름을 입력하세요.', true); return null; }
-    if (positionNames().some(x => x.toUpperCase() === clean.toUpperCase())) { showToast('같은 Position 이름이 이미 있습니다.', true); return null; }
-    const def = { key:createPositionKey(clean), name:clean };
+    if (positionNames().some(x => x.toUpperCase() === clean.toUpperCase())) { window.alert('같은 Position 이름이 이미 있습니다.'); return null; }
+    try {validatePositionDefinition(clean,aliases);} catch(error){window.alert(error.message);return null;}
+    const def = { key:createPositionKey(clean), name:clean, aliases };
     state.positions.push(def);
     persistPositions();
     const form = ensureSimulationForm();
@@ -4907,9 +4941,11 @@
 
   function addCustomPosition() {
     const input = $('#vq43-new-position-name') || $('#vq43-sim-new-position-name');
-    const def = addPositionDefinition(input?.value || '');
+    const aliasInput=$('#vq43-new-position-aliases') || $('#vq43-sim-new-position-aliases');
+    const def = addPositionDefinition(input?.value || '',parsePositionAliases(aliasInput?.value));
     if (!def) return;
     if (input) input.value = '';
+    if(aliasInput)aliasInput.value='';
     if (state.page === 'simulation') renderSimulationPreserveScroll();
     else { renderCurrentPage(); bindPageControls(); }
     showToast(`${def.name} Position을 추가했습니다.`);
@@ -4925,10 +4961,13 @@
     if (!newName) { renderCurrentPage(); return showToast('Position 이름은 비워둘 수 없습니다.', true); }
     if (oldName === newName) return;
     if (positionNames().some(name => name !== oldName && name.toUpperCase() === newName.toUpperCase())) {
-      renderCurrentPage(); return showToast('같은 Position 이름이 이미 있습니다.', true);
+      renderCurrentPage(); window.alert('같은 Position 이름이 이미 있습니다.'); return;
     }
 
-    def.name = newName;
+    if(state.simulationProgress?.running) {window.alert('시뮬레이션 종료 후 이름을 변경하세요.');renderCurrentPage();return;}
+    const aliases=[...new Set([...(def.aliases||[]),oldName])].filter(x=>x!==newName);
+    try {validatePositionDefinition(newName,aliases,key);}catch(error){window.alert(error.message);renderCurrentPage();return;}
+    def.name = newName;def.aliases=aliases;
     persistPositions();
     const input = state.resultInputs[oldName];
     if (input) {
@@ -4941,7 +4980,12 @@
         await deleteHandle(`${RESULT_PREFIX}${oldName}`);
       } catch (_) { }
     }
-    state.ngImages.forEach(image => { if (image.position === oldName) image.position = newName; });
+    state.ngImages=state.ngImages.map(image=>image.position===oldName?{...image,position:newName}:image);
+    if(state.dashboardPositions)state.dashboardPositions=state.dashboardPositions.map(p=>p===oldName?newName:p);
+    if(state.historyFilters.position===oldName)state.historyFilters.position=newName;
+    if(state.historyFilters.positions)state.historyFilters.positions=state.historyFilters.positions.map(p=>p===oldName?newName:p);
+    if(state.remoteAnalysis){const remote=state.remoteAnalysis;if(remote.inputs?.[oldName]){remote.inputs[newName]=remote.inputs[oldName];delete remote.inputs[oldName];}remote.excludedPositions=(remote.excludedPositions||[]).map(p=>p===oldName?newName:p);}
+    state.historyLoaded=false;
     if (state.ngFolderNames[oldName]) {
       state.ngFolderNames[newName] = state.ngFolderNames[oldName];
       delete state.ngFolderNames[oldName];
@@ -5150,7 +5194,7 @@
       positions:simulationActivePositions(state.simulationMode || 'integrated', form).map(key => {
         const p = form.positions[key];
         return {
-          key:p.key, displayName:p.displayName, enabled:true,
+          key:p.key, displayName:p.displayName, aliases:positionDefByKey(p.key)?.aliases||[], enabled:true,
           greenWorkspacePath:p.greenWorkspacePath, blueWorkspacePath:p.blueWorkspacePath,
           greenImageRoot:p.greenImageRoot, blueImageRoot:p.blueImageRoot,
           greenImageRoots:imageRootsForPosition(p, 'greenImageRoot'), blueImageRoots:imageRootsForPosition(p, 'blueImageRoot'),
@@ -6091,7 +6135,7 @@
     const keywordMode = mode === 'green' ? !!form.green.keywordMode : mode === 'integrated' ? !!form.integrated.keywordMode : false;
     return simulationPositionDefs().map(({key,label}) => {
       const p = form.positions[key], enabled = active.includes(key);
-      const head = `<div class="vq43-sim-position-ident"><label class="vq43-sim-position-enable"><input type="checkbox" data-sim-active-position="${key}" data-sim-mode="${mode}" ${enabled?'checked':''}><strong>${escapeHtml(label)}</strong></label><button class="vq43-sim-remove-position" data-vq-action="simulation-remove-position" data-sim-key="${key}" title="Position 전체 제거">×</button></div>`;
+      const head = `<div class="vq43-sim-position-ident"><label class="vq43-sim-position-enable"><input type="checkbox" data-sim-active-position="${key}" data-sim-mode="${mode}" ${enabled?'checked':''}><strong>${escapeHtml(label)}</strong></label>${positionAliasesInput(positionDefByKey(key))}<button class="vq43-sim-remove-position" data-vq-action="simulation-remove-position" data-sim-key="${key}" title="Position 전체 제거">×</button></div>`;
       if (mode === 'green') {
         return `<div class="vq43-sim-position-row-new">${head}${simPathField('position',key,'greenWorkspacePath','Workspace','Green Runtime Workspace','file','workspace')}${simPathField('position',key,'greenImageRoot','Image Folder','Green 이미지 폴더','folder','folder',keywordMode)}${workspaceSelectHtml(key,'green','greenStreamName',p.greenStreamName,'Green')}${keywordMode?`<label class="vq43-sim-compact-field"><span>Keyword</span><input data-sim-scope="position" data-sim-field="greenKeyword" data-sim-key="${key}" value="${escapeHtml(p.greenKeyword)}"></label>`:''}${workspaceInfoSummary(key,'green')}</div>`;
       }
@@ -6103,7 +6147,7 @@
   }
 
   function simulationPositionToolbar() {
-    return `<div class="vq43-sim-position-toolbar"><div><strong>Position 구성</strong><span>체크박스는 현재 모드의 사용 여부입니다. Position 추가/삭제는 메인·분석·설정에도 공통 반영됩니다.</span></div><div><input id="vq43-sim-new-position-name" placeholder="새 Position 이름"><button class="vq43-btn vq43-btn-blue" data-vq-action="simulation-add-position">+ Position 추가</button></div></div>`;
+    return `<div class="vq43-sim-position-toolbar"><div><strong>Position 구성</strong><span>체크박스는 현재 모드의 사용 여부입니다. Position 추가/삭제는 메인·분석·설정에도 공통 반영됩니다.</span></div><div><input id="vq43-sim-new-position-name" placeholder="대표 이름"><input id="vq43-sim-new-position-aliases" placeholder="별칭 (쉼표 구분)" title="대표 이름과 같은 포지션으로 매칭할 별칭입니다."><button class="vq43-btn vq43-btn-blue" data-vq-action="simulation-add-position">+ Position 추가</button></div></div>`;
   }
 
   function simulationCheck(scope, field, label, tooltip = '') {
@@ -6574,7 +6618,7 @@
     const positions = positionNames();
     const warningList = [...state.restoreWarnings, ...positions.flatMap((position) => (state.resultInputs[position]?.warnings || []).map((warning) => `${position}: ${warning}`)), ...state.ngWarnings];
     const ngCounts = Object.fromEntries(positions.map((position) => [position, state.ngImages.filter((image) => image.position === position).length]));
-    const positionRows = positionDefs().map(def => `<div class="vq43-position-config-row"><input data-position-name-key="${escapeHtml(def.key)}" value="${escapeHtml(def.name)}" aria-label="Position 이름"><span class="vq43-position-sync-note">Simulation · Main · Analysis · NG 경로 공통</span><button class="vq43-icon-btn" data-vq-action="position-remove" data-position-key="${escapeHtml(def.key)}" title="Position 제거" ${positionDefs().length<=1?'disabled':''}>×</button></div>`).join('');
+    const positionRows = positionDefs().map(def => `<div class="vq43-position-config-row"><input data-position-name-key="${escapeHtml(def.key)}" value="${escapeHtml(def.name)}" aria-label="Position 이름">${positionAliasesInput(def)}<button class="vq43-icon-btn" data-vq-action="position-remove" data-position-key="${escapeHtml(def.key)}" title="Position 제거" ${positionDefs().length<=1?'disabled':''}>×</button></div>`).join('');
     const ngRows = positions.map(position => {
       const count = ngCounts[position] || 0;
       const loading = state.loading === `ng:${position}`;
@@ -6584,7 +6628,7 @@
     $('#vq43-page').innerHTML = `
       <div class="vq43-content"><div class="vq43-topline"><div><div class="vq43-eyebrow" style="color:#22d3ee">Input & Configuration</div><h1 class="vq43-title">분석 Input 설정</h1><p class="vq43-subtitle">Position 목록은 Simulation · Main · Analysis · 실제 NG 경로에 공통 적용됩니다.</p></div><button class="vq43-btn vq43-btn-red" data-vq-action="clear-inputs">Input 전체 초기화</button></div>
         ${namingProfileCardHtml()}
-        <section class="vq43-settings-card"><div class="vq43-settings-title"><span class="vq43-settings-icon cyan">${railIconSvg('settings')}</span><div><h3>1. Position 구성</h3><p>이름 변경/추가/삭제 시 모든 분석·시뮬레이션 화면에 동일하게 반영됩니다.</p></div></div><div class="vq43-position-config-list">${positionRows}</div><div class="vq43-position-add-row"><input id="vq43-new-position-name" placeholder="예: CA(MID), AN(SIDE), CUSTOM-01"><button class="vq43-btn vq43-btn-blue" data-vq-action="position-add">+ Position 추가</button></div></section>
+        <section class="vq43-settings-card"><div class="vq43-settings-title"><span class="vq43-settings-icon cyan">${railIconSvg('settings')}</span><div><h3>1. Position 구성</h3><p>대표 이름은 표시·저장에, 별칭은 데이터 매칭에 사용합니다. 별칭은 쉼표로 구분하며 입력 후 다른 곳을 누르면 저장됩니다.</p></div></div><div class="vq43-position-config-list">${positionRows}</div><div class="vq43-position-add-row"><input id="vq43-new-position-name" placeholder="대표 이름: TCA"><input id="vq43-new-position-aliases" placeholder="별칭: CA(TOP), CA_TOP" title="선택 사항. 쉼표로 여러 별칭을 구분합니다."><button class="vq43-btn vq43-btn-blue" data-vq-action="position-add">+ Position 추가</button></div></section>
         <section class="vq43-settings-card"><div class="vq43-settings-title"><span class="vq43-settings-icon">▦</span><div><h3>1. Position별 시뮬레이션 결과 파일</h3><p>CSV 또는 XLSX · Cell ID, Total_result, Tool_result, Tool_score 열 자동 인식</p></div></div><div class="vq43-input-list">${positions.map(resultInputRow).join('')}</div></section>
         <section class="vq43-settings-card"><div class="vq43-settings-title"><span class="vq43-settings-icon amber">▣</span><div><h3>2. 실제 최종 NG 이미지 경로</h3><p>각 Position별 폴더를 독립적으로 선택/교체할 수 있습니다. 전체 루트를 한 번에 읽는 기존 방식도 유지합니다.</p></div><button class="vq43-btn vq43-btn-amber" data-vq-action="choose-ng-folder" title="기존 실제 NG 입력을 선택한 전체 루트로 교체합니다." ${state.loading?'disabled':''}>${state.loading==='ng'?'◌ 전체 루트 읽는 중...':'▣ 전체 NG 루트 선택'}</button><button class="vq43-btn vq43-btn-amber" data-vq-action="add-ng-folder" title="기존 입력을 유지하고 전체 NG 루트를 추가합니다. 이름이 같아도 다른 경로의 폴더는 각각 추가됩니다. 같은 폴더를 다시 선택하면 다시 읽습니다." ${state.loading?'disabled':''}>＋ 전체 NG 루트 추가</button></div><div class="vq43-ng-position-list">${ngRows}</div></section>
         <section class="vq43-settings-card"><div class="vq43-settings-title"><span class="vq43-settings-icon green">✓</span><div><h3>분석 준비 상태</h3><p>현재 입력 데이터의 집계 결과</p></div></div><div class="vq43-ready-grid"><div><span>결과 Position</span><b>${positions.filter((position)=>state.resultInputs[position]).length} / ${positions.length}</b></div><div><span>고유 Cell</span><b>${numberText(model.uniqueCellCount)}</b></div><div><span>실제 NG 고유값</span><b>${numberText(model.actualUniqueCount || 0)}</b></div><div><span>CSV 매칭</span><b class="vq43-blue">${numberText(model.matchedActualCount || 0)}</b></div><div><span>미매칭</span><b class="vq43-red">${numberText(model.unmatchedActualCount || 0)}</b></div><div><span>미검</span><b class="vq43-amber">${numberText(analysisMissCount(model))}</b></div></div>${model.actualUniqueCount ? matchDiagnostic(model) : ''}</section>
@@ -6968,7 +7012,7 @@
     try {
       const data = await agentFetch('/api/history/search', {
         method:'POST', timeout:30000,
-        body:{ fullPath, position:record.position || '', workspaceKey:source?.workspaceKey || '', fromDate:captureDate, toDate:captureDate, sourceTypes:PERSISTED_HISTORY_SOURCE_TYPES, page:1, pageSize:10 }
+        body:{ positionDefinitions:positionDefinitions(), fullPath, position:record.position || '', workspaceKey:source?.workspaceKey || '', fromDate:captureDate, toDate:captureDate, sourceTypes:PERSISTED_HISTORY_SOURCE_TYPES, page:1, pageSize:10 }
       });
       if (!data?.ok || state.modalItem?.key !== modalKey) return;
       const item = (data.items || []).find((candidate) => {
@@ -7525,6 +7569,7 @@
       chooseNgPositionFolder,
       chooseNgFolder,
       configuredPositionOrder,
+      positionDefinitions, normalizePosition, addPositionDefinition, updatePositionAliases, renameCustomPosition,
       analysisInputSnapshot() { return { images:state.ngImages.map(image=>({key:image.key,cellId:image.cellId,rootHandleKey:image.rootHandleKey})), summaries:state.model.positionSummaries, misses:state.model.misses.map(item=>item.key) }; },
       openFirstMiss() { state.selectedMissPosition=state.model.misses[0]?.position;setPage('main');openMissModal(state.model.misses[0]?.key); },
       seedRows(rows) {
