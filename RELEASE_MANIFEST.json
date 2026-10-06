@@ -1,19 +1,19 @@
 {
-  "releaseTag": "visionqc-v4.8.9-agent-v1.4.9",
-  "webVersion": "4.8.9",
-  "agentVersion": "1.4.9",
-  "minimumAgentVersion": "1.4.9",
+  "releaseTag": "visionqc-v4.8.10-agent-v1.4.10",
+  "webVersion": "4.8.10",
+  "agentVersion": "1.4.10",
+  "minimumAgentVersion": "1.4.10",
   "compatibility": {
-    "web": "4.8.9",
-    "agent": "1.4.9"
+    "web": "4.8.10",
+    "agent": "1.4.10"
   },
   "artifacts": {
-    "agentInstaller": "downloads/VisionQC_Agent_Installer_v1.4.9.exe",
-    "offlinePackage": "downloads/VisionQC_Offline_v4.8.9.zip",
+    "agentInstaller": "downloads/VisionQC_Agent_Installer_v1.4.10.exe",
+    "offlinePackage": "downloads/VisionQC_Offline_v4.8.10.zip",
     "sha256": {
-      "agentInstaller": "206BA20E6A296C40ADE996B6CE581C31318AD2040B81D95BF88D104B323C61A3",
-      "offlinePackage": "BC8719ED5ED8F3220A5B11DFA2B1F3305C894ABCC7382083EEFB6A2DC2AA2259"
+      "agentInstaller": "78EBDDA7131458234462BA3FDC6C4E345C13D2A7F394F9A63D1E97DEE8741CF8",
+      "offlinePackage": "0504C816BD1942721A1FAC978861DEA382C92578D8010703D8767E040A245D1A"
     }
   },
-  "notes": "포지션 대표 이름 및 다중 별칭, 중복/충돌 안내, 기존 DB 원본 보존 통합 조회."
+  "notes": "이미지 제외 하위 폴더 이동, 제외 폴더명 설정, 시뮬레이션 제외 폴더 탐색 방지."
 }

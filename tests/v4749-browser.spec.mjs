@@ -10,7 +10,7 @@ test('multiple NG folders, repeated exclusions, next image and refreshed counts 
    for(const i of folder===0?[1,2]:[3]){const h=await dir.getFileHandle(`20260203080000_P163GG22M210000${i}.png`,{create:true});const w=await h.createWritable();await w.write(Uint8Array.from(atob('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+jRZkAAAAASUVORK5CYII='),c=>c.charCodeAt(0)));await w.close();}
    window.showDirectoryPicker=async()=>dir;await window.__VISIONQC_DEBUG__.chooseNgPositionFolder('AN(TOP)');
   }
-  window.showDirectoryPicker=async()=>root;
+  window.showDirectoryPicker=async()=>{throw new Error('상위 폴더 선택이 호출되면 안 됩니다.');};
   window.__VISIONQC_DEBUG__.openFirstMiss();
  });
  page.on('dialog',dialog=>dialog.accept());
@@ -26,9 +26,8 @@ test('multiple NG folders, repeated exclusions, next image and refreshed counts 
  }
  const moved=await page.evaluate(async()=>{
   const root=await navigator.storage.getDirectory();
-  const deleted=await root.getDirectoryHandle('DELET');
   const source=await root.getDirectoryHandle('actual-0');
-  const target=await deleted.getDirectoryHandle('actual-0');
+  const target=await source.getDirectoryHandle('Delet');
   const names=[];for await(const [name] of target.entries())names.push(name);
   let sourceCount=0;for await(const [,entry] of source.entries())if(entry.kind==='file')sourceCount++;
   return {names,sourceCount};
@@ -77,20 +76,21 @@ test('configured position order preserves unknown positions after configured one
  expect(ordered).toEqual(['CA(TOP)','AN(TOP)','CA(BOT)','AN(BOT)','OTHER']);
 });
 
-test('wrong parent and cancelled parent picker preserve image and dashboard',async({page})=>{
+test('cancelled exclusion and destination folder conflict preserve image and dashboard',async({page})=>{
  await open(page);await page.evaluate(rows=>window.__VISIONQC_DEBUG__.seedRows(rows),rows);
  await page.evaluate(async()=>{
   const storage=await navigator.storage.getDirectory();const root=await storage.getDirectoryHandle('actual-source',{create:true});
   const file=await root.getFileHandle('20260203080000_P163GG22M2100001.png',{create:true});const w=await file.createWritable();await w.write('source');await w.close();
   window.showDirectoryPicker=async()=>root;await window.__VISIONQC_DEBUG__.chooseNgPositionFolder('AN(TOP)');window.__VISIONQC_DEBUG__.openFirstMiss();
  });
- page.on('dialog',dialog=>dialog.accept());
+ page.once('dialog',dialog=>dialog.dismiss());
  await page.locator('[data-vq-action="modal-move-delet"]').click();
- await expect(page.locator('#vq43-toast')).toContainText('상위 폴더');
+ await expect(page.locator('#vq43-modal')).toHaveClass(/open/);
  expect((await page.evaluate(()=>window.__VISIONQC_DEBUG__.analysisInputSnapshot())).images).toHaveLength(1);
- await page.evaluate(()=>{window.showDirectoryPicker=async()=>{throw new DOMException('cancelled','AbortError');};});
+ await page.evaluate(async()=>{const root=await (await navigator.storage.getDirectory()).getDirectoryHandle('actual-source');await root.getFileHandle('Delet',{create:true});});
+ page.once('dialog',dialog=>dialog.accept());
  await page.locator('[data-vq-action="modal-move-delet"]').click();
- await expect(page.locator('#vq43-toast')).toContainText('cancelled');
+ await expect(page.locator('#vq43-toast')).toContainText('이미지를 이동하지 못했습니다');
  const bytes=await page.evaluate(async()=>{const root=await (await navigator.storage.getDirectory()).getDirectoryHandle('actual-source');return (await (await root.getFileHandle('20260203080000_P163GG22M2100001.png')).getFile()).text();});
  expect(bytes).toBe('source');
 });

@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
 using System.Diagnostics;
 using System.IO;
@@ -514,7 +514,7 @@ namespace VpdlGreenHeatmapOverlay
                     string inputRoot = inputRoots[rootIndex];
                     if (!Directory.Exists(inputRoot)) continue;
                     string inputRootTag = inputRoots.Count > 1 ? BuildInputRootTag(inputRoot, rootIndex) : "";
-                    foreach (var path in EnumerateImages(inputRoot))
+                    foreach (var path in EnumerateImages(inputRoot, config.ExclusionFolderNames))
                     {
                         token.ThrowIfCancellationRequested();
                         string fileName = Path.GetFileName(path);
@@ -1718,10 +1718,10 @@ namespace VpdlGreenHeatmapOverlay
             return new SD.Rectangle(x, y, w, h);
         }
 
-        private static IEnumerable<string> EnumerateImages(string root)
+        private static IEnumerable<string> EnumerateImages(string root, IEnumerable<string> excluded)
         {
             var exts = new HashSet<string>(StringComparer.OrdinalIgnoreCase) { ".png", ".bmp", ".jpg", ".jpeg", ".tif", ".tiff" };
-            foreach (var p in Directory.EnumerateFiles(root, "*.*", SearchOption.AllDirectories))
+            foreach (var p in InspectionFiles.Enumerate(root, excluded))
                 if (exts.Contains(Path.GetExtension(p))) yield return p;
         }
 

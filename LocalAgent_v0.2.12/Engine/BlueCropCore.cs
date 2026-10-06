@@ -16,6 +16,7 @@ namespace VpdlGreenHeatmapOverlay
 {
     internal class BlueCropConfig
     {
+        public List<string> ExclusionFolderNames { get; set; } = new List<string> { "Delet" };
         public List<BlueWorkspaceSlotConfig> Slots { get; set; } = new List<BlueWorkspaceSlotConfig>();
         public List<BlueToolFallbackConfig> ToolFallbacks { get; set; } = new List<BlueToolFallbackConfig>();
         public string OutputRoot { get; set; }
@@ -113,7 +114,7 @@ namespace VpdlGreenHeatmapOverlay
             int total = 0;
             foreach (var slot in enabledSlots)
             {
-                var images = EnumerateSlotImages(slot, config.OutputRoot)
+                var images = EnumerateSlotImages(slot, config.OutputRoot, config.ExclusionFolderNames)
                     .Where(p => FileNameMatchesKeyword(Path.GetFileName(p), slot.Keyword))
                     .OrderBy(p => p, StringComparer.OrdinalIgnoreCase)
                     .ToList();
@@ -218,10 +219,10 @@ namespace VpdlGreenHeatmapOverlay
             return (fileName ?? string.Empty).IndexOf(keyword.Trim(), StringComparison.OrdinalIgnoreCase) >= 0;
         }
 
-        internal static IEnumerable<string> EnumerateImages(string imageRoot, string outputRoot)
+        internal static IEnumerable<string> EnumerateImages(string imageRoot, string outputRoot, IEnumerable<string> excluded = null)
         {
             string normalizedOutput = NormalizeDir(outputRoot);
-            foreach (string path in Directory.EnumerateFiles(imageRoot, "*.*", SearchOption.AllDirectories))
+            foreach (string path in InspectionFiles.Enumerate(imageRoot, excluded))
             {
                 string ext = Path.GetExtension(path);
                 if (!ImageExtensions.Contains(ext)) continue;
@@ -231,13 +232,13 @@ namespace VpdlGreenHeatmapOverlay
             }
         }
 
-        internal static List<string> EnumerateSlotImages(BlueWorkspaceSlotConfig slot, string outputRoot)
+        internal static List<string> EnumerateSlotImages(BlueWorkspaceSlotConfig slot, string outputRoot, IEnumerable<string> excluded = null)
         {
             var paths = new List<string>();
             foreach (string root in GetImageRoots(slot))
             {
                 if (!Directory.Exists(root)) continue;
-                foreach (string path in EnumerateImages(root, outputRoot))
+                foreach (string path in EnumerateImages(root, outputRoot, excluded))
                 {
                     if (!paths.Any(existing => string.Equals(existing, path, StringComparison.OrdinalIgnoreCase))) paths.Add(path);
                 }
@@ -545,7 +546,7 @@ namespace VpdlGreenHeatmapOverlay
             int skippedByCellId = 0;
             foreach (var slot in enabledSlots)
             {
-                var allImages = BlueCropProcessor.EnumerateSlotImages(slot, cropRoot)
+                var allImages = BlueCropProcessor.EnumerateSlotImages(slot, cropRoot, blueConfig.ExclusionFolderNames)
                     .Where(p => BlueCropProcessor.FileNameMatchesKeyword(Path.GetFileName(p), slot.Keyword))
                     .OrderBy(p => p, StringComparer.OrdinalIgnoreCase)
                     .ToList();

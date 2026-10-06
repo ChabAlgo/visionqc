@@ -1,7 +1,7 @@
 (() => {
   'use strict';
 
-  const VERSION = '4.8.9';
+  const VERSION = '4.8.10';
   const DEFAULT_POSITION_DEFS = [
     { key:'CA_TOP', name:'CA(TOP)' },
     { key:'AN_TOP', name:'AN(TOP)' },
@@ -27,9 +27,9 @@
   const NG_POSITION_PREFIX = 'ng-position:';
   const IMG_RE = /\.(png|jpe?g|bmp|gif|webp|tif?f)$/i;
   const LOCAL_AGENT_URL = 'http://127.0.0.1:17891';
-  const EXPECTED_AGENT_VERSION = '1.4.9';
-  const AGENT_INSTALLER_URL = './downloads/VisionQC_Agent_Installer_v1.4.9.exe';
-  const OFFLINE_PACKAGE_URL = './downloads/VisionQC_Offline_v4.8.9.zip';
+  const EXPECTED_AGENT_VERSION = '1.4.10';
+  const AGENT_INSTALLER_URL = './downloads/VisionQC_Agent_Installer_v1.4.10.exe';
+  const OFFLINE_PACKAGE_URL = './downloads/VisionQC_Offline_v4.8.10.zip';
   // SQLite에는 사용자가 명시적으로 남기려는 두 종류의 결과만 표시한다.
   // 이전 버전의 단발 검사(single-inspection) 이력은 보존하되 화면 집계에서는 제외한다.
   const PERSISTED_HISTORY_SOURCE_TYPES = ['simulation', 'csv-import', 'csv-file-stream'];
@@ -998,6 +998,7 @@
   function bindPageControls() {
     const shell = $('#vq43-shell');
     if (!shell) return;
+    const exclusionInput=$('#vq4810-exclusion-folder');if(exclusionInput)exclusionInput.onchange=()=>saveExclusionFolder(exclusionInput);
 
     $$('[data-vq-action]', shell).forEach((control) => {
       control.onclick = (event) => {
@@ -2009,10 +2010,11 @@
     const limitToLoadedResults = pendingTargets.size > 0;
     let invalidCell = 0, unknownPosition = 0;
     async function walk(directory, parts) {
+      if(isExcludedFolder(directory.name)) return;
       for await (const [name, handle] of directory.entries()) {
         const next = [...parts, name];
         if (handle.kind === 'directory') {
-          if (name.toUpperCase() === 'DELET') continue;
+          if (isExcludedFolder(name)) continue;
           await walk(handle, next);
         }
         else if (handle.kind === 'file' && IMG_RE.test(name)) {
@@ -2051,10 +2053,11 @@
     const limitToLoadedResults = pendingTargets.size > 0;
     let invalidCell = 0;
     async function walk(directory, parts) {
+      if(isExcludedFolder(directory.name)) return;
       for await (const [name, handle] of directory.entries()) {
         const next = [...parts, name];
         if (handle.kind === 'directory') {
-          if (name.toUpperCase() === 'DELET') continue;
+          if (isExcludedFolder(name)) continue;
           await walk(handle, next);
         }
         else if (handle.kind === 'file' && IMG_RE.test(name)) {
@@ -2179,6 +2182,7 @@
     let invalidCell = 0;
     files.forEach(file => {
       const relativePath = normalizePath(file.webkitRelativePath || file.name);
+      if (relativePath.split('/').slice(0,-1).some(isExcludedFolder)) return;
       const cellId = extractCellId(file.name) || extractCellId(relativePath);
       if (!cellId) { invalidCell += 1; return; }
       images.push({ key:`${position}|${cellId}|${relativePath.toLowerCase()}`, position, cellId, file, relativePath });
@@ -2193,6 +2197,7 @@
     let invalidCell = 0, unknownPosition = 0;
     files.forEach((file) => {
       const relativePath = normalizePath(file.webkitRelativePath || file.name);
+      if (relativePath.split('/').slice(0,-1).some(isExcludedFolder)) return;
       const matches = [...new Set(relativePath.split('/').map(normalizePosition).filter(Boolean))];
       if (matches.length > 1) throw new Error(`포지션 충돌: ${relativePath} (${matches.join(', ')})`);
       const position = matches[0];
@@ -5186,7 +5191,7 @@
       toolName:String(tool.toolName || ''), threshold:Number(tool.threshold), judgement:String(tool.judgement || '')
     }));
     return {
-      mode:state.simulationMode || 'integrated', webVersion:VERSION, agentAnalysis:state.simulationAgent.analysisApiVersion>=1, outputRoot:form.outputRoot, csvMaxRows:form.csvMaxRows, csvSplitByDate:form.csvSplitByDate, namingProfile:state.namingProfile,
+      mode:state.simulationMode || 'integrated', webVersion:VERSION, agentAnalysis:state.simulationAgent.analysisApiVersion>=1, exclusionFolderNames:exclusionSettings().names, outputRoot:form.outputRoot, csvMaxRows:form.csvMaxRows, csvSplitByDate:form.csvSplitByDate, namingProfile:state.namingProfile,
       parallelPositions:form.execution.parallelPositions !== false,
       autoDistributeGpu:form.execution.autoDistributeGpu !== false,
       maxParallelPositions:Math.max(1, Math.min(10, Number(form.execution.maxParallelPositions || 10))),
@@ -6628,6 +6633,7 @@
     $('#vq43-page').innerHTML = `
       <div class="vq43-content"><div class="vq43-topline"><div><div class="vq43-eyebrow" style="color:#22d3ee">Input & Configuration</div><h1 class="vq43-title">분석 Input 설정</h1><p class="vq43-subtitle">Position 목록은 Simulation · Main · Analysis · 실제 NG 경로에 공통 적용됩니다.</p></div><button class="vq43-btn vq43-btn-red" data-vq-action="clear-inputs">Input 전체 초기화</button></div>
         ${namingProfileCardHtml()}
+        <section class="vq43-settings-card"><h3>이미지 제외 폴더</h3><label class="vq489-position-aliases" style="max-width:320px">폴더 이름 <input id="vq4810-exclusion-folder" value="${escapeHtml(exclusionSettings().name)}" title="원본 이미지가 있는 폴더 아래로 이동합니다. 현재·이전 제외 폴더는 시뮬레이션과 NG 폴더 읽기에서 제외됩니다."></label><p>기본 Delet · 입력 후 다른 곳을 누르면 저장됩니다. 이전에 지정한 제외 폴더도 계속 검사에서 제외합니다.</p></section>
         <section class="vq43-settings-card"><div class="vq43-settings-title"><span class="vq43-settings-icon cyan">${railIconSvg('settings')}</span><div><h3>1. Position 구성</h3><p>대표 이름은 표시·저장에, 별칭은 데이터 매칭에 사용합니다. 별칭은 쉼표로 구분하며 입력 후 다른 곳을 누르면 저장됩니다.</p></div></div><div class="vq43-position-config-list">${positionRows}</div><div class="vq43-position-add-row"><input id="vq43-new-position-name" placeholder="대표 이름: TCA"><input id="vq43-new-position-aliases" placeholder="별칭: CA(TOP), CA_TOP" title="선택 사항. 쉼표로 여러 별칭을 구분합니다."><button class="vq43-btn vq43-btn-blue" data-vq-action="position-add">+ Position 추가</button></div></section>
         <section class="vq43-settings-card"><div class="vq43-settings-title"><span class="vq43-settings-icon">▦</span><div><h3>1. Position별 시뮬레이션 결과 파일</h3><p>CSV 또는 XLSX · Cell ID, Total_result, Tool_result, Tool_score 열 자동 인식</p></div></div><div class="vq43-input-list">${positions.map(resultInputRow).join('')}</div></section>
         <section class="vq43-settings-card"><div class="vq43-settings-title"><span class="vq43-settings-icon amber">▣</span><div><h3>2. 실제 최종 NG 이미지 경로</h3><p>각 Position별 폴더를 독립적으로 선택/교체할 수 있습니다. 전체 루트를 한 번에 읽는 기존 방식도 유지합니다.</p></div><button class="vq43-btn vq43-btn-amber" data-vq-action="choose-ng-folder" title="기존 실제 NG 입력을 선택한 전체 루트로 교체합니다." ${state.loading?'disabled':''}>${state.loading==='ng'?'◌ 전체 루트 읽는 중...':'▣ 전체 NG 루트 선택'}</button><button class="vq43-btn vq43-btn-amber" data-vq-action="add-ng-folder" title="기존 입력을 유지하고 전체 NG 루트를 추가합니다. 이름이 같아도 다른 경로의 폴더는 각각 추가됩니다. 같은 폴더를 다시 선택하면 다시 읽습니다." ${state.loading?'disabled':''}>＋ 전체 NG 루트 추가</button></div><div class="vq43-ng-position-list">${ngRows}</div></section>
@@ -7321,24 +7327,18 @@
         throw error;
       }
     }
-    throw new Error('DELET 폴더에서 사용할 파일 이름을 만들지 못했습니다.');
+    throw new Error('제외 폴더에서 사용할 파일 이름을 만들지 못했습니다.');
   }
 
-  async function exclusionParentHandle(root, rootKey) {
-    if (root.name.toUpperCase() === 'DELET') throw new Error('DELET 폴더 자체는 실제 NG 검사 루트로 사용할 수 없습니다.');
-    const key = `${rootKey}:exclusion-parent`;
-    let parent = await loadHandleByKey(key);
-    let relative = parent ? await parent.resolve(root) : null;
-    if (!relative || relative.length !== 1) {
-      if (!window.showDirectoryPicker) throw new Error('상위 폴더 선택을 지원하는 브라우저가 필요합니다.');
-      window.alert(`다음 창에서 "${root.name}" 폴더의 바로 위 상위 폴더를 선택해 주세요. 제외 이미지는 이 위치의 DELET 폴더로 이동합니다.`);
-      parent = await window.showDirectoryPicker({mode:'readwrite', id:'visionqc-exclusion-parent'});
-      relative = await parent.resolve(root);
-      if (!relative || relative.length !== 1) throw new Error('실제 NG 폴더의 바로 위 상위 폴더를 선택해야 합니다. 원본은 이동하지 않았습니다.');
-    }
-    if (!(await ensureWritableHandle(parent))) throw new Error('상위 폴더 쓰기 권한이 필요합니다.');
-    await saveHandle(key, parent);
-    return parent;
+  function exclusionSettings() {
+    try { const saved=JSON.parse(localStorage.getItem('visionqc-exclusion-folders')||'{}');return {name:saved.name||'Delet',names:[...new Set(['Delet',...(saved.names||[]),saved.name||'Delet'])]}; } catch (_) {return {name:'Delet',names:['Delet']};}
+  }
+  function isExcludedFolder(name) {return exclusionSettings().names.some(x=>x.toLowerCase()===String(name).toLowerCase());}
+  function saveExclusionFolder(control) {
+    const name=control.value.trim();
+    if(!name || /[\\/:*?"<>|\x00-\x1f]/.test(name) || /[. ]$/.test(name) || name.length>100 || /^(CON|PRN|AUX|NUL|COM[1-9]|LPT[1-9])(?:\.|$)/i.test(name)) {window.alert('사용할 수 없는 폴더 이름입니다. 경로 대신 폴더 이름만 입력하세요.');control.value=exclusionSettings().name;return;}
+    if(state.simulationProgress?.running){window.alert('시뮬레이션 종료 후 변경하세요.');control.value=exclusionSettings().name;return;}
+    const prior=exclusionSettings();localStorage.setItem('visionqc-exclusion-folders',JSON.stringify({name,names:[...new Set([...prior.names,name])]}));showToast('이미지 제외 폴더를 저장했습니다.');
   }
 
   async function moveCurrentActualNgImage() {
@@ -7346,7 +7346,8 @@
     const selectedImage = currentModalImage();
     const image = state.ngImages.find(item=>item.key===selectedImage?.key) || selectedImage;
     if (!image?.actualNg || !image.fileHandle || !image.rootHandleKey) return;
-    if (!window.confirm('이 이미지를 실제 NG 목록에서 제외하시겠습니까?\n선택한 실제 NG 폴더의 상위 폴더에 있는 DELET 폴더로 이동합니다.')) return;
+    const excludedName=exclusionSettings().name;
+    if (!window.confirm(`이 이미지를 실제 NG 목록에서 제외하시겠습니까?\n원본 이미지가 있는 폴더 아래 ${excludedName} 폴더로 이동합니다.`)) return;
     const priorItem = state.modalItem;
     const priorIndex = state.modalSequenceIndex;
     const priorImageIndex = state.modalIndex;
@@ -7361,13 +7362,11 @@
       if (!resolved || !resolved.length) throw new Error('원본 이미지가 선택한 실제 NG 폴더 안에 없습니다. 폴더를 다시 선택해 주세요.');
       const relativeParts = resolved.slice();
       const sourceName = relativeParts.pop();
-      const parent = await exclusionParentHandle(root, image.rootHandleKey);
+      if (resolved.slice(0,-1).some(isExcludedFolder) || isExcludedFolder(root.name)) throw new Error('이미 제외 폴더 안에 있는 이미지입니다.');
       if (!(await ensureWritableHandle(root))) throw new Error('실제 NG 폴더 쓰기 권한이 필요합니다.');
       let sourceParent = root;
       for (const part of relativeParts) sourceParent = await sourceParent.getDirectoryHandle(part, { create:false });
-      let targetParent = await parent.getDirectoryHandle('DELET', { create:true });
-      targetParent = await targetParent.getDirectoryHandle(root.name, { create:true });
-      for (const part of relativeParts) targetParent = await targetParent.getDirectoryHandle(part, { create:true });
+      const targetParent = await sourceParent.getDirectoryHandle(excludedName, { create:true });
       const targetName = await uniqueFileName(targetParent, sourceName);
       const sourceFile = await image.fileHandle.getFile();
       const targetHandle = await targetParent.getFileHandle(targetName, { create:true });
@@ -7377,7 +7376,7 @@
       try { await sourceParent.removeEntry(sourceName); }
       catch (error) {
         try { await targetParent.removeEntry(targetName); } catch (_) { }
-        throw new Error('DELET 복사 후 원본 이동을 완료하지 못했습니다: ' + (error.message || error));
+        throw new Error('제외 폴더 복사 후 원본 이동을 완료하지 못했습니다: ' + (error.message || error));
       }
       const removedKey = image.key;
       state.ngImages = state.ngImages.filter(item => item.key !== removedKey);
@@ -7401,7 +7400,7 @@
         else if (!changeModalSequenceItem(1)) closeModal();
       }
       try { await saveAnalysisSnapshot(); } catch(error) { showToast('제외는 완료했지만 복원 정보 저장에 실패했습니다: '+error.message,true); }
-      showToast('이미지를 상위 폴더의 DELET/' + root.name + ' 폴더로 이동했습니다.');
+      showToast('이미지를 원본 경로의 ' + excludedName + ' 폴더로 이동했습니다.');
     } catch (error) {
       console.error(error);
       showToast('이미지를 이동하지 못했습니다: ' + (error.message || error), true);

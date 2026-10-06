@@ -10,6 +10,7 @@ namespace VisionQC.LocalAgent
         public bool agentAnalysis { get; set; }
         public string webVersion { get; set; }
         public string outputRoot { get; set; }
+        public List<string> exclusionFolderNames { get; set; } = new List<string> { "Delet" };
         public int csvMaxRows { get; set; } = 1000000;
         public bool csvSplitByDate { get; set; }
         public AgentGreenOptions green { get; set; }

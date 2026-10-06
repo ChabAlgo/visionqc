@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
 using System.Drawing;
 using System.Linq;
@@ -9,6 +9,23 @@ using LocalRuntime = ViDi2.Runtime.Local;
 
 namespace VpdlGreenHeatmapOverlay
 {
+    internal static class InspectionFiles
+    {
+        internal static IEnumerable<string> Enumerate(string root, IEnumerable<string> excluded)
+        {
+            var names=new HashSet<string>(excluded??new string[0],StringComparer.OrdinalIgnoreCase);names.Add("Delet");
+            var pending=new Stack<string>();pending.Push(root);
+            while(pending.Count>0)
+            {
+                string directory=pending.Pop();
+                if(directory.Split(new[]{System.IO.Path.DirectorySeparatorChar,System.IO.Path.AltDirectorySeparatorChar},StringSplitOptions.RemoveEmptyEntries).Any(names.Contains))continue;
+                foreach(string file in System.IO.Directory.EnumerateFiles(directory,"*.*",System.IO.SearchOption.TopDirectoryOnly))yield return file;
+                foreach(string child in System.IO.Directory.EnumerateDirectories(directory))
+                    if(!names.Contains(System.IO.Path.GetFileName(child)) && (System.IO.File.GetAttributes(child)&System.IO.FileAttributes.ReparsePoint)==0)pending.Push(child);
+            }
+        }
+    }
+
     internal static class RuntimeWorkspaceRegistry
     {
         private sealed class WorkspaceMap
@@ -47,6 +64,7 @@ namespace VpdlGreenHeatmapOverlay
 
     internal class AppConfig
     {
+        public List<string> ExclusionFolderNames { get; set; } = new List<string> { "Delet" };
         public string WorkspaceType { get; set; }
         public bool OriginalExecution { get; set; }
         public bool DisableTensorRt { get; set; }

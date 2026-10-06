@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Collections;
 using System.Collections.Generic;
 using System.Diagnostics;
@@ -2314,6 +2314,7 @@ namespace VisionQC.LocalAgent
             var cfg = new BlueCropConfig
             {
                 OutputRoot = outputRoot,
+                ExclusionFolderNames = req.exclusionFolderNames,
                 UseGpu = opt.useGpu,
                 GpuDevices = ParseGpuList(opt.gpuDevices, opt.useGpu),
                 CropWidth = Math.Max(1, opt.cropWidth <= 0 ? 2448 : opt.cropWidth),
@@ -2386,6 +2387,7 @@ namespace VisionQC.LocalAgent
             {
                 WorkspaceType = workspaceType,
                 OutputRoot = outputRoot,
+                ExclusionFolderNames = req.exclusionFolderNames,
                 CsvMaxRows = req.csvMaxRows > 0 ? req.csvMaxRows : 1000000,
                 CsvSplitByDate = req.csvSplitByDate,
                 CellIdCsvPath = integrated ? (iopt.cellIdCsvPath ?? "") : (opt.cellIdCsvPath ?? ""),

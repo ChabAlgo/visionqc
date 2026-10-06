@@ -42,10 +42,10 @@ test('viewer overlays do not move the image and preserve zoom and pan between vi
 });
 
 test('actual NG images move to a recoverable DELET folder only after confirmation', () => {
-  assert.match(js, /window\.confirm\('이 이미지를 실제 NG 목록에서 제외하시겠습니까/);
-  assert.match(js, /getDirectoryHandle\('DELET', \{ create:true \}\)/);
+  assert.match(js, /window\.confirm\(`이 이미지를 실제 NG 목록에서 제외하시겠습니까/);
+  assert.match(js, /sourceParent\.getDirectoryHandle\(excludedName, \{ create:true \}\)/);
   assert.match(js, /sourceParent\.removeEntry\(sourceName\)/);
-  assert.match(js, /if \(name\.toUpperCase\(\) === 'DELET'\) continue/);
+  assert.match(js, /if \(isExcludedFolder\(name\)\) continue/);
   assert.match(js, /image\.actualNg = true/);
 });
 
