@@ -76,3 +76,10 @@ test('Output row limit has explicit readable foreground and background',async({p
  const light=await input.evaluate(el=>{const s=getComputedStyle(el);return {color:s.color,background:s.backgroundColor};});
  expect(light.color).toMatch(/^rgb\(23, (32|43), (51|69)\)$/);expect(light.background).toBe('rgb(255, 255, 255)');
 });
+
+ test('Tool CSV filename describes position tool threshold and date and image copy has a tooltip',async({page})=>{
+ await start(page);await page.locator('[data-vq-action="dashboard-day"][data-vq-history-day="2026-02-01"]').click();
+ const pending=page.waitForEvent('download');await page.locator('[data-vq-action="download-tool-ng"][data-position="AN(TOP)"]').click();const download=await pending;
+ expect(download.suggestedFilename()).toContain('AN(TOP)_FoilDamage_NG_Threshold0.50_2026-02-01');
+ await expect(page.locator('[data-vq-action="copy-tool-images"][data-position="AN(TOP)"]')).toHaveAttribute('title',/NG 조건/);
+ });

@@ -451,7 +451,7 @@ AND lower(other.tool)<>lower(t.tool) AND other.max_ng>=@exclusion) GROUP BY t.po
         private static long Number(Dictionary<string,object> row,string key)
         { return row==null||!row.ContainsKey(key)||row[key]==null?0:Convert.ToInt64(row[key]); }
 
-        internal object ExportRaw(string outputDirectory,long maxRows,bool splitByDate,CancellationToken cancellation,Action<long> progress)
+        internal object ExportRaw(string outputDirectory,long maxRows,bool splitByDate,CancellationToken cancellation,Action<long> progress,string exportName=null,Action<string,string> image=null)
         {
             string root=Path.GetFullPath(outputDirectory);if(!Directory.Exists(root))throw new DirectoryNotFoundException(root);
             string token=Guid.NewGuid().ToString("N"),stage=Path.Combine(root,".VisionQC-export-"+token);
@@ -464,7 +464,7 @@ AND lower(other.tool)<>lower(t.tool) AND other.max_ng>=@exclusion) GROUP BY t.po
                     var header=new List<string>{"Date","Time","Cell ID","Position","Total_result","FullPath","ProcessedPath","Source_File","Source_Row","WorkspaceType","WorkspaceName","WorkspaceKey"};
                     foreach(var tool in tools){header.Add(tool+"_result");header.Add(tool+"_score");}
                     var indexes=tools.Select((name,index)=>new{name,index}).ToDictionary(x=>x.name,x=>12+x.index*2,StringComparer.Ordinal);
-                    using(var writer=new PartitionedCsvWriter(Path.Combine(stage,"VisionQC_results_"+DateTime.Now.ToString("yyyyMMdd_HHmmss")+"_"+token.Substring(0,8)+".csv"),maxRows,splitByDate))
+                    using(var writer=new PartitionedCsvWriter(Path.Combine(stage,(exportName??ExportLabel.Name("AllPositions","AllResults"))+".csv"),maxRows,splitByDate))
                     using(var command=Command(@"SELECT i.image_id,i.capture_timestamp,i.cell_id,i.position_key,i.total_result,i.full_path,i.processed_path,i.source_file_name,i.source_row_number,
 i.workspace_type,i.workspace_name,i.workspace_key,t.tool_name,t.result,t.score
 FROM source.images i LEFT JOIN source.tool_results t ON t.image_id=i.image_id
@@ -473,7 +473,7 @@ WHERE i.run_id=@run ORDER BY i.image_id,t.tool_result_id"))
                     using(var reader=command.ExecuteReader())
                     {
                         writer.WriteLine(ResultCsv.WriteRecord(header));long previous=-1;string[] values=null;
-                        Action flush=()=>{if(values==null)return;writer.WriteLine(ResultCsv.WriteRecord(values));count++;if(count%1000==0)progress?.Invoke(count);};
+                        Action flush=()=>{if(values==null)return;writer.WriteLine(ResultCsv.WriteRecord(values));count++;image?.Invoke(values[5],values[3]);if(count%1000==0)progress?.Invoke(count);};
                         while(reader.Read())
                         {
                             cancellation.ThrowIfCancellationRequested();long imageId=reader.GetInt64(0);
@@ -502,7 +502,7 @@ WHERE i.run_id=@run ORDER BY i.image_id,t.tool_result_id"))
             finally {Directory.Delete(stage,true);}
         }
 
-        internal object ExportSelection(string outputDirectory,long maxRows,bool splitByDate,string date,string[] positions,string tool,CancellationToken cancellation)
+        internal object ExportSelection(string outputDirectory,long maxRows,bool splitByDate,string date,string[] positions,string tool,CancellationToken cancellation,string exportName=null,Action<string,string> image=null)
         {
             string root=Path.GetFullPath(outputDirectory);if(!Directory.Exists(root))throw new DirectoryNotFoundException(root);
             string token=Guid.NewGuid().ToString("N"),stage=Path.Combine(root,".VisionQC-export-"+token);Directory.CreateDirectory(stage);
@@ -516,7 +516,7 @@ WHERE i.run_id=@run ORDER BY i.image_id,t.tool_result_id"))
                     var header=new List<string>{"Date","Time","Cell ID","Position","Total_result","Source_Row_Count"};
                     foreach(string name in names)header.AddRange(new[]{name+"_result",name+"_score",name+"_threshold"});
                     var indexes=names.Select((name,index)=>new{name,index}).ToDictionary(t=>t.name,t=>6+t.index*3);
-                    using(var writer=new PartitionedCsvWriter(Path.Combine(stage,"VisionQC_"+(string.IsNullOrEmpty(tool)?"selection":"tool_NG")+"_"+token.Substring(0,8)+".csv"),maxRows,splitByDate))
+                    using(var writer=new PartitionedCsvWriter(Path.Combine(stage,(exportName??ExportLabel.Name(string.Join("+",positions??new[]{"AllPositions"}),tool,string.IsNullOrEmpty(tool)?"AllResults":"NG",date??"AllDates"))+".csv"),maxRows,splitByDate))
                     using(var command=Command(@"SELECT c.day,c.cell,c.position,c.ng,c.rows,
 CASE WHEN "+FinalOk+@" THEN 1 ELSE 0 END AS is_ok,t.tool,t.base_ng,t.base_ok,t.ng,t.min_ng,t.min_ok,t.min_score,COALESCE(h.value,.5)
 FROM cells c LEFT JOIN tools t ON t.day=c.day AND t.cell=c.cell AND t.position=c.position
@@ -542,6 +542,12 @@ ORDER BY c.day,c.position,c.cell,t.tool"))
                         }
                     }
                 }
+                if(image!=null)lock(_sync)
+                {
+                    string where=PreparePositions(positions,"c.position");
+                    using(var command=Command(@"SELECT DISTINCT i.full_path,c.position FROM cells c JOIN source.images i ON i.run_id=@run AND i.cell_id=c.cell AND i.position_key=c.position AND substr(COALESCE(i.capture_timestamp,''),1,10)=c.day WHERE "+where+@" AND i.image_id<=(SELECT cursor FROM meta WHERE run_id=@run) AND (@date='' OR c.day=@date) AND (@tool='' OR EXISTS(SELECT 1 FROM tools n WHERE n.day=c.day AND n.cell=c.cell AND n.position=c.position AND n.tool=@tool AND n.ng=1))"))
+                    {command.Parameters.AddWithValue("@date",date??"");command.Parameters.AddWithValue("@tool",tool??"");using(cancellation.Register(()=>command.Cancel()))using(var reader=command.ExecuteReader())while(reader.Read()){cancellation.ThrowIfCancellationRequested();image(Convert.ToString(reader[0]),Convert.ToString(reader[1]));}}
+                }
                 foreach(string file in Directory.GetFiles(stage)){cancellation.ThrowIfCancellationRequested();string target=Path.Combine(root,Path.GetFileName(file));File.Move(file,target);published.Add(target);}
                 return new {count,files=published.Where(p=>p.EndsWith(".csv",StringComparison.OrdinalIgnoreCase)).ToArray()};
             }
@@ -549,7 +555,7 @@ ORDER BY c.day,c.position,c.cell,t.tool"))
             finally{Directory.Delete(stage,true);}
         }
 
-        internal object ExportFiltered(string outputDirectory,long maxRows,bool splitByDate,string kind,string date,string position,string tool,string scope,bool exclude,double exclusion,string compare,double cutoff,CancellationToken cancellation)
+        internal object ExportFiltered(string outputDirectory,long maxRows,bool splitByDate,string kind,string date,string position,string tool,string scope,bool exclude,double exclusion,string compare,double cutoff,CancellationToken cancellation,string exportName=null,Action<string,string> image=null)
         {
             compare=(compare??"").ToUpperInvariant();
             if(double.IsNaN(exclusion)||double.IsInfinity(exclusion)||exclusion<0||exclusion>1)throw new InvalidDataException("Invalid exclusion threshold");
@@ -560,7 +566,7 @@ ORDER BY c.day,c.position,c.cell,t.tool"))
             var published=new List<string>();long count=0;
             try
             {
-                lock(_sync)using(var writer=new PartitionedCsvWriter(Path.Combine(stage,"VisionQC_"+kind+"_"+DateTime.Now.ToString("yyyyMMdd_HHmmss")+"_"+token.Substring(0,8)+".csv"),maxRows,splitByDate))
+                lock(_sync)using(var writer=new PartitionedCsvWriter(Path.Combine(stage,(exportName??ExportLabel.Name(position,tool,kind,scope,compare,cutoff.ToString(CultureInfo.InvariantCulture),date))+".csv"),maxRows,splitByDate))
                 {
                     if(kind=="score")
                     {
@@ -573,7 +579,7 @@ ORDER BY c.day,c.position,c.cell,t.tool"))
                             using(var reader=command.ExecuteReader())while(reader.Read())
                             {
                                 cancellation.ThrowIfCancellationRequested();var capture=ResultCsv.SplitCaptureTimestamp(Convert.ToString(reader[0]));
-                                writer.WriteLine(ResultCsv.WriteRecord(new[]{capture[0],capture[1],Convert.ToString(reader[1]),Convert.ToString(reader[2]),Convert.ToString(reader[3]),Convert.ToString(reader[4]),reader.GetDouble(5).ToString("R",CultureInfo.InvariantCulture),"Score "+(compare=="GTE"?">= ":"<= ")+cutoff.ToString("R",CultureInfo.InvariantCulture),Convert.ToString(reader[6]),Convert.ToString(reader[7]),Convert.ToString(reader[8])}));count++;
+                                writer.WriteLine(ResultCsv.WriteRecord(new[]{capture[0],capture[1],Convert.ToString(reader[1]),Convert.ToString(reader[2]),Convert.ToString(reader[3]),Convert.ToString(reader[4]),reader.GetDouble(5).ToString("R",CultureInfo.InvariantCulture),"Score "+(compare=="GTE"?">= ":"<= ")+cutoff.ToString("R",CultureInfo.InvariantCulture),Convert.ToString(reader[6]),Convert.ToString(reader[7]),Convert.ToString(reader[8])}));count++;image?.Invoke(Convert.ToString(reader[6]),Convert.ToString(reader[2]));
                             }
                         }
                     }
@@ -590,6 +596,8 @@ ORDER BY c.day,c.position,c.cell,t.tool"))
                             {
                                 cancellation.ThrowIfCancellationRequested();string day=reader.GetString(0),cell=reader.GetString(1),pos=reader.GetString(2);
                                 object[] keys={"@day",day,"@cell",cell,"@position",pos};
+                                if(image!=null)using(var images=Command("SELECT full_path FROM source.images WHERE run_id=@run AND cell_id=@cell AND position_key=@position AND substr(COALESCE(capture_timestamp,''),1,10)=@day")){images.Parameters.AddWithValue("@cell",cell);images.Parameters.AddWithValue("@position",pos);images.Parameters.AddWithValue("@day",day);using(var paths=images.ExecuteReader())while(paths.Read()){cancellation.ThrowIfCancellationRequested();image(Convert.ToString(paths[0]),pos);}}
+
                                 var results=Query(@"SELECT t.tool,CASE WHEN t.ng=1 THEN 'NG' WHEN t.base_ng=1 OR t.base_ok=1 THEN 'OK' ELSE 'UNKNOWN' END AS result,
 CASE WHEN t.base_ng=1 THEN t.min_ng WHEN t.base_ok=1 THEN t.min_ok ELSE t.min_score END AS score,COALESCE(h.value,.5) AS threshold
 FROM tools t LEFT JOIN thresholds h ON h.position=t.position AND h.tool=t.tool WHERE t.day=@day AND t.cell=@cell AND t.position=@position",cancellation,keys).ToDictionary(t=>Convert.ToString(t["tool"]));

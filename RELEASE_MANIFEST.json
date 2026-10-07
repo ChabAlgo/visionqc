@@ -1,19 +1,19 @@
 {
-  "releaseTag": "visionqc-v4.8.10-agent-v1.4.10",
-  "webVersion": "4.8.10",
-  "agentVersion": "1.4.10",
-  "minimumAgentVersion": "1.4.10",
+  "releaseTag": "visionqc-v4.8.11-agent-v1.4.11",
+  "webVersion": "4.8.11",
+  "agentVersion": "1.4.11",
+  "minimumAgentVersion": "1.4.11",
   "compatibility": {
-    "web": "4.8.10",
-    "agent": "1.4.10"
+    "web": "4.8.11",
+    "agent": "1.4.11"
   },
   "artifacts": {
-    "agentInstaller": "downloads/VisionQC_Agent_Installer_v1.4.10.exe",
-    "offlinePackage": "downloads/VisionQC_Offline_v4.8.10.zip",
+    "agentInstaller": "downloads/VisionQC_Agent_Installer_v1.4.11.exe",
+    "offlinePackage": "downloads/VisionQC_Offline_v4.8.11.zip",
     "sha256": {
-      "agentInstaller": "78EBDDA7131458234462BA3FDC6C4E345C13D2A7F394F9A63D1E97DEE8741CF8",
-      "offlinePackage": "0504C816BD1942721A1FAC978861DEA382C92578D8010703D8767E040A245D1A"
+      "agentInstaller": "181195B9B9386419AC610D6483CE8868EB3DFE647E895195B3C3269F374D7F87",
+      "offlinePackage": "2A9123FD4F62D611CA14A4E9D31A6F50DCB5556F7B2C8669F767FFC8E2D61D1C"
     }
   },
-  "notes": "이미지 제외 하위 폴더 이동, 제외 폴더명 설정, 시뮬레이션 제외 폴더 탐색 방지."
+  "notes": "조건별 CSV 파일명 개선, 동일 조건 원본 이미지 복사와 결과 기록."
 }

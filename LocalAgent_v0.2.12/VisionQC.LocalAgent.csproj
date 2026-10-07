@@ -68,6 +68,7 @@
     <Compile Include="Services\NamingProfileParser.cs" />
     <Compile Include="Services\PositionResolver.cs" />
     <Compile Include="Services\PositionAliases.cs" />
+    <Compile Include="Services\ExportSupport.cs" />
     <Compile Include="Services\PickerService.cs" />
     <Compile Include="Services\ImagePreviewService.cs" />
     <Compile Include="Services\VpdlRuntimeCatalog.cs" />

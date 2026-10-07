@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
 using System.Diagnostics;
 using System.IO;
@@ -158,6 +158,7 @@ namespace VisionQC.LocalAgent
                     case "/api/history/import": result = _history.ImportBrowserRows(request.Body); break;
                     case "/api/history/export/start": result = _history.StartExport(request.Body); break;
                     case "/api/history/export/status": result = _history.ExportStatus(request.Body); break;
+                    case "/api/history/export/cancel": result = _history.CancelExport(request.Body); break;
                     case "/api/history/search": result = _history.Search(request.Body); break;
                     case "/api/history/import-file/start": result = _history.StartFileImport(request.Body); break;
                     case "/api/history/import-file/status": result = _history.FileImportStatus(request.Body); break;

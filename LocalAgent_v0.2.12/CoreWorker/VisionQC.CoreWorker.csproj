@@ -56,6 +56,7 @@
     <Compile Include="..\Services\AnalysisService.cs"><Link>Services\AnalysisService.cs</Link></Compile>
     <Compile Include="..\Services\CsvHistoryFileImporter.cs"><Link>Services\CsvHistoryFileImporter.cs</Link></Compile>
     <Compile Include="..\Services\PositionAliases.cs"><Link>Services\PositionAliases.cs</Link></Compile>
+    <Compile Include="..\Services\ExportSupport.cs"><Link>Services\ExportSupport.cs</Link></Compile>
     <Compile Include="..\Services\ResultCsv.cs"><Link>Services\ResultCsv.cs</Link></Compile>
     <Compile Include="..\Services\PartitionedCsvWriter.cs"><Link>Services\PartitionedCsvWriter.cs</Link></Compile>
     <Compile Include="..\Persistence\SqliteRunStore.cs"><Link>Persistence\SqliteRunStore.cs</Link></Compile>

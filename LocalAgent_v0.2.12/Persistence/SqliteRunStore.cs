@@ -595,7 +595,7 @@ ORDER BY image_id ASC LIMIT @limit;";
         }
 
         // Uses the same filter-before-deduplication contract as Search; streams one image at a time.
-        internal object ExportSearch(AgentHistorySearchRequest request, string outputDirectory, long maxRows, bool splitByDate, CancellationToken cancellation)
+        internal object ExportSearch(AgentHistorySearchRequest request, string outputDirectory, long maxRows, bool splitByDate, CancellationToken cancellation,string exportName=null,Action<string,string> image=null)
         {
             EnsureSchema();
             string root=Path.GetFullPath(outputDirectory);
@@ -611,7 +611,7 @@ ORDER BY image_id ASC LIMIT @limit;";
                     var headers=new List<string>{"Date","Time","Cell ID","Position","Total_result","FullPath","ProcessedPath","WorkspaceType","WorkspaceName","WorkspaceKey","Source_File","Source_Row"};
                     foreach(string tool in tools)headers.AddRange(new[]{tool+"_result",tool+"_score"});
                     var indexes=tools.Select((name,index)=>new{name,index}).ToDictionary(x=>x.name,x=>12+x.index*2);
-                    using(var writer=new PartitionedCsvWriter(Path.Combine(stage,"VisionQC_history_"+token.Substring(0,8)+".csv"),maxRows,splitByDate))
+                    using(var writer=new PartitionedCsvWriter(Path.Combine(stage,(exportName??ExportLabel.Name("History",request.position,request.tool,request.fromDate,request.toDate))+".csv"),maxRows,splitByDate))
                     using(var command=connection.CreateCommand())
                     using(cancellation.Register(()=>command.Cancel()))
                     {
@@ -622,7 +622,7 @@ FROM deduped_images d LEFT JOIN tool_results t ON t.image_id=d.image_id ORDER BY
                         using(var reader=command.ExecuteReader())
                         {
                             long last=-1;string[] values=null;
-                            Action flush=()=>{if(values!=null){writer.WriteLine(ResultCsv.WriteRecord(values));count++;}};
+                            Action flush=()=>{if(values!=null){writer.WriteLine(ResultCsv.WriteRecord(values));count++;image?.Invoke(values[5],values[3]);}};
                             while(reader.Read())
                             {
                                 cancellation.ThrowIfCancellationRequested();long id=ReadLong(reader,0);

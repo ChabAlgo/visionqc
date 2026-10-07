@@ -285,6 +285,7 @@ namespace VisionQC.LocalAgent
                         break;
                     case "/api/history/export/start": result = _history.StartExport(request.Body); break;
                     case "/api/history/export/status": result = _history.ExportStatus(request.Body); break;
+                    case "/api/history/export/cancel": result = _history.CancelExport(request.Body); break;
                     case "/api/history/search":
                         result = _history.Search(request.Body);
                         break;

@@ -290,3 +290,15 @@ test('Agent alphabetic summaries render in configured order for cards, tools and
   expect(await page.locator('[data-chart-scope="main"][data-chart-position]').evaluateAll(elements=>elements.map(e=>e.dataset.chartPosition))).toEqual(expected);
  } finally {model.positionSummaries=originalPositions;model.positionToolSummaries=originalTools;}
 });
+
+test('Image copy sends the same Tool selection, descriptive label, progress and cancellation',async({page})=>{
+ const requests=await setup(page);let cancelled=false,started=false;
+ await page.route('http://127.0.0.1:*/api/pick/start',r=>r.fulfill({json:{ok:true,path:'C:\\Exports'}}));
+ await page.route('http://127.0.0.1:*/api/analysis/export',async r=>{requests.push({path:'/api/analysis/export',body:r.request().postDataJSON()});started=true;await r.fulfill({json:{ok:true,analysisId:id,running:true,completed:false,copyProcessed:1,copyTotal:20}});});
+ await page.route('http://127.0.0.1:*/api/analysis/cancel',async r=>{cancelled=true;await r.fulfill({json:{ok:true}});});
+ await page.route('http://127.0.0.1:*/api/analysis/status',r=>r.fulfill({json:!started?done(null):cancelled?done({count:20,files:['result.csv'],images:{copied:1,failed:0,cancelled:true,directory:'C:\\Exports\\Images'}}):{ok:true,analysisId:id,running:true,copyProcessed:1,copyTotal:20}}));
+ await page.locator('[data-vq-action="copy-tool-images"]').click();
+ await expect(page.locator('.vq4811-export-progress')).toContainText('1 / 20');
+ const body=requests.find(r=>r.path==='/api/analysis/export').body;expect(body).toMatchObject({copyImages:true,kind:'tool-ng',position:'AN(TOP)',tool:'Crack'});expect(body.exportLabel).toContain('AN(TOP)_Crack_NG_Threshold0.50_전체날짜');
+ await page.locator('.vq4811-export-progress button').click();await expect(page.locator('.vq4811-export-progress')).toHaveCount(0);expect(cancelled).toBe(true);
+});

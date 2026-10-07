@@ -908,3 +908,5 @@ body.vq43-theme-light .vq482-tool-csv{background:#ecfdf5;color:#065f46;border-co
 .vq489-position-aliases input{width:100%;min-width:0;box-sizing:border-box;background:var(--vq43-panel,#0d1728);color:var(--vq43-text,#e8f0ff);border:1px solid #334155;border-radius:8px;padding:8px}
 .vq43-position-add-row{flex-wrap:wrap}
 .vq43-sim-position-ident .vq489-position-aliases{max-width:200px}
+
+.vq4811-export-progress{position:fixed;bottom:24px;left:50%;transform:translateX(-50%);z-index:2147483647!important;pointer-events:auto!important;display:flex;gap:20px;align-items:center;max-width:90vw;padding:12px 20px;background:#0d1728;color:#e8f0ff;border:1px solid #3b82f6;border-radius:12px;box-shadow:0 4px 24px #0008}

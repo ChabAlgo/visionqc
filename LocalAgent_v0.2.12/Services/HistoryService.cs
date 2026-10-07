@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
@@ -17,6 +17,7 @@ namespace VisionQC.LocalAgent.Services
         private readonly SqliteRunStore _store;
         private readonly JavaScriptSerializer _json;
         private ExportJob _export;
+        public sealed class ImagePath { public string path {get;set;} public string position {get;set;} }
         public sealed class ExportRequest
         {
             public AgentHistorySearchRequest filters { get; set; }
@@ -24,11 +25,15 @@ namespace VisionQC.LocalAgent.Services
             public long maxRows { get; set; } = 1000000;
             public bool splitByDate { get; set; }
             public string jobId { get; set; }
+            public string exportLabel { get; set; }
+            public bool copyImages { get; set; }
+            public List<ImagePath> imagePaths {get;set;}
         }
         private sealed class ExportJob
         {
             internal string Id=Guid.NewGuid().ToString("N"), Error;
             internal object Result;
+            internal ImageCopyPlan Copy;
             internal bool Running=true;
             internal CancellationTokenSource Cancel=new CancellationTokenSource();
         }
@@ -44,7 +49,9 @@ namespace VisionQC.LocalAgent.Services
                     if(_export!=null&&_export.Running)return new {ok=false,error="CSV 저장이 진행 중입니다."};
                     var job=new ExportJob();_export=job;
                     Task.Run(()=>{
-                        try { var result=_store.ExportSearch(request.filters??new AgentHistorySearchRequest(),request.outputDirectory,request.maxRows,request.splitByDate,job.Cancel.Token);lock(_sync)job.Result=result; }
+                        try {using(var plan=request.copyImages?new ImageCopyPlan(request.outputDirectory,request.exportLabel??"History"):null){job.Copy=plan;Action<string,string> add=plan==null?(Action<string,string>)null:plan.Add;object result;
+                        if(request.imagePaths!=null){if(plan==null)throw new InvalidDataException("Image copy required");foreach(var entry in request.imagePaths){job.Cancel.Token.ThrowIfCancellationRequested();plan.Add(entry.path,entry.position);}result=new {count=0,files=new string[0]};}
+                        else result=_store.ExportSearch(request.filters??new AgentHistorySearchRequest(),request.outputDirectory,request.maxRows,request.splitByDate,job.Cancel.Token,ExportLabel.Name(request.exportLabel??"History"),add);var serializer=new JavaScriptSerializer();var data=serializer.Deserialize<Dictionary<string,object>>(serializer.Serialize(result));if(plan!=null)data["images"]=plan.Copy(job.Cancel.Token);lock(_sync)job.Result=data;}}
                         catch(Exception ex){lock(_sync)job.Error=ex.Message;}
                         finally{lock(_sync)job.Running=false;}
                     });
@@ -58,9 +65,11 @@ namespace VisionQC.LocalAgent.Services
             lock(_sync)
             {
                 if(_export==null||_export.Id!=request.jobId)return new {ok=false,error="CSV 저장 작업을 찾을 수 없습니다."};
-                return new {ok=string.IsNullOrEmpty(_export.Error),jobId=_export.Id,running=_export.Running,completed=!_export.Running&&_export.Error==null,result=_export.Result,error=_export.Error};
+                return new {ok=string.IsNullOrEmpty(_export.Error),jobId=_export.Id,running=_export.Running,completed=!_export.Running&&_export.Error==null,copyProcessed=_export.Copy==null?0:Interlocked.Read(ref _export.Copy.Processed),copyTotal=_export.Copy==null?0:Interlocked.Read(ref _export.Copy.Total),result=_export.Result,error=_export.Error};
             }
         }
+        internal object CancelExport(string body)
+        {var request=_json.Deserialize<ExportRequest>(body??"{}")??new ExportRequest();lock(_sync){if(_export==null||_export.Id!=request.jobId)return new {ok=false};_export.Cancel.Cancel();return new {ok=true};}}
         private readonly Dictionary<string, SqliteRunStore.RunStoreSession> _browserImports = new Dictionary<string, SqliteRunStore.RunStoreSession>(StringComparer.OrdinalIgnoreCase);
         private readonly Dictionary<string, HistoryFileImportJob> _fileImports = new Dictionary<string, HistoryFileImportJob>(StringComparer.OrdinalIgnoreCase);
 

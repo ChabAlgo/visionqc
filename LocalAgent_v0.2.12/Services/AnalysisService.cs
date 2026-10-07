@@ -26,6 +26,7 @@ namespace VisionQC.LocalAgent.Services
             internal Task Task;
             internal string OperationId;
             internal object Result;
+            internal ImageCopyPlan Copy;
         }
         internal sealed class Request
         {
@@ -56,6 +57,8 @@ namespace VisionQC.LocalAgent.Services
             public string action {get;set;}
             public AnalysisProjection.ActualNgValue[] actualNg {get;set;}
             public string outputDirectory {get;set;}
+            public bool copyImages {get;set;}
+            public string exportLabel {get;set;}
             public string kind {get;set;}="all";
             public string compare {get;set;}="lte";
             public double cutoff {get;set;}=.5;
@@ -173,11 +176,20 @@ namespace VisionQC.LocalAgent.Services
                 var job=Resolve(request.analysisId);if(job.Running)return new {ok=false,busy=true,error="분석 갱신 중입니다."};
                 if(request.kind!="all"&&request.kind!="score"&&request.kind!="misses"&&request.kind!="selection"&&request.kind!="tool-ng")throw new InvalidDataException("지원하지 않는 내보내기 형식입니다.");
                 if(request.kind=="tool-ng"&&(string.IsNullOrWhiteSpace(request.tool)||string.IsNullOrWhiteSpace(request.position)))throw new InvalidDataException("Position과 Tool을 선택하세요.");
-                StartOperation(job,()=>job.Result=request.kind=="selection"||request.kind=="tool-ng"
-                    ?job.Projection.ExportSelection(request.outputDirectory,request.maxRows,request.splitByDate,request.date,request.kind=="tool-ng"?new[]{request.position}:request.positions,request.kind=="tool-ng"?request.tool:"",job.Cancellation.Token)
-                    :request.kind=="all"
-                    ?job.Projection.ExportRaw(request.outputDirectory,request.maxRows,request.splitByDate,job.Cancellation.Token,null)
-                    :job.Projection.ExportFiltered(request.outputDirectory,request.maxRows,request.splitByDate,request.kind,request.date,request.position,request.tool,request.scope,request.excludeOtherToolNg,request.exclusionThreshold,request.compare,request.cutoff,job.Cancellation.Token));return StatusObject(job);
+                StartOperation(job,()=>{
+                    string name=ExportLabel.Name(request.exportLabel??string.Join("_",new[]{request.position,request.tool,request.kind,request.date}));
+                    using(var plan=request.copyImages?new ImageCopyPlan(request.outputDirectory,request.exportLabel??request.kind):null)
+                    {
+                        job.Copy=plan;Action<string,string> add=plan==null?(Action<string,string>)null:plan.Add;
+                        object result=request.kind=="selection"||request.kind=="tool-ng"
+                            ?job.Projection.ExportSelection(request.outputDirectory,request.maxRows,request.splitByDate,request.date,request.kind=="tool-ng"?new[]{request.position}:request.positions,request.kind=="tool-ng"?request.tool:"",job.Cancellation.Token,name,add)
+                            :request.kind=="all"?job.Projection.ExportRaw(request.outputDirectory,request.maxRows,request.splitByDate,job.Cancellation.Token,null,name,add)
+                            :job.Projection.ExportFiltered(request.outputDirectory,request.maxRows,request.splitByDate,request.kind,request.date,request.position,request.tool,request.scope,request.excludeOtherToolNg,request.exclusionThreshold,request.compare,request.cutoff,job.Cancellation.Token,name,add);
+                        var json=new JavaScriptSerializer();var data=json.Deserialize<Dictionary<string,object>>(json.Serialize(result));
+                        if(plan!=null)data["images"]=plan.Copy(job.Cancellation.Token);
+                        job.Result=data;
+                    }
+                });return StatusObject(job);
             }
         }
         internal object SaveHistory(string body,SqliteRunStore history)
@@ -290,7 +302,7 @@ namespace VisionQC.LocalAgent.Services
         private void StartOperation(Job job,Action action)
         {
             job.Cancellation?.Dispose();job.Cancellation=CancellationTokenSource.CreateLinkedTokenSource(_stop.Token);
-            job.Running=true;job.Completed=false;job.Error=null;
+            job.Running=true;job.Completed=false;job.Error=null;job.Copy=null;
             job.OperationId=Guid.NewGuid().ToString("N");job.Result=null;
             job.Task=Task.Run(()=>{try{action();job.Completed=true;}catch(OperationCanceledException){job.Error="분석 갱신을 취소했습니다.";}catch(Exception ex){job.Error=ex.Message;}finally{job.Running=false;}});
         }
@@ -318,7 +330,7 @@ namespace VisionQC.LocalAgent.Services
             return job;
         }
         private static object StatusObject(Job job)
-        { return new {ok=string.IsNullOrEmpty(job.Error),analysisId=job.Id,runId=job.RunId,running=job.Running,completed=job.Completed,imported=Interlocked.Read(ref job.Imported),projectedCursor=Interlocked.Read(ref job.Projected),error=job.Error,operationId=job.OperationId,result=job.Completed?job.Result:null}; }
+        { return new {ok=string.IsNullOrEmpty(job.Error),analysisId=job.Id,runId=job.RunId,running=job.Running,completed=job.Completed,imported=Interlocked.Read(ref job.Imported),projectedCursor=Interlocked.Read(ref job.Projected),copyProcessed=job.Copy==null?0:Interlocked.Read(ref job.Copy.Processed),copyTotal=job.Copy==null?0:Interlocked.Read(ref job.Copy.Total),error=job.Error,operationId=job.OperationId,result=job.Completed?job.Result:null}; }
         public void Dispose()
         {
             _stop.Cancel();
