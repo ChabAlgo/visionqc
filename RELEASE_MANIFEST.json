@@ -1,19 +1,19 @@
 {
-  "releaseTag": "visionqc-v4.8.12-agent-v1.4.12",
-  "webVersion": "4.8.12",
-  "agentVersion": "1.4.12",
-  "minimumAgentVersion": "1.4.12",
+  "releaseTag": "visionqc-v4.8.13-agent-v1.4.13",
+  "webVersion": "4.8.13",
+  "agentVersion": "1.4.13",
+  "minimumAgentVersion": "1.4.13",
   "compatibility": {
-    "web": "4.8.12",
-    "agent": "1.4.12"
+    "web": "4.8.13",
+    "agent": "1.4.13"
   },
   "artifacts": {
-    "agentInstaller": "downloads/VisionQC_Agent_Installer_v1.4.12.exe",
-    "offlinePackage": "downloads/VisionQC_Offline_v4.8.12.zip",
+    "agentInstaller": "downloads/VisionQC_Agent_Installer_v1.4.13.exe",
+    "offlinePackage": "downloads/VisionQC_Offline_v4.8.13.zip",
     "sha256": {
-      "agentInstaller": "A98FD82F273CC57DC9B9B14F8BC8171E7F4BE2B9559C2EDC4AB0DF2F8E8F2B78",
-      "offlinePackage": "648394304614FAEB0899D50AC37FFF0C2C84B77486D1C6BC353AF967CFEC0F78"
+      "agentInstaller": "60301E7E304B31A6E33BAC81B46509B504B6EC63D8332BD45C2632F759CC8A6F",
+      "offlinePackage": "54F989FE8EE25B941A1E8DDFE8BE8759A0725311888F831EE34A9BB1D79A69EE"
     }
   },
-  "notes": "명시적 제외 폴더 목록, 설정/버튼 배치 정리, 이미지 보기 한 장 복사."
+  "notes": "원본 파일명 단일 이미지 저장 및 Position별 일괄 복사 폴더 정리."
 }

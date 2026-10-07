@@ -26,6 +26,7 @@ namespace VisionQC.LocalAgent.Services
             public bool splitByDate { get; set; }
             public string jobId { get; set; }
             public string exportLabel { get; set; }
+            public string imageGroup {get;set;}
             public bool copyImages { get; set; }
             public List<ImagePath> imagePaths {get;set;}
         }
@@ -36,6 +37,12 @@ namespace VisionQC.LocalAgent.Services
             internal ImageCopyPlan Copy;
             internal bool Running=true;
             internal CancellationTokenSource Cancel=new CancellationTokenSource();
+        }
+        private sealed class SingleCopyRequest {public string sourcePath {get;set;} public string targetPath {get;set;} public bool overwrite {get;set;}}
+        internal object CopySingleImage(string body)
+        {
+            try{var request=_json.Deserialize<SingleCopyRequest>(body??"{}");return SingleImageCopy.Copy(request.sourcePath,request.targetPath,request.overwrite);}
+            catch(Exception error){return new {ok=false,error=error.Message};}
         }
         internal object StartExport(string body)
         {
@@ -49,7 +56,7 @@ namespace VisionQC.LocalAgent.Services
                     if(_export!=null&&_export.Running)return new {ok=false,error="CSV 저장이 진행 중입니다."};
                     var job=new ExportJob();_export=job;
                     Task.Run(()=>{
-                        try {using(var plan=request.copyImages?new ImageCopyPlan(request.outputDirectory,request.exportLabel??"History"):null){job.Copy=plan;Action<string,string> add=plan==null?(Action<string,string>)null:plan.Add;object result;
+                        try {using(var plan=request.copyImages?new ImageCopyPlan(request.outputDirectory,request.exportLabel??"History",request.imageGroup??"검사이력"):null){job.Copy=plan;Action<string,string> add=plan==null?(Action<string,string>)null:plan.Add;object result;
                         if(request.imagePaths!=null){if(plan==null)throw new InvalidDataException("Image copy required");foreach(var entry in request.imagePaths){job.Cancel.Token.ThrowIfCancellationRequested();plan.Add(entry.path,entry.position);}result=new {count=0,files=new string[0]};}
                         else result=_store.ExportSearch(request.filters??new AgentHistorySearchRequest(),request.outputDirectory,request.maxRows,request.splitByDate,job.Cancel.Token,ExportLabel.Name(request.exportLabel??"History"),add);var serializer=new JavaScriptSerializer();var data=serializer.Deserialize<Dictionary<string,object>>(serializer.Serialize(result));if(plan!=null)data["images"]=plan.Copy(job.Cancel.Token);lock(_sync)job.Result=data;}}
                         catch(Exception ex){lock(_sync)job.Error=ex.Message;}

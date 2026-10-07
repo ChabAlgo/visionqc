@@ -38,7 +38,7 @@ try{
  const batchId='1234567890abcdef1234567890abcdef';await request('/api/analysis/actual-ng',{analysisId,batchId,action:'begin'});
  await request('/api/analysis/actual-ng',{analysisId,batchId,action:'append',actualNg:[{day:'2026-02-01',cell:'CELL17',position:'AN(TOP)',path:join(root,'source','AN(TOP)','1','image17.jpg')}]});
  await request('/api/analysis/actual-ng',{analysisId,batchId,action:'commit'});
- const missCopy=await finish(await request('/api/analysis/export',{analysisId,kind:'misses',position:'AN(TOP)',date:'2026-02-01',outputDirectory:output,maxRows:100,copyImages:true}));assert.equal(missCopy.result.images.copied,1);
+ const missCopy=await finish(await request('/api/analysis/export',{analysisId,kind:'misses',position:'AN(TOP)',date:'2026-02-01',outputDirectory:output,maxRows:100,copyImages:true}));assert.equal(missCopy.result.images.copied,1);assert.equal(readdirSync(join(output,'AN(TOP)','미검Cell')).length,1);
  const dates=await request('/api/analysis/dates',{analysisId,positions:['AN(TOP)'],date:'2026-02-01'});assert.deepEqual(dates.page.summary,{totalCount:20,ngCount:10,unknown:0});
  const both=await request('/api/analysis/dates',{analysisId});
  assert.deepEqual(both.page.summary,{totalCount:40,ngCount:34,unknown:0});
@@ -67,12 +67,19 @@ try{
  const again=await finish(await request('/api/analysis/export',{...selection,analysisId:roundtrip.analysisId}));assert.equal(again.result.count,10);
 
  const singleSource=join(root,'source','AN(TOP)','1','image17.jpg');
- let single=await request('/api/history/export/start',{copyImages:true,imagePaths:[{path:singleSource,position:'AN(TOP)'}],outputDirectory:output,exportLabel:'Single_Image'});
- do{await delay(20);single=await request('/api/history/export/status',{jobId:single.jobId});}while(single.running);
- assert.equal(single.result.images.total,1);assert.equal(single.result.images.copied,1);assert.equal(single.result.files.length,0);
- const singleLines=readFileSync(single.result.images.report,'utf8').trim().split(/\r?\n/);assert.equal(singleLines.length,2);
- assert.deepEqual(readFileSync(singleLines[1].split(',')[2]),readFileSync(singleSource));
- console.log('PASS: viewer single original image copied byte-for-byte without exporting unrelated CSV rows.');
+ const singleOutput=join(root,'single');mkdirSync(singleOutput);const singleTarget=join(singleOutput,'image17.jpg');
+ const single=await request('/api/image/copy-single',{sourcePath:singleSource,targetPath:singleTarget});assert.equal(single.path,singleTarget);
+ assert.deepEqual(readdirSync(singleOutput),['image17.jpg']);assert.deepEqual(readFileSync(singleTarget),readFileSync(singleSource));
+ // Preserve source, existing destinations and failed copies. Save-dialog-approved overwrite is atomic.
+ const rawRequest=async body=>(await fetch(base+'/api/image/copy-single',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify(body)})).json();
+ assert.equal((await rawRequest({sourcePath:singleSource,targetPath:singleSource,overwrite:true})).ok,false);
+ assert.equal((await rawRequest({sourcePath:singleSource,targetPath:singleTarget})).ok,false);
+ writeFileSync(singleTarget,'old destination');await request('/api/image/copy-single',{sourcePath:singleSource,targetPath:singleTarget,overwrite:true});assert.deepEqual(readFileSync(singleTarget),readFileSync(singleSource));
+ assert.equal((await rawRequest({sourcePath:join(root,'missing.jpg'),targetPath:singleTarget,overwrite:true})).ok,false);assert.deepEqual(readFileSync(singleTarget),readFileSync(singleSource));
+ assert.deepEqual(readdirSync(singleOutput),['image17.jpg']);
+ assert.equal(readdirSync(output).some(name=>name.startsWith('VisionQC_Images')||name.startsWith('.copy-queue')),false);
+ for(const line of report.trim().split(/\r?\n/).slice(1)){const parts=line.split(',');if(parts[3]==='Copied')assert.equal(join(output,'AN(TOP)','FoilDamage'),resolve(parts[2],'..'));}
+ console.log('PASS: flat single-file save, original bytes/name, overwrite/cancel safety and Position/Tool folder layout.');
  const calendar=join(root,'calendar.csv');
  writeFileSync(calendar,['Date,Time,Cell ID,Position,Total_Result,FoilDamage_result,FoilDamage_score,FullPath',...Array.from({length:41},(_,i)=>`${new Date(Date.UTC(2026,0,i+1)).toISOString().slice(0,10)},12:00:00,C${i},AN(TOP),NG,NG,0.9,`)].join('\r\n'));
  const calendarImport=await finish(await request('/api/analysis/import/start',{filePaths:[calendar]}));

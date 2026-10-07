@@ -187,6 +187,30 @@ namespace VisionQC.LocalAgent
         {
         }
 
+        [ComImport]
+        [Guid("C0B4E2F3-BA21-4773-8DBA-335EC946EB8B")]
+        private class FileSaveDialogCom { }
+
+        internal static string SaveImage(string initialPath,string suggestedName)
+        {
+            return RunOwnedDialog("이미지 저장",ownerHandle=>{
+                IFileDialog dialog=null;IShellItem initialItem=null,resultItem=null;
+                try
+                {
+                    dialog=(IFileDialog)new FileSaveDialogCom();dialog.SetTitle("VisionQC 이미지 저장");dialog.SetOkButtonLabel("저장");
+                    dialog.SetOptions(FileOpenOptions.FOS_FORCEFILESYSTEM|FileOpenOptions.FOS_PATHMUSTEXIST|FileOpenOptions.FOS_NOCHANGEDIR|FileOpenOptions.FOS_DONTADDTORECENT|FileOpenOptions.FOS_OVERWRITEPROMPT);
+                    string name=Path.GetFileName(suggestedName??"image.png");dialog.SetFileName(name);dialog.SetDefaultExtension(Path.GetExtension(name).TrimStart('.'));
+                    string initial=PreferredInitialFolder(initialPath,false);
+                    if(!string.IsNullOrWhiteSpace(initial)){try{Guid guid=typeof(IShellItem).GUID;SHCreateItemFromParsingName(initial,IntPtr.Zero,ref guid,out initialItem);dialog.SetFolder(initialItem);}catch{}}
+                    SetActiveDialog(dialog,"VisionQC 이미지 저장");if(IsCancelRequested(dialog))return null;
+                    SetForegroundWindow(ownerHandle);PromoteShellDialogWhenCreated("VisionQC 이미지 저장");
+                    int hr=dialog.Show(ownerHandle);if(hr==ERROR_CANCELLED_HRESULT)return null;if(hr!=S_OK)Marshal.ThrowExceptionForHR(hr);
+                    dialog.GetResult(out resultItem);string target=ShellItemPath(resultItem);if(!string.IsNullOrWhiteSpace(target))RememberLastSelectedFolder(Path.GetDirectoryName(target));return target;
+                }
+                finally{ClearActiveDialog(dialog);if(resultItem!=null)Marshal.FinalReleaseComObject(resultItem);if(initialItem!=null)Marshal.FinalReleaseComObject(initialItem);if(dialog!=null)Marshal.FinalReleaseComObject(dialog);}
+            });
+        }
+
         [DllImport("user32.dll")]
         [return: MarshalAs(UnmanagedType.Bool)]
         private static extern bool SetForegroundWindow(IntPtr hWnd);

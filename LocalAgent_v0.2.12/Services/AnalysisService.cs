@@ -59,6 +59,7 @@ namespace VisionQC.LocalAgent.Services
             public string outputDirectory {get;set;}
             public bool copyImages {get;set;}
             public string exportLabel {get;set;}
+            public string imageGroup {get;set;}
             public string kind {get;set;}="all";
             public string compare {get;set;}="lte";
             public double cutoff {get;set;}=.5;
@@ -178,7 +179,7 @@ namespace VisionQC.LocalAgent.Services
                 if(request.kind=="tool-ng"&&(string.IsNullOrWhiteSpace(request.tool)||string.IsNullOrWhiteSpace(request.position)))throw new InvalidDataException("Position과 Tool을 선택하세요.");
                 StartOperation(job,()=>{
                     string name=ExportLabel.Name(request.exportLabel??string.Join("_",new[]{request.position,request.tool,request.kind,request.date}));
-                    using(var plan=request.copyImages?new ImageCopyPlan(request.outputDirectory,request.exportLabel??request.kind):null)
+                    using(var plan=request.copyImages?new ImageCopyPlan(request.outputDirectory,request.exportLabel??request.kind,request.imageGroup??(request.kind=="misses"?"미검Cell":(request.kind=="score"||request.kind=="tool-ng"?request.tool:"정보"))):null)
                     {
                         job.Copy=plan;Action<string,string> add=plan==null?(Action<string,string>)null:plan.Add;
                         object result=request.kind=="selection"||request.kind=="tool-ng"

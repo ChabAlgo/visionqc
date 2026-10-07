@@ -1,7 +1,7 @@
 (() => {
   'use strict';
 
-  const VERSION = '4.8.12';
+  const VERSION = '4.8.13';
   const DEFAULT_POSITION_DEFS = [
     { key:'CA_TOP', name:'CA(TOP)' },
     { key:'AN_TOP', name:'AN(TOP)' },
@@ -27,9 +27,9 @@
   const NG_POSITION_PREFIX = 'ng-position:';
   const IMG_RE = /\.(png|jpe?g|bmp|gif|webp|tif?f)$/i;
   const LOCAL_AGENT_URL = 'http://127.0.0.1:17891';
-  const EXPECTED_AGENT_VERSION = '1.4.12';
-  const AGENT_INSTALLER_URL = './downloads/VisionQC_Agent_Installer_v1.4.12.exe';
-  const OFFLINE_PACKAGE_URL = './downloads/VisionQC_Offline_v4.8.12.zip';
+  const EXPECTED_AGENT_VERSION = '1.4.13';
+  const AGENT_INSTALLER_URL = './downloads/VisionQC_Agent_Installer_v1.4.13.exe';
+  const OFFLINE_PACKAGE_URL = './downloads/VisionQC_Offline_v4.8.13.zip';
   // SQLite에는 사용자가 명시적으로 남기려는 두 종류의 결과만 표시한다.
   // 이전 버전의 단발 검사(single-inspection) 이력은 보존하되 화면 집계에서는 제외한다.
   const PERSISTED_HISTORY_SOURCE_TYPES = ['simulation', 'csv-import', 'csv-file-stream'];
@@ -3138,7 +3138,7 @@
       const picked=await requestSimulationPicker('/api/pick/folder',{initialPath:form.outputRoot||''});
       if(!picked?.ok||!picked.path)return;
       if(state.page==='history'){renderHistory();bindPageControls();}
-      let job=await agentFetch('/api/history/export/start',{method:'POST',body:{copyImages,exportLabel:exportConditionLabel('history',filters.position,filters),filters:{...filters,positionDefinitions:positionDefinitions()},outputDirectory:picked.path,maxRows:form.csvMaxRows,splitByDate:form.csvSplitByDate}});
+      let job=await agentFetch('/api/history/export/start',{method:'POST',body:{copyImages,imageGroup:imageCopyGroup('history',filters),exportLabel:exportConditionLabel('history',filters.position,filters),filters:{...filters,positionDefinitions:positionDefinitions()},outputDirectory:picked.path,maxRows:form.csvMaxRows,splitByDate:form.csvSplitByDate}});
       if(!job.ok)throw new Error(job.error||'CSV 저장 시작 실패');
       const jobId=job.jobId;
       if(copyImages)copyProgress=exportProgress(()=>agentFetch('/api/history/export/cancel',{method:'POST',body:{jobId}}));
@@ -3154,27 +3154,34 @@
     finally{copyProgress?.remove();state.historyExporting=false;if(state.page==='history'){renderHistory();bindPageControls();}}
   }
 
+  function originalImageFileName(image) {
+    return image.file?.name||image.fileHandle?.name||String(image.fullPath||image.relativePath||image.name||'image.png').split(/[\\/]/).pop()||'image.png';
+  }
+  function imageCopyGroup(kind,extra={}) {
+    if(kind==='misses')return '미검Cell';
+    if(kind==='tool-ng'||kind==='score')return extra.tool||'Tool';
+    if(kind==='all')return '전체결과';
+    if(kind==='history')return `검사이력_${extra.tool||'전체툴'}_${extra.totalResult||'전체결과'}_${extra.fromDate||'전체'}~${extra.toDate||'전체'}`;
+    return `Threshold적용_${extra.date||'전체날짜'}`;
+  }
   async function copySingleModalImage(image,position,button) {
     if(button.disabled)return;button.disabled=true;
-    let progress;
     try {
+      const suggestedName=originalImageFileName(image);
       if(image.file||image.fileHandle){
         if(!window.showSaveFilePicker)throw new Error('현재 브라우저에서 파일 저장을 지원하지 않습니다. Chrome 또는 Edge를 사용하세요.');
-        const target=await window.showSaveFilePicker({suggestedName:image.file?.name||image.name||'image.png'});
+        const target=await window.showSaveFilePicker({suggestedName});
         if(image.fileHandle&&await target.isSameEntry(image.fileHandle))throw new Error('원본과 다른 저장 위치를 선택하세요.');
         const original=image.file||await image.fileHandle.getFile();
         const output=await target.createWritable();try{await output.write(original);await output.close();}catch(error){await output.abort().catch(()=>{});throw error;}
         showToast('현재 이미지 한 장을 복사했습니다.');return;
       }
       if(!image.fullPath)throw new Error('원본 이미지 경로가 없습니다.');
-      const picked=await requestSimulationPicker('/api/pick/folder',{initialPath:ensureSimulationForm().outputRoot||''});if(!picked?.ok||!picked.path)return;
-      let job=await agentFetch('/api/history/export/start',{method:'POST',body:{copyImages:true,imagePaths:[{path:image.fullPath,position}],outputDirectory:picked.path,exportLabel:'Single_Image'}});
-      if(!job.ok)throw new Error(job.error);const jobId=job.jobId;
-      progress=exportProgress(()=>agentFetch('/api/history/export/cancel',{method:'POST',body:{jobId}}));
-      do{await new Promise(resolve=>setTimeout(resolve,500));job=await agentFetch('/api/history/export/status',{method:'POST',body:{jobId}});if(!job.ok)throw new Error(job.error);progress.update(job);}while(job.running);
-      const result=job.result?.images;if(!result||result.copied!==1)throw new Error(job.error||'이미지를 복사하지 못했습니다. 원본 경로와 복사 결과를 확인하세요.');
-      showToast('이미지 한 장 복사 완료: '+result.directory);
-    }catch(error){if(error.name!=='AbortError')showToast('이미지 복사 실패: '+error.message,true);}finally{progress?.remove();button.disabled=false;}
+      const picked=await requestSimulationPicker('/api/pick/save-image',{initialPath:ensureSimulationForm().outputRoot||'',suggestedName});if(!picked?.ok||!picked.path)return;
+      const result=await agentFetch('/api/image/copy-single',{method:'POST',body:{sourcePath:image.fullPath,targetPath:picked.path,overwrite:!!picked.overwrite},timeout:120000});
+      if(!result.ok)throw new Error(result.error||'이미지를 저장하지 못했습니다.');
+      showToast('이미지 한 장 저장 완료: '+result.path);
+    }catch(error){if(error.name!=='AbortError')showToast('이미지 복사 실패: '+error.message,true);}finally{button.disabled=false;}
   }
 
   async function copyBrowserSelection(kind,position,extra) {
@@ -3193,7 +3200,7 @@
     let progress;
     try{
       const picked=await requestSimulationPicker('/api/pick/folder',{initialPath:ensureSimulationForm().outputRoot||''});if(!picked?.ok||!picked.path)return;
-      let job=await agentFetch('/api/history/export/start',{method:'POST',body:{copyImages:true,imagePaths:entries,outputDirectory:picked.path,exportLabel:exportConditionLabel(kind,position,body)}});
+      let job=await agentFetch('/api/history/export/start',{method:'POST',body:{copyImages:true,imagePaths:entries,imageGroup:imageCopyGroup(kind,body),outputDirectory:picked.path,exportLabel:exportConditionLabel(kind,position,body)}});
       if(!job.ok)throw new Error(job.error);const jobId=job.jobId;progress=exportProgress(()=>agentFetch('/api/history/export/cancel',{method:'POST',body:{jobId}}));
       do{await new Promise(r=>setTimeout(r,500));job=await agentFetch('/api/history/export/status',{method:'POST',body:{jobId}});if(!job.ok)throw new Error(job.error);progress.update(job);}while(job.running);
       const im=job.result.images;showToast(`이미지 ${numberText(im.copied)}개 복사 / ${numberText(im.failed)}개 실패${im.cancelled?' (취소됨)':''}: ${im.directory}`);
@@ -3209,6 +3216,7 @@
       const body=JSON.parse(JSON.stringify({analysisId:remote.analysisId,maxRows:form.csvMaxRows,splitByDate:form.csvSplitByDate,kind,position,date:state.dashboardDate,...extra}));
       if(kind==='score')Object.assign(body,agentScoreRequest(),{cutoff:clampScore($('#vq43-score-cutoff')?.value ?? state.analysisScoreCutoff,.8),compare:state.analysisScoreCompare});
       body.exportLabel=exportConditionLabel(kind,position,body);
+      body.imageGroup=imageCopyGroup(kind,body);
       const picked=await requestSimulationPicker('/api/pick/folder',{initialPath:form.outputRoot||''});
       if(!picked?.ok||!picked.path)return;body.outputDirectory=picked.path;
       if(body.copyImages)copyProgress=exportProgress(()=>analysisApi('cancel',{analysisId:remote.analysisId}));
@@ -4852,7 +4860,7 @@
       throw new Error(`파일 선택 안정화 API는 Agent v${EXPECTED_AGENT_VERSION}가 필요합니다. 현재 Agent ${state.simulationAgent.version || '-'}를 종료하고 새 Agent를 실행하세요.`);
     }
     const requestId = globalThis.crypto?.randomUUID?.() || `pick-${Date.now().toString(36)}-${Math.random().toString(36).slice(2)}`;
-    const pickerKind = path.endsWith('/file') ? 'file' : 'folder';
+    const pickerKind = path.endsWith('/save-image')?'save-image':path.endsWith('/file') ? 'file' : 'folder';
     const requestBody = { ...(body || {}), kind:pickerKind, clientId:PICKER_CLIENT_ID, requestId };
     const wait = (milliseconds) => new Promise((resolve) => setTimeout(resolve, milliseconds));
     state.simulationPickerPending = true;

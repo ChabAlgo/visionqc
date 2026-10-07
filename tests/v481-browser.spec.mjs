@@ -30,6 +30,7 @@ async function setup(page){
        const records=Array.from({length:Math.min(100,202-first)},(_,i)=>({day:'2026-02-03',cellId:cell(first+i),position:'AN(TOP)',tools:[{tool:'Crack',result:'OK',representativeScore:.7,threshold:.5}]}));
        response={ok:true,page:{records,hasMore:first+records.length<=201,nextDay:'2026-02-03',nextCell:records.at(-1)?.cellId}};
      }
+     if(method==='detail')response={ok:true,page:{records:[{imageId:1,cellId:cell(1),position:'AN(TOP)',captureTimestamp:'2026-02-03T12:00:00',fullPath:'C:\\Images\\1.png',totalResult:'NG',tools:[{tool:'Crack',result:'NG',score:.6}]}]}};
      if(method==='statistics')response=done({total:{count:601,min:.6,max:.6,mean:.6,median:.6},byResult:[{result:'NG',count:601,min:.6,max:.6,mean:.6,median:.6}],bins:[{bin:12,result:'NG',count:601}]});
      if(method==='score-window'){
        const first=body.previous?Math.max(1,body.afterId-300):body.afterId+1;
@@ -301,4 +302,41 @@ test('Image copy sends the same Tool selection, descriptive label, progress and 
  await expect(page.locator('.vq4811-export-progress')).toContainText('1 / 20');
  const body=requests.find(r=>r.path==='/api/analysis/export').body;expect(body).toMatchObject({copyImages:true,kind:'tool-ng',position:'AN(TOP)',tool:'Crack'});expect(body.exportLabel).toContain('AN(TOP)_Crack_NG_Threshold0.50_전체날짜');
  await page.locator('.vq4811-export-progress button').click();await expect(page.locator('.vq4811-export-progress')).toHaveCount(0);expect(cancelled).toBe(true);
+});
+
+for(const outcome of ['save','cancel','error'])test(`Agent score single-image ${outcome} uses file picker and original filename only`,async({page})=>{
+ const requests=await setup(page);
+ await page.route('http://127.0.0.1:*/api/pick/start',async route=>{requests.push({path:'/api/pick/start',body:route.request().postDataJSON()});await route.fulfill({json:outcome==='cancel'?{ok:false,cancelled:true,path:''}:{ok:true,path:'C:\\Exports\\1.png'}});});
+ await page.route('http://127.0.0.1:*/api/image/copy-single',async route=>{requests.push({path:'/api/image/copy-single',body:route.request().postDataJSON()});await route.fulfill({json:outcome==='error'?{ok:false,error:'fixture missing source'}:{ok:true,path:'C:\\Exports\\1.png'}});});
+ await page.evaluate(()=>window.__VISIONQC_DEBUG__.setPage('analysis'));
+ await expect.poll(()=>page.locator('.vq43-scatter-point').count()).toBe(300);
+ await page.locator('.vq43-scatter-point').first().dispatchEvent('click');await expect(page.locator('#vq43-modal')).toHaveClass(/open/);
+ await page.locator('[data-vq-action="copy-single-image"]').click();
+ await expect.poll(()=>requests.filter(r=>r.path==='/api/pick/start').length).toBe(1);
+ expect(requests.find(r=>r.path==='/api/pick/start').body).toMatchObject({kind:'save-image',suggestedName:'1.png'});
+ if(outcome==='cancel'){await expect(page.locator('[data-vq-action="copy-single-image"]')).toBeEnabled();expect(requests.filter(r=>r.path==='/api/image/copy-single')).toHaveLength(0);}
+ else{await expect.poll(()=>requests.filter(r=>r.path==='/api/image/copy-single').length).toBe(1);expect(requests.find(r=>r.path==='/api/image/copy-single').body).toMatchObject({sourcePath:'C:\\Images\\1.png',targetPath:'C:\\Exports\\1.png'});}
+ expect(requests.filter(r=>r.path==='/api/history/export/start'||r.path==='/api/analysis/export')).toHaveLength(0);
+ await expect(page.locator('#vq43-modal')).toHaveClass(/open/);
+});
+
+test('all analysis bulk image buttons consistently choose a folder and pass the intended group',async({page})=>{
+ const requests=await setup(page);
+ await page.route('http://127.0.0.1:*/api/pick/start',async route=>{requests.push({path:'/api/pick/start',body:route.request().postDataJSON()});await route.fulfill({json:{ok:true,path:'C:\\Exports'}});});
+ await page.route('http://127.0.0.1:*/api/analysis/export',async route=>{requests.push({path:'/api/analysis/export',body:route.request().postDataJSON()});await route.fulfill({json:done({count:1,files:['x.csv'],images:{copied:1,failed:0,directory:'C:\\Exports'}})});});
+ for(const [action,group] of [['copy-tool-images','Crack'],['copy-miss-images','미검Cell'],['copy-chart-images','Threshold적용_전체날짜'],['copy-all-images','전체결과'],['copy-score-images','Crack']]){
+  if(action==='copy-score-images'){await page.evaluate(()=>window.__VISIONQC_DEBUG__.setPage('analysis'));await expect.poll(()=>page.locator('.vq43-scatter-point').count()).toBe(300);}
+  const before=requests.filter(r=>r.path==='/api/analysis/export').length;await page.locator(`[data-vq-action="${action}"]`).first().click();
+  await expect.poll(()=>requests.filter(r=>r.path==='/api/analysis/export').length).toBe(before+1);
+  expect(requests.filter(r=>r.path==='/api/analysis/export').at(-1).body).toMatchObject({copyImages:true,imageGroup:group});
+  expect(requests.filter(r=>r.path==='/api/pick/start').at(-1).body.kind).toBe('folder');
+ }
+ await page.route('http://127.0.0.1:*/api/history/**',async route=>{
+  const path=new URL(route.request().url()).pathname,body=route.request().postDataJSON();requests.push({path,body});
+  await route.fulfill({json:path.endsWith('/search')?{ok:true,totalCount:1,ngCount:1,uniqueCellCount:1,page:1,items:[],daily:[days[2]],filterOptions:{positions:['AN(TOP)'],tools:[],workspaces:[],workspaceTypes:[]}}:path.endsWith('/start')?{ok:true,jobId:'copy-history'}:{ok:true,jobId:'copy-history',completed:true,running:false,result:{count:1,files:['history.csv'],images:{copied:1,failed:0,directory:'C:\\Exports'}}}});
+ });
+ await page.evaluate(()=>window.__VISIONQC_DEBUG__.setPage('history'));await expect(page.locator('[data-chart-position="AN(TOP)"]')).toBeVisible();
+ await page.locator('[data-vq-action="copy-chart-images"]').click();await expect.poll(()=>requests.filter(r=>r.path==='/api/history/export/start').length).toBe(1);
+ expect(requests.find(r=>r.path==='/api/history/export/start').body).toMatchObject({copyImages:true,imageGroup:expect.stringMatching(/^검사이력_/)});
+ expect(requests.filter(r=>r.path==='/api/pick/start').at(-1).body.kind).toBe('folder');
 });

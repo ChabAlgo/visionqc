@@ -156,6 +156,7 @@ namespace VisionQC.LocalAgent
                     case "/api/analysis/thresholds": result = _analysis.Thresholds(request.Body); break;
                     case "/api/analysis/cancel": result = _analysis.Cancel(request.Body); break;
                     case "/api/history/import": result = _history.ImportBrowserRows(request.Body); break;
+                    case "/api/image/copy-single": result = _history.CopySingleImage(request.Body); break;
                     case "/api/history/export/start": result = _history.StartExport(request.Body); break;
                     case "/api/history/export/status": result = _history.ExportStatus(request.Body); break;
                     case "/api/history/export/cancel": result = _history.CancelExport(request.Body); break;

@@ -31,7 +31,7 @@ namespace VisionQC.LocalAgent.Services
             if (string.IsNullOrWhiteSpace(clientId))
                 return new { ok = false, pending = false, error = "브라우저 선택 세션 ID가 없습니다." };
             if (string.IsNullOrWhiteSpace(requestId)) requestId = Guid.NewGuid().ToString("N");
-            if (kind != "file" && kind != "folder")
+            if (kind != "file" && kind != "folder" && kind != "save-image")
                 return new { ok = false, pending = false, error = "지원하지 않는 선택 종류입니다." };
 
             PickerJob job;
@@ -70,6 +70,7 @@ namespace VisionQC.LocalAgent.Services
                     Kind = kind,
                     FileType = fileType,
                     InitialPath = initial,
+                    SuggestedName = GetString(data,"suggestedName","image.png"),
                     AllowMultiple = allowMultiple
                 };
                 _job = job;
@@ -203,21 +204,25 @@ namespace VisionQC.LocalAgent.Services
                     }
                 }
 
-                _log("INFO", job.Kind == "file" ? "파일 선택 창 열림: " + job.FileType : (job.AllowMultiple ? "다중 폴더 선택 창 열림" : "폴더 선택 창 열림"));
+                _log("INFO", job.Kind == "save-image" ? "이미지 저장 창 열림" : job.Kind == "file" ? "파일 선택 창 열림: " + job.FileType : (job.AllowMultiple ? "다중 폴더 선택 창 열림" : "폴더 선택 창 열림"));
                 if (job.Kind == "file")
                 {
                     selectedPaths.AddRange(NativeShellPicker.PickFiles(job.InitialPath, job.FileType, job.AllowMultiple));
                 }
+                else if(job.Kind=="save-image"){
+                    string target=NativeShellPicker.SaveImage(job.InitialPath,job.SuggestedName);
+                    if(!string.IsNullOrWhiteSpace(target)){selectedPaths.Add(target);job.Overwrite=System.IO.File.Exists(target);}
+                }
                 else selectedPaths.AddRange(NativeShellPicker.PickFolders(job.InitialPath, job.AllowMultiple));
 
                 _log("INFO", selectedPaths.Count == 0
-                    ? (job.Kind == "file" ? "파일 선택 취소" : "폴더 선택 취소")
-                    : (job.Kind == "file" ? "파일 선택 완료: " : "폴더 선택 완료: ") + string.Join(" | ", selectedPaths));
+                    ? (job.Kind == "save-image" ? "이미지 저장 취소" : job.Kind == "file" ? "파일 선택 취소" : "폴더 선택 취소")
+                    : (job.Kind == "save-image" ? "이미지 저장 위치: " : job.Kind == "file" ? "파일 선택 완료: " : "폴더 선택 완료: ") + string.Join(" | ", selectedPaths));
             }
             catch (Exception ex)
             {
                 error = ex.Message;
-                _log("ERROR", (job.Kind == "file" ? "파일" : "폴더") + " 선택 실패: " + ex.Message);
+                _log("ERROR", (job.Kind == "save-image" ? "이미지 저장" : job.Kind == "file" ? "파일" : "폴더") + " 선택 실패: " + ex.Message);
             }
             finally
             {
@@ -268,6 +273,7 @@ namespace VisionQC.LocalAgent.Services
                 requestId = job.RequestId,
                 path = job.Path ?? "",
                 paths = job.Paths ?? new List<string>(),
+                overwrite = job.Overwrite,
                 cancelled = job.Cancelled,
                 error = job.Error ?? ""
             };
@@ -299,6 +305,8 @@ namespace VisionQC.LocalAgent.Services
             public string Kind = "folder";
             public string FileType = "folder";
             public string InitialPath = "";
+            public string SuggestedName = "image.png";
+            public bool Overwrite;
             public string Path = "";
             public List<string> Paths = new List<string>();
             public string Error = "";
