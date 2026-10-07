@@ -13,7 +13,7 @@ namespace VpdlGreenHeatmapOverlay
     {
         internal static IEnumerable<string> Enumerate(string root, IEnumerable<string> excluded)
         {
-            var names=new HashSet<string>(excluded??new string[0],StringComparer.OrdinalIgnoreCase);names.Add("Delet");
+            var names=new HashSet<string>(excluded??new[]{"Delet"},StringComparer.OrdinalIgnoreCase);
             var pending=new Stack<string>();pending.Push(root);
             while(pending.Count>0)
             {

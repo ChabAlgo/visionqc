@@ -1,19 +1,19 @@
 {
-  "releaseTag": "visionqc-v4.8.11-agent-v1.4.11",
-  "webVersion": "4.8.11",
-  "agentVersion": "1.4.11",
-  "minimumAgentVersion": "1.4.11",
+  "releaseTag": "visionqc-v4.8.12-agent-v1.4.12",
+  "webVersion": "4.8.12",
+  "agentVersion": "1.4.12",
+  "minimumAgentVersion": "1.4.12",
   "compatibility": {
-    "web": "4.8.11",
-    "agent": "1.4.11"
+    "web": "4.8.12",
+    "agent": "1.4.12"
   },
   "artifacts": {
-    "agentInstaller": "downloads/VisionQC_Agent_Installer_v1.4.11.exe",
-    "offlinePackage": "downloads/VisionQC_Offline_v4.8.11.zip",
+    "agentInstaller": "downloads/VisionQC_Agent_Installer_v1.4.12.exe",
+    "offlinePackage": "downloads/VisionQC_Offline_v4.8.12.zip",
     "sha256": {
-      "agentInstaller": "181195B9B9386419AC610D6483CE8868EB3DFE647E895195B3C3269F374D7F87",
-      "offlinePackage": "2A9123FD4F62D611CA14A4E9D31A6F50DCB5556F7B2C8669F767FFC8E2D61D1C"
+      "agentInstaller": "A98FD82F273CC57DC9B9B14F8BC8171E7F4BE2B9559C2EDC4AB0DF2F8E8F2B78",
+      "offlinePackage": "648394304614FAEB0899D50AC37FFF0C2C84B77486D1C6BC353AF967CFEC0F78"
     }
   },
-  "notes": "조건별 CSV 파일명 개선, 동일 조건 원본 이미지 복사와 결과 기록."
+  "notes": "명시적 제외 폴더 목록, 설정/버튼 배치 정리, 이미지 보기 한 장 복사."
 }

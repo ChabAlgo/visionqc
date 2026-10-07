@@ -16,6 +16,11 @@ test('multiple NG folders, repeated exclusions, next image and refreshed counts 
  page.on('dialog',dialog=>dialog.accept());
  const snapshot=()=>page.evaluate(()=>window.__VISIONQC_DEBUG__.analysisInputSnapshot());
  expect((await snapshot()).misses).toHaveLength(3);
+ await page.evaluate(async()=>{const root=await navigator.storage.getDirectory();window.testCopyTarget=await root.getFileHandle('copied.png',{create:true});window.showSaveFilePicker=async()=>window.testCopyTarget;});
+ await page.locator('[data-vq-action="copy-single-image"]').click();
+ await expect.poll(()=>page.evaluate(async()=>Array.from(new Uint8Array(await (await window.testCopyTarget.getFile()).arrayBuffer())).length)).toBeGreaterThan(0);
+ expect(await page.evaluate(async()=>{const root=await navigator.storage.getDirectory();const dir=await root.getDirectoryHandle('actual-0');const source=await dir.getFileHandle('20260203080000_P163GG22M2100001.png');return (await (await source.getFile()).text())===(await (await window.testCopyTarget.getFile()).text());})).toBe(true);
+
  await page.keyboard.press('ArrowLeft');await expect(page.locator('.vq43-boundary')).toHaveText('첫 이미지입니다.');
  for(const count of [2,1]){
   await page.locator('[data-vq-action="modal-move-delet"]').click();

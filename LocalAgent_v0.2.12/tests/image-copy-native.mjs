@@ -66,6 +66,13 @@ try{
  const restored=await request('/api/analysis/dates',{analysisId:roundtrip.analysisId,positions:['AN(TOP)'],date:'2026-02-01'});assert.equal(restored.page.summary.ngCount,10);assert.equal(restored.page.summary.totalCount,20);
  const again=await finish(await request('/api/analysis/export',{...selection,analysisId:roundtrip.analysisId}));assert.equal(again.result.count,10);
 
+ const singleSource=join(root,'source','AN(TOP)','1','image17.jpg');
+ let single=await request('/api/history/export/start',{copyImages:true,imagePaths:[{path:singleSource,position:'AN(TOP)'}],outputDirectory:output,exportLabel:'Single_Image'});
+ do{await delay(20);single=await request('/api/history/export/status',{jobId:single.jobId});}while(single.running);
+ assert.equal(single.result.images.total,1);assert.equal(single.result.images.copied,1);assert.equal(single.result.files.length,0);
+ const singleLines=readFileSync(single.result.images.report,'utf8').trim().split(/\r?\n/);assert.equal(singleLines.length,2);
+ assert.deepEqual(readFileSync(singleLines[1].split(',')[2]),readFileSync(singleSource));
+ console.log('PASS: viewer single original image copied byte-for-byte without exporting unrelated CSV rows.');
  const calendar=join(root,'calendar.csv');
  writeFileSync(calendar,['Date,Time,Cell ID,Position,Total_Result,FoilDamage_result,FoilDamage_score,FullPath',...Array.from({length:41},(_,i)=>`${new Date(Date.UTC(2026,0,i+1)).toISOString().slice(0,10)},12:00:00,C${i},AN(TOP),NG,NG,0.9,`)].join('\r\n'));
  const calendarImport=await finish(await request('/api/analysis/import/start',{filePaths:[calendar]}));
