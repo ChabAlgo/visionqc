@@ -34,6 +34,7 @@ namespace VisionQC.LocalAgent.Services
             public List<PositionAliasDefinition> positionDefinitions {get;set;}
             public string[] filePaths { get; set; }
             public Dictionary<string,string> filePositions {get;set;}
+            public CsvHistoryFileImporter.FileAssignment[] fileAssignments {get;set;}
             public string[] excludedPositions {get;set;}
             public AgentHistoryFileImportRequest options { get; set; }
             public string date { get; set; }
@@ -75,7 +76,8 @@ namespace VisionQC.LocalAgent.Services
         {
             var request = new JavaScriptSerializer().Deserialize<Request>(body ?? "{}");
             if (request == null || request.filePaths == null || request.filePaths.Length == 0 || request.filePaths.Length > 10000)
-                return new { ok=false,error="CSV 파일을 선택하세요. 한 번에 최대 10,000개입니다." };
+                return new { ok=false,error="CSV/XLSX 파일을 선택하세요. 한 번에 최대 10,000개입니다." };
+            if(request.fileAssignments!=null&&request.fileAssignments.Length>10000)return new {ok=false,error="한 번에 최대 10,000개의 파일/Position 조합을 지원합니다."};
             lock (_sync)
             {
                 if (_job != null && _job.Running) return new { ok=false,error="진행 중인 분석 입력을 완료하거나 취소하세요." };
@@ -94,7 +96,7 @@ namespace VisionQC.LocalAgent.Services
                             string runId;
                             var filePositions=new Dictionary<string,string>(StringComparer.OrdinalIgnoreCase);
                             if(request.filePositions!=null)foreach(var pair in request.filePositions)filePositions[Path.GetFullPath(pair.Key)]=pair.Value;
-                            importer.ImportFiles(request.options,request.filePaths,n=>Interlocked.Exchange(ref job.Imported,n),job.Cancellation.Token,out runId,filePositions,new HashSet<string>(request.excludedPositions??new string[0],StringComparer.OrdinalIgnoreCase));
+                            importer.ImportFiles(request.options,request.filePaths,n=>Interlocked.Exchange(ref job.Imported,n),job.Cancellation.Token,out runId,filePositions,new HashSet<string>(request.excludedPositions??new string[0],StringComparer.OrdinalIgnoreCase),request.fileAssignments);
                             job.RunId=runId;
                             File.WriteAllText(Path.Combine(directory,"run.txt"),runId);
                             job.Projection=new AnalysisProjection(job.SourcePath,Path.Combine(directory,"projection.sqlite"),runId);

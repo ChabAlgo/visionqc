@@ -1,19 +1,19 @@
 {
-  "releaseTag": "visionqc-v4.8.13-agent-v1.4.13",
-  "webVersion": "4.8.13",
-  "agentVersion": "1.4.13",
-  "minimumAgentVersion": "1.4.13",
+  "releaseTag": "visionqc-v4.8.14-agent-v1.4.14",
+  "webVersion": "4.8.14",
+  "agentVersion": "1.4.14",
+  "minimumAgentVersion": "1.4.14",
   "compatibility": {
-    "web": "4.8.13",
-    "agent": "1.4.13"
+    "web": "4.8.14",
+    "agent": "1.4.14"
   },
   "artifacts": {
-    "agentInstaller": "downloads/VisionQC_Agent_Installer_v1.4.13.exe",
-    "offlinePackage": "downloads/VisionQC_Offline_v4.8.13.zip",
+    "agentInstaller": "downloads/VisionQC_Agent_Installer_v1.4.14.exe",
+    "offlinePackage": "downloads/VisionQC_Offline_v4.8.14.zip",
     "sha256": {
-      "agentInstaller": "60301E7E304B31A6E33BAC81B46509B504B6EC63D8332BD45C2632F759CC8A6F",
-      "offlinePackage": "54F989FE8EE25B941A1E8DDFE8BE8759A0725311888F831EE34A9BB1D79A69EE"
+      "agentInstaller": "164D8C823693386C736D5B7EDF6727D9C81C5BC9CD804D14D88F7154D18A8357",
+      "offlinePackage": "46ABED9511D78610A4F707073A3600DA799BFF0CB12D8A5BB18D2DB29525290C"
     }
   },
-  "notes": "원본 파일명 단일 이미지 저장 및 Position별 일괄 복사 폴더 정리."
+  "notes": "Position 결과 파일 지정 오류 수정 및 CSV/XLSX 다중 파일 선택 통합."
 }

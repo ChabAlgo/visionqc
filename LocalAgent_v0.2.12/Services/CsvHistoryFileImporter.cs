@@ -29,14 +29,33 @@ namespace VisionQC.LocalAgent.Services
             return ImportFiles(request, new[] { filePath }, progress, CancellationToken.None, out runId);
         }
 
-        internal long ImportFiles(AgentHistoryFileImportRequest request, IEnumerable<string> filePaths, Action<long> progress, CancellationToken cancellation, out string runId, IDictionary<string,string> filePositions = null, ISet<string> excludedPositions = null)
+        internal sealed class FileAssignment { public string path {get;set;} public string position {get;set;} }
+
+        internal long ImportFiles(AgentHistoryFileImportRequest request, IEnumerable<string> filePaths, Action<long> progress, CancellationToken cancellation, out string runId, IDictionary<string,string> filePositions = null, ISet<string> excludedPositions = null, FileAssignment[] fileAssignments = null)
         {
             runId = null;
             var paths = filePaths.Select(Path.GetFullPath).Distinct(StringComparer.OrdinalIgnoreCase).ToArray();
-            if (paths.Length == 0) throw new InvalidDataException("선택한 CSV 파일이 없습니다.");
+            if (paths.Length == 0) throw new InvalidDataException("선택한 결과 파일이 없습니다.");
             foreach (string path in paths)
-                if (!File.Exists(path) || !string.Equals(Path.GetExtension(path), ".csv", StringComparison.OrdinalIgnoreCase))
-                    throw new InvalidDataException("CSV 파일을 찾을 수 없습니다: " + path);
+                if (!File.Exists(path) || !(string.Equals(Path.GetExtension(path), ".csv", StringComparison.OrdinalIgnoreCase)||string.Equals(Path.GetExtension(path), ".xlsx", StringComparison.OrdinalIgnoreCase)))
+                    throw new InvalidDataException("CSV/XLSX 파일을 찾지 못했습니다: " + path);
+            var sources=new List<FileAssignment>();
+            if(fileAssignments!=null)
+            {
+                var selected=new HashSet<string>(paths,StringComparer.OrdinalIgnoreCase);
+                var covered=new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+                var combinations=new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+                foreach(var assignment in fileAssignments)
+                {
+                    if(assignment==null||string.IsNullOrWhiteSpace(assignment.path)||string.IsNullOrWhiteSpace(assignment.position))throw new InvalidDataException("결과 파일의 Position 지정이 비어 있습니다.");
+                    string path=Path.GetFullPath(assignment.path);
+                    if(!selected.Contains(path))throw new InvalidDataException("선택하지 않은 결과 파일의 Position 지정입니다.");
+                    covered.Add(path);
+                    if(combinations.Add(path+"\0"+assignment.position))sources.Add(new FileAssignment{path=path,position=assignment.position});
+                }
+                if(covered.Count!=selected.Count)throw new InvalidDataException("Position이 지정되지 않은 결과 파일입니다.");
+            }
+            else foreach(string path in paths) { string position=null;if(filePositions!=null)filePositions.TryGetValue(path,out position);sources.Add(new FileAssignment{path=path,position=position}); }
             if (request == null) request = new AgentHistoryFileImportRequest();
             var positions = new PositionAliases(request.positionDefinitions);
             string sourceName = string.Join("; ", paths.Select(Path.GetFileName));
@@ -59,23 +78,25 @@ namespace VisionQC.LocalAgent.Services
                     WorkspaceKey = "csv|" + FirstNonEmpty(request.sourceName, sourceName).Trim().ToLowerInvariant()
                 });
 
-                foreach (string filePath in paths)
+                foreach (var source in sources)
                 {
                 cancellation.ThrowIfCancellationRequested();
-                string filePosition=null;
-                if(filePositions!=null)filePositions.TryGetValue(filePath,out filePosition);
-                using (var reader = OpenCsvReader(filePath,cancellation))
+                string filePath=source.path;
+                string filePosition=source.position;
+                using (var records = ReadRows(filePath,cancellation).GetEnumerator())
                 {
-                    List<string> headers = ResultCsv.ReadHeader(reader);
+                    if(!records.MoveNext())throw new InvalidDataException("결과 파일 헤더가 비어 있습니다.");
+                    List<string> headers = records.Current.Values;
                     CsvColumnMap columns = CsvColumnMap.Create(headers);
                     if (columns.CellId < 0 && columns.FullPath < 0) throw new InvalidDataException("CSV에서 Cell ID 또는 FullPath 열을 찾지 못했습니다.");
 
                     List<string> values;
                     int sourceRowNumber = 1;
-                    while ((values = ResultCsv.ReadRecord(reader)) != null)
+                    while (records.MoveNext())
                     {
+                        values=records.Current.Values;
                         cancellation.ThrowIfCancellationRequested();
-                        sourceRowNumber++;
+                        sourceRowNumber=records.Current.Number;
                         if (values.Count == 1 && values[0].Length == 0) continue;
                         if (values.Count != headers.Count) throw new InvalidDataException("CSV 열 수 불일치: " + sourceRowNumber);
                         if (values.All(string.IsNullOrWhiteSpace)) continue;
@@ -90,7 +111,8 @@ namespace VisionQC.LocalAgent.Services
                             fullPath = columns.Value(values, columns.FullPath),
                             processedPath = columns.Value(values, columns.ProcessedPath),
                             cellId = columns.Value(values, columns.CellId),
-                            position = positions.Canonical(FirstNonEmpty(columns.Value(values, columns.Position), FirstNonEmpty(filePosition,request.defaultPosition))),
+                            // Explicit row selection is authoritative; history imports without a binding retain the CSV Position.
+                            position = positions.Canonical(FirstNonEmpty(filePosition, FirstNonEmpty(columns.Value(values, columns.Position),request.defaultPosition))),
                             workspaceType = columns.Value(values, columns.WorkspaceType),
                             workspaceName = columns.Value(values, columns.WorkspaceName),
                             workspaceKey = columns.Value(values, columns.WorkspaceKey),
@@ -121,6 +143,20 @@ namespace VisionQC.LocalAgent.Services
             finally
             {
                 if (!completed) progress?.Invoke(processed);
+            }
+        }
+
+        private static IEnumerable<XlsxResultReader.TableRow> ReadRows(string path,CancellationToken cancellation)
+        {
+            if(string.Equals(Path.GetExtension(path),".xlsx",StringComparison.OrdinalIgnoreCase))
+            {
+                foreach(var row in XlsxResultReader.Rows(path,cancellation))yield return row;
+                yield break;
+            }
+            using(var reader=OpenCsvReader(path,cancellation))
+            {
+                int number=1;yield return new XlsxResultReader.TableRow{Values=ResultCsv.ReadHeader(reader),Number=number};
+                List<string> row;while((row=ResultCsv.ReadRecord(reader))!=null)yield return new XlsxResultReader.TableRow{Values=row,Number=++number};
             }
         }
 

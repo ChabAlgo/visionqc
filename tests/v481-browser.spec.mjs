@@ -182,12 +182,54 @@ test('Old Agent Position totals are not labeled as Cell totals',async({page})=>{
  await expect(page.locator('.vq43-main-history-kpis')).toHaveCount(0);
 });
 
-test('CSV and Excel selectors explain processing and limits on hover and focus',async({page})=>{
+test('Unified result selector explains multi-file import, Position binding and Excel limits',async({page})=>{
  await setup(page);await page.evaluate(()=>window.__VISIONQC_DEBUG__.setPage('settings'));
- const csv=page.locator('[data-vq-action="choose-result"]').first(),excel=page.locator('[data-vq-action="choose-result-excel"]').first();
- await expect(csv).toContainText('CSV');await expect(excel).toHaveText('Excel 선택');
- await csv.hover();await expect(page.locator('#vq43-param-tooltip')).toContainText('여러 개');await expect(page.locator('#vq43-param-tooltip')).toHaveClass(/show/);
- await excel.focus();await expect(page.locator('#vq43-param-tooltip')).toContainText('50MB');await expect(page.locator('#vq43-param-tooltip')).toContainText('브라우저 메모리');
+ const button=page.locator('[data-vq-action="choose-result"]').first();
+ await expect(button).toHaveText('파일 선택');await expect(page.locator('[data-vq-action="choose-result-excel"]')).toHaveCount(0);
+ await button.hover();await expect(page.locator('#vq43-param-tooltip')).toContainText('CSV와 XLSX');await expect(page.locator('#vq43-param-tooltip')).toContainText('선택한 Position에만');await expect(page.locator('#vq43-param-tooltip')).toContainText('50MB');
+ await button.focus();await expect(page.locator('#vq43-param-tooltip')).toHaveClass(/show/);
+});
+
+test('Selected TCA and BCA rows retain independent multi-file assignments, labels, replacement and cancellation',async({page})=>{
+ await setup(page);page.on('dialog',d=>d.accept());
+ await page.evaluate(async()=>{const d=window.__VISIONQC_DEBUG__;await d.renameCustomPosition('CA_TOP','TCA');await d.renameCustomPosition('CA_BOT','BCA');d.setPage('settings');});
+ const imports=[],picks=[];let files=['C:\\Logs\\top_001.csv','C:\\Logs\\top_002.xlsx'],bindings=[],fail=false,cancel=false;
+ const current=()=>({...model,positionSummaries:['TCA','BCA'].map(position=>({position,input:bindings.some(b=>b.position===position),total:bindings.filter(b=>b.position===position).length,rawRows:bindings.filter(b=>b.position===position).length,ng:0,ngRate:0,actualNg:0,detected:0,misses:0})),positionToolSummaries:[],tools:[]});
+ await page.route('http://127.0.0.1:*/api/pick/start',route=>{picks.push(route.request().postDataJSON());return route.fulfill({json:cancel?{ok:false,cancelled:true}:{ok:true,paths:files,path:files[0]}});});
+ await page.route('http://127.0.0.1:*/api/analysis/import/start',route=>{const body=route.request().postDataJSON();imports.push(body);if(!fail)bindings=body.fileAssignments;return route.fulfill({json:fail?{ok:false,error:'fixture malformed CSV'}:done(null)});});
+ await page.route('http://127.0.0.1:*/api/analysis/dashboard',route=>route.fulfill({json:done(current())}));
+ const row=position=>page.locator(`.vq43-input-row[data-vq-position="${position}"]`);
+ await row('TCA').locator('[data-vq-action="choose-result"]').click();
+ await expect(row('TCA')).toContainText('top_001.csv, top_002.xlsx');await expect(row('BCA')).toContainText('미입력');
+ expect(picks[0]).toMatchObject({fileType:'result',multiple:true});expect(imports[0].fileAssignments).toEqual(files.map(path=>({path,position:'TCA'})));
+ files=['C:\\Logs\\bottom.csv'];await row('BCA').locator('[data-vq-action="choose-result"]').click();await expect(row('BCA')).toContainText('bottom.csv');
+ await expect(row('TCA')).toContainText('top_001.csv, top_002.xlsx');expect(imports[1].fileAssignments).toHaveLength(3);
+ files=['C:\\Logs\\top_new.csv'];await row('TCA').locator('[data-vq-action="choose-result"]').click();await expect(row('TCA')).toContainText('top_new.csv');await expect(row('TCA')).not.toContainText('top_001.csv');await expect(row('BCA')).toContainText('bottom.csv');
+ expect(imports[2].fileAssignments).toEqual([{path:files[0],position:'TCA'},{path:'C:\\Logs\\bottom.csv',position:'BCA'}]);
+ fail=true;files=['C:\\Logs\\broken.csv'];await row('TCA').locator('[data-vq-action="choose-result"]').click();await expect(page.locator('#vq43-toast')).toContainText('malformed CSV');await expect(row('TCA')).toContainText('top_new.csv');await expect(row('BCA')).toContainText('bottom.csv');
+ cancel=true;await row('BCA').locator('[data-vq-action="choose-result"]').click();await expect(row('BCA').locator('[data-vq-action="choose-result"]')).toBeEnabled();expect(imports).toHaveLength(4);await expect(row('BCA')).toContainText('bottom.csv');
+ await page.evaluate(()=>window.__VISIONQC_DEBUG__.saveAnalysisSnapshot());await page.reload();await page.waitForFunction(()=>window.__VISIONQC_DEBUG__?.analysisRestoreReady());await page.evaluate(()=>window.__VISIONQC_DEBUG__.setPage('settings'));await expect(row('TCA')).toContainText('top_new.csv');await expect(row('BCA')).toContainText('bottom.csv');
+});
+
+test('Without Agent, one picker imports multiple CSV and XLSX into selected Position and preserves other rows',async({page})=>{
+ await page.goto('/index.html?vqDebug=1&browserRegression=1');await page.waitForFunction(()=>window.__VISIONQC_DEBUG__?.analysisRestoreReady());
+ await page.evaluate(async()=>{
+  const d=window.__VISIONQC_DEBUG__;await d.renameCustomPosition('CA_TOP','TCA');await d.renameCustomPosition('CA_BOT','BCA');
+  d.seedRows([{cellId:'BOTTOM01',position:'BCA',totalResult:'NG',tools:{Crack:{tool:'Crack',result:'NG',score:.9}}}]);
+  const csv=new File(['Cell ID,Position,Total_result,Crack_result,Crack_score\nP163GG22M2100001,BCA,NG,NG,0.8'],'top.csv');
+  const zip=new JSZip();zip.file('xl/workbook.xml','<workbook xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships"><sheets><sheet name="Sheet1" r:id="rId1"/></sheets></workbook>');zip.file('xl/_rels/workbook.xml.rels','<Relationships><Relationship Id="rId1" Target="worksheets/sheet1.xml"/></Relationships>');
+  zip.file('xl/worksheets/sheet1.xml','<worksheet><sheetData><row><c r="A1" t="inlineStr"><is><t>Cell ID</t></is></c><c r="B1" t="inlineStr"><is><t>Total_result</t></is></c><c r="C1" t="inlineStr"><is><t>Crack_score</t></is></c></row><row><c r="A2" t="inlineStr"><is><t>P163GG22M2100002</t></is></c><c r="B2" t="inlineStr"><is><t>OK</t></is></c><c r="C2"><v>0.123456789</v></c></row></sheetData></worksheet>');
+  const excel=new File([await zip.generateAsync({type:'uint8array'})],'top.xlsx');
+  const root=await navigator.storage.getDirectory(),handles=[];
+  for(const file of [csv,excel]){const handle=await root.getFileHandle(file.name,{create:true}),writer=await handle.createWritable();await writer.write(file);await writer.close();handles.push(handle);}
+  window.resultPickerOptions=null;window.showOpenFilePicker=async options=>{window.resultPickerOptions=options;return handles;};d.setPage('settings');
+ });
+ const row=p=>page.locator(`.vq43-input-row[data-vq-position="${p}"]`);
+ await row('TCA').locator('[data-vq-action="choose-result"]').click();await expect(row('TCA')).toContainText('top.csv, top.xlsx');await expect(row('BCA')).toContainText('debug.csv');
+ expect(await page.evaluate(()=>window.resultPickerOptions.multiple)).toBe(true);
+ expect((await page.evaluate(()=>window.__VISIONQC_DEBUG__.analysisInputSnapshot())).summaries.find(p=>p.position==='TCA').total).toBe(2);
+ expect((await page.evaluate(()=>window.__VISIONQC_DEBUG__.analysisInputSnapshot())).summaries.find(p=>p.position==='BCA').total).toBe(1);
+ await page.evaluate(()=>window.showOpenFilePicker=async()=>{throw new DOMException('cancel','AbortError');});await row('TCA').locator('[data-vq-action="choose-result"]').click();await expect(row('TCA').locator('[data-vq-action="choose-result"]')).toBeEnabled();await expect(row('TCA')).toContainText('top.csv, top.xlsx');
 });
 
 test('Agent score layout preserves original two-column controls in both themes',async({page})=>{

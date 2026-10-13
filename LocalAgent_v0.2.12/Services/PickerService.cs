@@ -27,7 +27,7 @@ namespace VisionQC.LocalAgent.Services
             string kind = GetString(data, "kind", "folder").Trim().ToLowerInvariant();
             string initial = GetString(data, "initialPath", "");
             string fileType = GetString(data, "fileType", kind == "file" ? "workspace" : "folder");
-            bool allowMultiple = (kind == "folder" || (kind == "file" && fileType == "csv")) && GetBool(data, "multiple", false);
+            bool allowMultiple = (kind == "folder" || (kind == "file" && (fileType == "csv" || fileType == "result"))) && GetBool(data, "multiple", false);
             if (string.IsNullOrWhiteSpace(clientId))
                 return new { ok = false, pending = false, error = "브라우저 선택 세션 ID가 없습니다." };
             if (string.IsNullOrWhiteSpace(requestId)) requestId = Guid.NewGuid().ToString("N");

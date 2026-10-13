@@ -1,7 +1,7 @@
 (() => {
   'use strict';
 
-  const VERSION = '4.8.13';
+  const VERSION = '4.8.14';
   const DEFAULT_POSITION_DEFS = [
     { key:'CA_TOP', name:'CA(TOP)' },
     { key:'AN_TOP', name:'AN(TOP)' },
@@ -27,9 +27,9 @@
   const NG_POSITION_PREFIX = 'ng-position:';
   const IMG_RE = /\.(png|jpe?g|bmp|gif|webp|tif?f)$/i;
   const LOCAL_AGENT_URL = 'http://127.0.0.1:17891';
-  const EXPECTED_AGENT_VERSION = '1.4.13';
-  const AGENT_INSTALLER_URL = './downloads/VisionQC_Agent_Installer_v1.4.13.exe';
-  const OFFLINE_PACKAGE_URL = './downloads/VisionQC_Offline_v4.8.13.zip';
+  const EXPECTED_AGENT_VERSION = '1.4.14';
+  const AGENT_INSTALLER_URL = './downloads/VisionQC_Agent_Installer_v1.4.14.exe';
+  const OFFLINE_PACKAGE_URL = './downloads/VisionQC_Offline_v4.8.14.zip';
   // SQLite에는 사용자가 명시적으로 남기려는 두 종류의 결과만 표시한다.
   // 이전 버전의 단발 검사(single-inspection) 이력은 보존하되 화면 집계에서는 제외한다.
   const PERSISTED_HISTORY_SOURCE_TYPES = ['simulation', 'csv-import', 'csv-file-stream'];
@@ -801,7 +801,6 @@
     else if (action === 'simulation-log-clear') clearSimulationLogs();
     else if (action === 'choose-result') chooseResultFile(control.closest('[data-vq-position]')?.dataset.vqPosition);
     else if (action === 'remove-result') removeResultInput(control.closest('[data-vq-position]')?.dataset.vqPosition);
-    else if (action === 'choose-result-excel') chooseResultFile(control.closest('[data-vq-position]')?.dataset.vqPosition,true);
     else if (action === 'save-csv-history') saveCsvAnalysisHistory();
     else if (action === 'history-refresh') refreshHistory(true);
     else if (action === 'history-open') setPage('history');
@@ -1415,8 +1414,15 @@
           if (!(await hasPermission(saved.handle))) state.restoreWarnings.push(`${position}: 저장된 결과 파일 권한이 해제되어 다시 선택해야 합니다.`);
           else {
             try {
-              const file = await saved.handle.getFile();
-              state.resultInputs[position] = await parsePositionFile(file, position, saved.handle);
+              const handles=Array.isArray(saved.handle)?saved.handle:[saved.handle];
+              const parsed={position,fileName:'',fileSize:0,rows:[],warnings:[],handles,updatedAt:Date.now()};
+              const names=[];
+              for(const handle of handles){
+                if(!(await hasPermission(handle)))throw new Error('저장된 결과 파일을 다시 선택하세요.');
+                const file=await handle.getFile(),part=await parsePositionFile(file,position,handle);
+                names.push(file.name);parsed.fileSize+=file.size;for(const row of part.rows)parsed.rows.push(row);parsed.warnings.push(...part.warnings);
+              }
+              parsed.fileName=names.join(', ');state.resultInputs[position]=parsed;
             } catch (error) { state.restoreWarnings.push(`${position}: ${error.message || '복원 실패'}`); }
           }
         }
@@ -1687,19 +1693,22 @@
     if (state.loading) return;
     const previous=state.remoteAnalysis;
     try {
-      const picked=await requestSimulationPicker('/api/pick/file',{fileType:'csv',multiple:true});
+      state.loading=`result:${position}`;renderSettings();
+      const picked=await requestSimulationPicker('/api/pick/file',{fileType:'result',multiple:true});
       const chosen=picked?.paths?.length ? picked.paths : picked?.path ? [picked.path] : [];
       if (!picked?.ok || !chosen.length) return;
+      if(!positionNames().includes(position))throw new Error('선택 중 Position 구성이 변경되었습니다. 해당 Position에서 다시 선택하세요.');
       if((previous?.live || (!previous && Object.values(state.resultInputs).some(input=>input?.rows?.length))) && !window.confirm('선택한 CSV로 현재 분석 결과를 교체합니다. 원본 로그와 저장한 DB 이력은 유지됩니다. 계속할까요?'))return;
       state.loading=`result:${position}`;renderSettings();
       const progressBar=document.createElement('div');progressBar.id='vq43-analysis-import-progress';progressBar.className='vq43-agent-import-progress';
-      progressBar.innerHTML='<span>CSV 분석을 준비하고 있습니다…</span><button class="vq43-btn">취소</button>';document.body.append(progressBar);
+      progressBar.innerHTML='<span>결과 파일 분석을 준비하고 있습니다…</span><button class="vq43-btn">취소</button>';document.body.append(progressBar);
       const inputs={...(previous?.inputs || {}),[position]:chosen};
       const excludedPositions=(previous?.excludedPositions||[]).filter(value=>value!==position);
       const filePaths=[...new Set(Object.values(inputs).flat())];
       const filePositions=Object.fromEntries(Object.entries(inputs).flatMap(([key,paths])=>paths.map(path=>[path,key])));
+      const fileAssignments=Object.entries(inputs).flatMap(([position,paths])=>paths.map(path=>({path,position})));
       const imported=await agentAnalysisOperation('import/start',{
-        filePaths,filePositions,excludedPositions,options:{defaultPosition:position,namingProfile:state.namingProfile,positionDefinitions:positionDefinitions(),webVersion:VERSION,mode:'csv-analysis'}
+        filePaths,filePositions,fileAssignments,excludedPositions,options:{defaultPosition:position,namingProfile:state.namingProfile,positionDefinitions:positionDefinitions(),webVersion:VERSION,mode:'csv-analysis'}
       }, status=>{
         const progress=$('#vq43-analysis-import-progress');
         if(progress){progress.querySelector('span').textContent=`읽기 ${numberText(status.imported)}행 · 집계 ${numberText(status.projectedCursor)}행`;
@@ -1712,7 +1721,7 @@
       // Publish only after the entire import and projection succeed. The old view survives failure.
       state.remoteAnalysis={analysisId:imported.analysisId,runId:imported.runId,inputs,filePaths,excludedPositions};
       state.resultInputs=Object.fromEntries(model.positionSummaries.filter(p=>p.input).map(p=>[p.position,{
-        position:p.position,remote:true,rowCount:p.rawRows ?? p.total,rows:[],warnings:[],fileName:filePaths.map(p=>p.split(/[\\/]/).pop()).join(', '),updatedAt:Date.now()
+        position:p.position,remote:true,rowCount:p.rawRows ?? p.total,rows:[],warnings:[],fileName:(inputs[p.position] || []).map(path=>path.split(/[\\/]/).pop()).join(', '),updatedAt:Date.now()
       }]));
       state.dashboardDate='';state.model=model;state.dashboardModel=model;
       state.remoteAnalysis.dateWindow=(await analysisApi('dates',{analysisId:imported.analysisId,positions:state.dashboardPositions,date:state.dashboardDate})).page;
@@ -1805,34 +1814,47 @@
     return remote.refreshing;
   }
 
-  async function chooseResultFile(position, legacyExcel=false) {
-    if(!legacyExcel&&state.simulationAgent.analysisApiVersion>=1)return chooseAgentResultFiles(position);
+  async function chooseResultFile(position) {
+    if(!positionNames().includes(position))return showToast('입력할 Position을 확인하세요.',true);
+    if(state.simulationProgress?.running)return showToast('시뮬레이션 완료 후 결과 파일을 선택하세요.',true);
+    if(state.simulationAgent.analysisApiVersion>=1){
+      const installed=String(state.simulationAgent.version||'').split('.').map(Number),required=EXPECTED_AGENT_VERSION.split('.').map(Number);
+      const different=required.findIndex((value,index)=>installed[index]!==value);
+      if(installed.length<3||installed.some(value=>!Number.isFinite(value))||(different>=0&&installed[different]<required[different]))return showToast(`결과 파일의 Position 지정과 CSV/XLSX 다중 선택을 사용하려면 Agent ${EXPECTED_AGENT_VERSION}로 업데이트하세요.`,true);
+      return chooseAgentResultFiles(position);
+    }
     if (state.loading) return;
     try {
-      let file, handle;
+      state.loading = `result:${position}`;renderSettings();
+      let files, handles=[];
       if (window.showOpenFilePicker) {
         try {
-          [handle] = await window.showOpenFilePicker({ multiple: false, types: [{ description: 'Simulation Result', accept: { 'text/csv': ['.csv'], 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet': ['.xlsx'] } }] });
-          file = await handle.getFile();
+          handles = await window.showOpenFilePicker({ multiple: true, types: [{ description: 'Simulation Result', accept: { 'text/csv': ['.csv'], 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet': ['.xlsx'] } }] });
+          files=[];for(const handle of handles)files.push(await handle.getFile());
         } catch (error) {
           if (error.name === 'AbortError') return;
           throw error;
         }
-      } else file = await pickFile('.csv,.xlsx');
-      state.loading = `result:${position}`;
-      renderSettings();
-      if(file.size>50*1024*1024)throw new Error('50MB를 초과하는 결과 파일은 Agent CSV 분석을 사용해 주세요. Excel은 CSV로 저장한 뒤 여러 파일을 함께 선택할 수 있습니다.');
-      const parsed=await parsePositionFile(file, position, handle);
+      } else files = await pickFile('.csv,.xlsx',false,true);
+      if(!files?.length)return;
+      if(!positionNames().includes(position))throw new Error('선택 중 Position 구성이 변경되었습니다. 다시 선택하세요.');
+      if(files.reduce((size,file)=>size+file.size,0)>50*1024*1024)throw new Error('Agent 미연결 시 선택한 결과 파일의 합계는 50MB 이하만 지원합니다. Agent 연결 후 다시 선택하세요.');
+      const parsed={position,fileName:files.map(file=>file.name).join(', '),fileSize:files.reduce((n,file)=>n+file.size,0),rows:[],warnings:[],handles,updatedAt:Date.now()};
+      for(let index=0;index<files.length;index++){
+        const part=await parsePositionFile(files[index],position,handles[index]);
+        for(const row of part.rows)parsed.rows.push(row);parsed.warnings.push(...part.warnings.map(warning=>`${files[index].name}: ${warning}`));
+      }
       if(state.remoteAnalysis){
         if(!window.confirm('Excel 브라우저 분석으로 전환하여 현재 대시보드 입력을 교체합니다. 원본 파일과 저장한 DB 이력은 유지됩니다. 계속할까요?'))return;
         state.remoteAnalysis=null;state.resultInputs={};
       }
       state.resultInputs[position] = parsed;
-      if (handle) await saveHandle(`${RESULT_PREFIX}${position}`, handle);
+      if (handles.length) await saveHandle(`${RESULT_PREFIX}${position}`, handles.length===1?handles[0]:handles);
       state.dashboardDate = '';
       rebuildModel();
       showToast(`${position} 결과 파일 ${numberText(state.resultInputs[position].rows.length)}행을 불러왔습니다.`);
     } catch (error) {
+      if(error.name==='AbortError')return;
       console.error(error);
       showToast(`결과 파일을 읽지 못했습니다: ${error.message || error}`, true);
     } finally {
@@ -1841,12 +1863,12 @@
     }
   }
 
-  function pickFile(accept, directory = false) {
+  function pickFile(accept, directory = false, multiple = false) {
     return new Promise((resolve, reject) => {
       const input = document.createElement('input');
-      input.type = 'file'; input.accept = accept || ''; input.multiple = directory;
+      input.type = 'file'; input.accept = accept || ''; input.multiple = directory || multiple;
       if (directory) { input.webkitdirectory = true; input.setAttribute('directory', ''); }
-      input.onchange = () => directory ? resolve(Array.from(input.files || [])) : resolve(input.files?.[0]);
+      input.onchange = () => directory || multiple ? resolve(Array.from(input.files || [])) : resolve(input.files?.[0]);
       input.oncancel = () => reject(new DOMException('Cancelled', 'AbortError'));
       input.click();
     });
@@ -3556,6 +3578,7 @@
     if (state.page !== 'main') return;
     const content = $('#vq43-page > .vq43-content');
     if (!content) return;
+    if (content.querySelector(':scope > .vq43-main-column')) return;
     content.classList.add('vq43-main-dashboard');
     $$('.vq43-section', content).forEach((section) => {
       const title = section.querySelector('.vq43-section-title h3')?.textContent?.trim() || '';
@@ -6735,7 +6758,7 @@
   function resultInputRow(position) {
     const input = state.resultInputs[position], loading = state.loading === `result:${position}`;
     const meta=input?.remote?`${numberText(input.rowCount)}행 · Agent 분석 · Tool ${state.model?.positionToolSummaries?.find(p=>p.position===position)?.tools.length||0}개`:`${numberText(input?.rows.length||0)}행 · ${formatBytes(input?.fileSize||0)} · Tool ${Object.keys(input?.rows[0]?.tools || {}).length}개`;
-    return `<div class="vq43-input-row" data-vq-position="${position}"><div class="vq43-position-label">${position}</div><div>${input?`<div class="vq43-input-name">${escapeHtml(input.fileName)}</div><div class="vq43-input-meta">${meta}</div>`:'<div class="vq43-input-name" style="color:#475569">결과 파일 미입력</div>'}</div><div style="display:flex;gap:6px"><button class="vq43-btn vq43-btn-blue" data-vq-action="choose-result" data-vq-tooltip="CSV 파일을 여러 개 선택해 에이전트에서 분석합니다. 대용량·분할 CSV에 권장합니다. Agent 미연결 시 50MB 이하 파일 하나를 브라우저에서 읽습니다." title="다중 CSV · Agent 분석" ${state.loading?'disabled':''}>${loading?'읽는 중...':input?'CSV 교체':'CSV 선택'}</button><button class="vq43-btn" data-vq-action="choose-result-excel" ${state.loading?'disabled':''} title="Excel/CSV · 브라우저 분석 · 50MB 이하" data-vq-tooltip="XLSX 또는 CSV 파일 하나를 브라우저 메모리에서 분석합니다. 50MB 이하만 지원합니다. 현재 Agent 분석이 있으면 확인 후 입력을 교체합니다. 큰 Excel은 CSV로 저장한 뒤 CSV 선택을 사용하세요.">Excel 선택</button></div>${input?'<button class="vq43-icon-btn" data-vq-action="remove-result" title="제거">×</button>':'<span></span>'}</div>`;
+    return `<div class="vq43-input-row" data-vq-position="${escapeHtml(position)}"><div class="vq43-position-label">${escapeHtml(position)}</div><div>${input?`<div class="vq43-input-name">${escapeHtml(input.fileName)}</div><div class="vq43-input-meta">${meta}</div>`:'<div class="vq43-input-name" style="color:#475569">결과 파일 미입력</div>'}</div><div><button class="vq43-btn vq43-btn-blue" data-vq-action="choose-result" data-vq-tooltip="CSV와 XLSX를 여러 개 선택할 수 있습니다. 선택한 Position에만 적용하며 해당 칸의 기존 파일을 교체합니다. Agent 연결 시 파일을 에이전트에서 분석합니다. XLSX는 파일당 50MB 이하·첫 시트만 읽습니다. Agent 미연결 시 선택 파일 합계 50MB 이하를 브라우저에서 읽습니다." title="CSV / XLSX 다중 선택 · 선택한 Position에 적용" ${state.loading?'disabled':''}>${loading?'읽는 중...':'파일 선택'}</button></div>${input?'<button class="vq43-icon-btn" data-vq-action="remove-result" title="제거">×</button>':'<span></span>'}</div>`;
   }
 
   function resetChartModalView() {

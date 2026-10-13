@@ -27,6 +27,8 @@
     <PackageReference Include="System.Data.SQLite.Core" Version="1.0.119.0" />
     <Reference Include="System" />
     <Reference Include="System.Core" />
+    <Reference Include="System.IO.Compression" />
+    <Reference Include="System.IO.Compression.FileSystem" />
     <Reference Include="System.Data" />
     <Reference Include="System.Drawing" />
     <Reference Include="System.Drawing.Common, Version=10.0.0.0, Culture=neutral, PublicKeyToken=cc7b13ffcd2ddd51, processorArchitecture=MSIL">
@@ -77,6 +79,7 @@
     <Compile Include="Services\HistoryService.cs" />
     <Compile Include="Services\AnalysisService.cs" />
     <Compile Include="Services\CsvHistoryFileImporter.cs" />
+    <Compile Include="Services\XlsxResultReader.cs" />
     <Compile Include="Services\ResultCsv.cs" />
     <Compile Include="Services\PartitionedCsvWriter.cs" />
     <Compile Include="Services\WorkspaceIdentity.cs" />

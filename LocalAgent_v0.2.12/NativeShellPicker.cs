@@ -442,7 +442,7 @@ namespace VisionQC.LocalAgent
         internal static string[] PickFiles(string initialPath, string fileType, bool allowMultiple)
         {
             string kind = (fileType ?? "workspace").Trim().ToLowerInvariant();
-            string caption = kind == "image" ? "이미지 선택" : kind == "csv" ? "CSV 선택" : "Workspace 선택";
+            string caption = kind == "image" ? "이미지 선택" : kind == "result" ? "시뮬레이션 결과 파일 선택" : kind == "csv" ? "CSV 선택" : "Workspace 선택";
             return RunOwnedDialog(caption, ownerHandle =>
             {
                 IFileOpenDialog dialog = null;
@@ -452,7 +452,7 @@ namespace VisionQC.LocalAgent
                 try
                 {
                     dialog = (IFileOpenDialog)new FileOpenDialogCom();
-                    Guid clientGuid = kind == "image" ? ImageClientGuid : kind == "csv" ? CsvClientGuid : WorkspaceClientGuid;
+                    Guid clientGuid = kind == "image" ? ImageClientGuid : (kind == "csv" || kind == "result") ? CsvClientGuid : WorkspaceClientGuid;
                     dialog.SetClientGuid(ref clientGuid);
                     try { dialog.ClearClientData(); } catch { }
                     dialog.SetOkButtonLabel("열기");
@@ -463,7 +463,12 @@ namespace VisionQC.LocalAgent
                                       FileOpenOptions.FOS_DONTADDTORECENT);
 
                     ComDlgFilterSpec[] filters;
-                    if (kind == "csv")
+                    if (kind == "result")
+                    {
+                        dialog.SetTitle("VisionQC 시뮬레이션 결과 파일 선택");
+                        filters = new[] { new ComDlgFilterSpec { pszName="시뮬레이션 결과 (CSV / XLSX)",pszSpec="*.csv;*.xlsx" } };
+                    }
+                    else if (kind == "csv")
                     {
                         dialog.SetTitle("VisionQC Cell ID CSV 선택");
                         filters = new[]
@@ -510,7 +515,7 @@ namespace VisionQC.LocalAgent
                         catch { }
                     }
 
-                    string dialogTitle = kind == "image" ? "VisionQC 이미지 선택" : kind == "csv" ? "VisionQC Cell ID CSV 선택" : "VisionQC Runtime Workspace 선택";
+                    string dialogTitle = kind == "image" ? "VisionQC 이미지 선택" : kind == "result" ? "VisionQC 시뮬레이션 결과 파일 선택" : kind == "csv" ? "VisionQC Cell ID CSV 선택" : "VisionQC Runtime Workspace 선택";
                     SetActiveDialog(dialog, dialogTitle);
                     if (IsCancelRequested(dialog)) return new string[0];
                     SetForegroundWindow(ownerHandle);
