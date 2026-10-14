@@ -1,19 +1,19 @@
 {
-  "releaseTag": "visionqc-v4.8.14-agent-v1.4.14",
-  "webVersion": "4.8.14",
-  "agentVersion": "1.4.14",
-  "minimumAgentVersion": "1.4.14",
+  "releaseTag": "visionqc-v4.8.15-agent-v1.4.15",
+  "webVersion": "4.8.15",
+  "agentVersion": "1.4.15",
+  "minimumAgentVersion": "1.4.15",
   "compatibility": {
-    "web": "4.8.14",
-    "agent": "1.4.14"
+    "web": "4.8.15",
+    "agent": "1.4.15"
   },
   "artifacts": {
-    "agentInstaller": "downloads/VisionQC_Agent_Installer_v1.4.14.exe",
-    "offlinePackage": "downloads/VisionQC_Offline_v4.8.14.zip",
+    "agentInstaller": "downloads/VisionQC_Agent_Installer_v1.4.15.exe",
+    "offlinePackage": "downloads/VisionQC_Offline_v4.8.15.zip",
     "sha256": {
-      "agentInstaller": "164D8C823693386C736D5B7EDF6727D9C81C5BC9CD804D14D88F7154D18A8357",
-      "offlinePackage": "46ABED9511D78610A4F707073A3600DA799BFF0CB12D8A5BB18D2DB29525290C"
+      "agentInstaller": "7917210BD6A0BF2B1F27A70044AA39D7688E2121777517E2537F85A846FA385E",
+      "offlinePackage": "35E04B0425DF86FFD738E10C239768CA575A6C247C2FC6D52380B5778F3EDE4D"
     }
   },
-  "notes": "Position 결과 파일 지정 오류 수정 및 CSV/XLSX 다중 파일 선택 통합."
+  "notes": "검사 FullPath 우선 및 Tool NG 개별 검사 기록 기준 이미지 복사 수정."
 }

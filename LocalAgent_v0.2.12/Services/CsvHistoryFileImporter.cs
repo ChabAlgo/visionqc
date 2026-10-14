@@ -229,6 +229,12 @@ namespace VisionQC.LocalAgent.Services
             internal static CsvColumnMap Create(List<string> headers)
             {
                 var map = new CsvColumnMap();
+                // Canonical FullPath is authoritative; column order must not select a preview instead.
+                foreach(string name in new[]{"fullpath","sourceimagepath","sourcefilepath","filepath","imagepath"})
+                {
+                    int pathIndex=headers.FindIndex(header=>Normalize(header)==name);
+                    if(pathIndex>=0){map.FullPath=pathIndex;break;}
+                }
                 var toolMap = new Dictionary<string, ToolColumn>(StringComparer.OrdinalIgnoreCase);
                 for (int index = 0; index < (headers ?? new List<string>()).Count; index++)
                 {

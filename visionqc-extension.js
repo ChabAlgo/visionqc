@@ -1,7 +1,7 @@
 (() => {
   'use strict';
 
-  const VERSION = '4.8.14';
+  const VERSION = '4.8.15';
   const DEFAULT_POSITION_DEFS = [
     { key:'CA_TOP', name:'CA(TOP)' },
     { key:'AN_TOP', name:'AN(TOP)' },
@@ -27,9 +27,9 @@
   const NG_POSITION_PREFIX = 'ng-position:';
   const IMG_RE = /\.(png|jpe?g|bmp|gif|webp|tif?f)$/i;
   const LOCAL_AGENT_URL = 'http://127.0.0.1:17891';
-  const EXPECTED_AGENT_VERSION = '1.4.14';
-  const AGENT_INSTALLER_URL = './downloads/VisionQC_Agent_Installer_v1.4.14.exe';
-  const OFFLINE_PACKAGE_URL = './downloads/VisionQC_Offline_v4.8.14.zip';
+  const EXPECTED_AGENT_VERSION = '1.4.15';
+  const AGENT_INSTALLER_URL = './downloads/VisionQC_Agent_Installer_v1.4.15.exe';
+  const OFFLINE_PACKAGE_URL = './downloads/VisionQC_Offline_v4.8.15.zip';
   // SQLite에는 사용자가 명시적으로 남기려는 두 종류의 결과만 표시한다.
   // 이전 버전의 단발 검사(single-inspection) 이력은 보존하되 화면 집계에서는 제외한다.
   const PERSISTED_HISTORY_SOURCE_TYPES = ['simulation', 'csv-import', 'csv-file-stream'];
@@ -1576,8 +1576,11 @@
   }
 
   function findFullPathColumn(keys) {
-    const aliases = new Set(['fullpath','imagepath','filepath','sourceimagepath','sourcefilepath']);
-    return keys.findIndex((key) => aliases.has(key));
+    // The explicit inspection path wins even when a preview/image column appears first.
+    for(const key of ['fullpath','sourceimagepath','sourcefilepath','filepath','imagepath']){
+      const index=keys.indexOf(key);if(index>=0)return index;
+    }
+    return -1;
   }
 
   function findProcessedPathColumn(keys) {
@@ -3214,8 +3217,12 @@
       entries=scorePoints(state.analysisTool,state.analysisScope,state.analysisPosition,analysisScorePointOptions()).filter(p=>body.compare==='LTE'?p.score<=body.cutoff:p.score>=body.cutoff).map(p=>({path:p.fullPath||'',position:p.position}));
     }else{
       const model=kind==='all'?state.model:state.dashboardModel||state.model;
-      const records=kind==='misses'?(model.misses||[]).filter(r=>r.position===position):(model.records||[]).filter(r=>kind==='all'||(kind==='tool-ng'?r.position===position&&r.tools[extra.tool]?.result==='NG':extra.positions==null||extra.positions.includes(r.position)));
-      entries=records.flatMap(r=>(r.sourceRows||[]).map(p=>({path:p.originalFullPath||p.fullPath||'',position:r.position})));
+      const records=kind==='misses'?(model.misses||[]).filter(r=>r.position===position).map(miss=>miss.record):(model.records||[]).filter(r=>kind==='all'||(kind==='tool-ng'?r.position===position&&r.tools[extra.tool]?.result==='NG':extra.positions==null||extra.positions.includes(r.position)));
+      entries=records.flatMap(r=>(r.sourceRows||[]).filter(row=>{
+        if(kind!=='tool-ng')return true;
+        const observation=row.tools?.[extra.tool];
+        return observation?.result==='NG'&&(!Number.isFinite(observation.score)||observation.score>=getThreshold(r.position,extra.tool));
+      }).map(row=>({path:row.originalFullPath||row.fullPath||'',position:r.position})));
     }
     if(!entries.length)return showToast('복사할 이미지가 없습니다.',true);
     if(!entries.some(e=>/^(?:[A-Za-z]:[\\/]|\\\\)/.test(e.path)))return showToast('CSV에 원본 이미지의 절대 경로(FullPath)가 없어 복사할 수 없습니다.',true);

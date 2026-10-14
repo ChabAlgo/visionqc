@@ -545,7 +545,10 @@ ORDER BY c.day,c.position,c.cell,t.tool"))
                 if(image!=null)lock(_sync)
                 {
                     string where=PreparePositions(positions,"c.position");
-                    using(var command=Command(@"SELECT DISTINCT i.full_path,c.position FROM cells c JOIN source.images i ON i.run_id=@run AND i.cell_id=c.cell AND i.position_key=c.position AND substr(COALESCE(i.capture_timestamp,''),1,10)=c.day WHERE "+where+@" AND i.image_id<=(SELECT cursor FROM meta WHERE run_id=@run) AND (@date='' OR c.day=@date) AND (@tool='' OR EXISTS(SELECT 1 FROM tools n WHERE n.day=c.day AND n.cell=c.cell AND n.position=c.position AND n.tool=@tool AND n.ng=1))"))
+                    using(var command=Command(@"SELECT DISTINCT i.full_path,c.position FROM cells c JOIN source.images i ON i.run_id=@run AND i.cell_id=c.cell AND i.position_key=c.position AND substr(COALESCE(i.capture_timestamp,''),1,10)=c.day WHERE "+where+@" AND i.image_id<=(SELECT cursor FROM meta WHERE run_id=@run) AND (@date='' OR c.day=@date) AND (@tool='' OR (
+EXISTS(SELECT 1 FROM tools n WHERE n.day=c.day AND n.cell=c.cell AND n.position=c.position AND n.tool=@tool AND n.ng=1)
+AND EXISTS(SELECT 1 FROM source.tool_results inspected WHERE inspected.image_id=i.image_id AND inspected.run_id=@run AND inspected.tool_name=@tool AND inspected.result='NG'
+AND (inspected.score IS NULL OR inspected.score>=COALESCE((SELECT value FROM thresholds h WHERE h.position=c.position AND h.tool=@tool),0.5)))))"))
                     {command.Parameters.AddWithValue("@date",date??"");command.Parameters.AddWithValue("@tool",tool??"");using(cancellation.Register(()=>command.Cancel()))using(var reader=command.ExecuteReader())while(reader.Read()){cancellation.ThrowIfCancellationRequested();image(Convert.ToString(reader[0]),Convert.ToString(reader[1]));}}
                 }
                 foreach(string file in Directory.GetFiles(stage)){cancellation.ThrowIfCancellationRequested();string target=Path.Combine(root,Path.GetFileName(file));File.Move(file,target);published.Add(target);}

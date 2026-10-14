@@ -1,4 +1,5 @@
 import {test,expect} from '@playwright/test';
+import {readFileSync} from 'node:fs';
 
 const id='0123456789abcdef0123456789abcdef';
 const days=Array.from({length:23},(_,i)=>({date:`2026-02-${String(i+1).padStart(2,'0')}`,total:100,ng:5,ngRate:.05}));
@@ -10,6 +11,36 @@ const model={remote:true,dailyUnit:'cell',recordCount:4000000,rawRowCount:400000
  positionToolSummaries:[{position:'AN(TOP)',input:true,totalNg:200000,tools:[{tool:'Crack',ng:200000,denominator:200000,rate:1,threshold:.5,minNgScore:.6}]}]};
 const cell=n=>`CELL${String(n).padStart(12,'0')}`;
 const done=result=>({ok:true,analysisId:id,runId:'test-run',running:false,completed:true,result});
+
+test('Browser dashboard copies exact inspection paths per Tool, threshold, misses and all without suffix rules',async({page})=>{
+ const agentVersion=JSON.parse(readFileSync(new URL('../RELEASE_MANIFEST.json',import.meta.url))).agentVersion;
+ const exports=[];
+ await page.route('http://127.0.0.1:*/api/**',async route=>{
+  const path=new URL(route.request().url()).pathname;
+  let json={ok:true};
+  if(path==='/api/status')json={ok:true,agentVersion,analysisApiVersion:2,vpdlAvailable:true,state:{running:false}};
+  if(path==='/api/pick/start')json={ok:true,path:'C:\\Exports'};
+  if(path==='/api/history/export/start'){exports.push(route.request().postDataJSON());json={ok:true,jobId:'exact-copy'};}
+  if(path==='/api/history/export/status')json={ok:true,jobId:'exact-copy',completed:true,running:false,result:{images:{copied:1,failed:0,directory:'C:\\Exports'}}};
+  await route.fulfill({json});
+ });
+ const connected=page.waitForResponse(response=>response.url().endsWith('/api/status'));
+ await page.goto('/index.html?vqDebug=1&browserRegression=1');await connected;await page.waitForFunction(()=>window.__VISIONQC_DEBUG__?.analysisRestoreReady());
+ const source=['C:\\Mixed\\capture_ONE.jpg','C:\\Mixed\\capture_TWO.png','C:\\Mixed\\capture_THREE.tif','C:\\Mixed\\capture_FOUR.bmp','C:\\Mixed\\miss.jpeg'];
+ const csv=['ImagePath,Date,Time,Cell ID,Total_result,Crack_result,Crack_score,Other_result,Other_score,FullPath,ProcessedPath',
+ ...source.map((path,i)=>['C:\\Mixed\\same_cell_preview.png','2026-02-03','12:00:00',i===4?'P163GG22M2100002':'P163GG22M2100001',i===4?'OK':'NG',i===1||i===4?'OK':'NG',i===0?'.9':i===2?'.6':i===3?'':'.2',i===1?'NG':'OK','.99',path,'C:\\Mixed\\processed.png'].join(','))].join('\n');
+ await page.evaluate(async text=>{const d=window.__VISIONQC_DEBUG__;await d.seedCsv(text);await d.importNgCellCsv(new File(['Cell ID\nP163GG22M2100002'],'actual.csv'),'AN(TOP)');d.setPage('main');},csv);
+ const threshold=page.locator('.vq43-threshold-input[data-position="AN(TOP)"][data-tool="Crack"]');await threshold.fill('0.8');await threshold.press('Tab');
+ await page.locator('[data-vq-action="copy-tool-images"][data-position="AN(TOP)"][data-tool="Crack"]').click();await expect.poll(()=>exports.length).toBe(1);
+ expect(exports[0].imagePaths).toEqual([source[0],source[3]].map(path=>({path,position:'AN(TOP)'})));
+ await page.locator('[data-vq-action="miss-tab"][data-vq-position="AN(TOP)"]').click();
+ await page.locator('[data-vq-action="copy-miss-images"]').click();await expect.poll(()=>exports.length).toBe(2);expect(exports[1].imagePaths).toEqual([{path:source[4],position:'AN(TOP)'}]);
+ await page.locator('[data-vq-action="copy-all-images"]').click();await expect.poll(()=>exports.length).toBe(3);expect(exports[2].imagePaths.map(e=>e.path)).toEqual(source);
+ expect(JSON.stringify(exports)).not.toContain('preview.png');expect(JSON.stringify(exports)).not.toContain('processed.png');
+ // Even an existing alternative path must not replace an empty canonical inspection path.
+ await page.evaluate(async()=>{await window.__VISIONQC_DEBUG__.seedCsv('ImagePath,Cell ID,Total_result,Crack_result,Crack_score,FullPath\nC:\\Mixed\\preview.png,P163GG22M2100003,NG,NG,.9,');});
+ await page.locator('[data-vq-action="copy-all-images"]').click();await expect(page.locator('#vq43-toast')).toContainText('절대 경로');expect(exports).toHaveLength(3);
+});
 async function setup(page){
  const requests=[];
  await page.route('http://127.0.0.1:*/api/**',async route=>{
