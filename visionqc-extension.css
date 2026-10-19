@@ -936,3 +936,11 @@ body[data-vq-page="settings"] #vq43-page>.vq43-content>.vq4812-settings-grid~.vq
 .vq4816-ng-source>button{flex:0 0 24px;width:24px;height:24px;padding:0;border:1px solid #475569;border-radius:5px;background:#172033;color:#fda4af;cursor:pointer}
 .vq43-sim-path>div{grid-template-columns:minmax(0,1fr) auto auto}
 body.vq43-theme-light .vq4816-ng-source{background:#eff6ff;color:#1e293b;border-color:#94a3b8}
+
+/* v4.8.17: bounded Tool NG viewer and diagnostics maintenance controls. */
+.vq4817-maintenance-controls{display:flex;flex-wrap:wrap;align-items:center;gap:12px;margin:12px 0}
+.vq4817-maintenance-controls label{display:flex;align-items:center;gap:7px;color:#aabbd1;font-size:14px}
+.vq4817-maintenance-controls input[type=number]{width:95px;padding:7px;border:1px solid #334155;border-radius:7px;background:#071424;color:#f8fafc}
+.vq4817-maintenance-summary{line-height:1.8;color:#aabbd1;font-size:14px}
+body.vq43-theme-light .vq4817-maintenance-controls input[type=number]{background:#fff;color:#0f172a}
+body.vq43-theme-light .vq4817-maintenance-controls label,body.vq43-theme-light .vq4817-maintenance-summary{color:#334155}

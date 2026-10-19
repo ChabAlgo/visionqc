@@ -87,6 +87,8 @@ namespace VisionQC.LocalAgent
         private readonly SqliteRunStore _historyStore;
         private readonly HistoryService _history;
         private readonly AnalysisService _analysis;
+        private readonly LogMaintenance _logMaintenance;
+        private int _maintenanceWorkRequests;
         private SqliteRunStore.RunStoreSession _simulationHistorySession;
         private bool _simulationHistoryWriteFailed;
         private string _lastSimulationRunId = "";
@@ -109,6 +111,7 @@ namespace VisionQC.LocalAgent
             _simulationStore = new SqliteRunStore(Path.Combine(Path.GetDirectoryName(_historyStore.DatabasePath), "analysis-sources", "pending-" + Guid.NewGuid().ToString("N") + ".sqlite"));
             _history = new HistoryService(_historyStore, _json);
             _analysis = new AnalysisService(Path.Combine(Path.GetDirectoryName(_historyStore.DatabasePath), "analysis-cache"));
+            _logMaintenance = Environment.GetEnvironmentVariable("VISIONQC_AGENT_CHILD") == "1" ? null : new LogMaintenance(Program.AgentHomeDirectory, () => Volatile.Read(ref _maintenanceWorkRequests) > 0);
             if (_parentProcessId > 0) Task.Run(MonitorParentProcess);
         }
 
@@ -151,7 +154,11 @@ namespace VisionQC.LocalAgent
             AgentDiagnostics.Write("GPU_LIFECYCLE", "Startup probe skipped; GPU initialization is reserved for Runtime File Load");
             if (openOfflinePage) Task.Run(OpenOfflinePage);
 
-            while (!_serverCts.IsCancellationRequested) Thread.Sleep(250);
+            while (!_serverCts.IsCancellationRequested)
+            {
+                Thread.Sleep(250);
+                if (_logMaintenance != null && _logMaintenance.AutomaticDue) Maintenance("automatic", "{}");
+            }
         }
 
         // 테스트/복구 도구에서만 VISIONQC_HISTORY_DB_PATH로 별도 SQLite 파일을 지정할 수 있다.
@@ -161,6 +168,23 @@ namespace VisionQC.LocalAgent
             string overridePath = Environment.GetEnvironmentVariable("VISIONQC_HISTORY_DB_PATH");
             if (!string.IsNullOrWhiteSpace(overridePath)) return Path.GetFullPath(overridePath.Trim());
             return Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "VisionQC", "LocalAgent", "data", "visionqc-history.sqlite");
+        }
+
+        private object Maintenance(string action, string body)
+        {
+            if (_logMaintenance == null) return new { ok=false,error="작업 프로세스에서는 정리할 수 없습니다." };
+            if (action == "status") return _logMaintenance.Status(_vpdlReservedForSimulation || _analysis.IsBusy);
+            if (!Monitor.TryEnter(_vpdlSync)) { if(action=="automatic") _logMaintenance.DeferAutomatic(); return new {ok=false,busy=true,error="검사 또는 Runtime 로드 중입니다. 완료 후 정리하세요."}; }
+            try
+            {
+                if (_vpdlReservedForSimulation || _analysis.IsBusy) { if(action=="automatic") _logMaintenance.DeferAutomatic(); return new {ok=false,busy=true,error="검사 또는 분석 중입니다. 완료 후 정리하세요."}; }
+                if (action == "automatic") { _logMaintenance.Automatic(); return new {ok=true}; }
+                if (action == "settings") return _logMaintenance.Configure(body);
+                if (action == "preview") return _logMaintenance.Preview();
+                return _logMaintenance.Clean(body);
+            }
+            catch(Exception error) { return new {ok=false,error=error.Message}; }
+            finally { Monitor.Exit(_vpdlSync); }
         }
 
         private async Task AcceptLoop(CancellationToken token)
@@ -182,12 +206,15 @@ namespace VisionQC.LocalAgent
         {
             NetworkStream stream = null;
             string origin = "";
+            bool maintenanceWork = false;
             try
             {
                 stream = client.GetStream();
                 var request = await ReadRequest(stream).ConfigureAwait(false);
                 if (request == null) { client.Close(); return; }
 
+                maintenanceWork = request.Path.StartsWith("/api/runtime/") || request.Path.StartsWith("/api/workspace/") || request.Path.StartsWith("/api/classification/") || request.Path == "/api/simulation/start" || (request.Path.StartsWith("/api/analysis/") && request.Path != "/api/analysis/status");
+                if (maintenanceWork) Interlocked.Increment(ref _maintenanceWorkRequests);
                 origin = request.Headers.ContainsKey("origin") ? request.Headers["origin"] : "";
                 if (request.Method == "OPTIONS")
                 {
@@ -273,6 +300,11 @@ namespace VisionQC.LocalAgent
                     case "/api/analysis/export": result = _analysis.Export(request.Body); break;
                     case "/api/analysis/save-history": result = _analysis.SaveHistory(request.Body, _historyStore); break;
                     case "/api/analysis/scores": result = _analysis.Scores(request.Body); break;
+                    case "/api/analysis/tool-images": result = _analysis.ToolImages(request.Body); break;
+                    case "/api/maintenance/status": result = Maintenance("status", request.Body); break;
+                    case "/api/maintenance/settings": result = Maintenance("settings", request.Body); break;
+                    case "/api/maintenance/preview": result = Maintenance("preview", request.Body); break;
+                    case "/api/maintenance/clean": result = Maintenance("clean", request.Body); break;
                     case "/api/analysis/score-window": result = _analysis.ScoreWindow(request.Body); break;
                     case "/api/analysis/statistics": result = _analysis.Statistics(request.Body); break;
                     case "/api/analysis/misses": result = _analysis.Misses(request.Body); break;
@@ -352,6 +384,7 @@ namespace VisionQC.LocalAgent
                 catch { }
                 try { client.Close(); } catch { }
             }
+            finally { if(maintenanceWork) Interlocked.Decrement(ref _maintenanceWorkRequests); }
         }
 
         private NamingPreviewResponse PreviewNamingProfile(string body)

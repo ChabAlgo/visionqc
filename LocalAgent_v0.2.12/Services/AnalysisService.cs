@@ -16,6 +16,7 @@ namespace VisionQC.LocalAgent.Services
         private readonly object _sync = new object();
         private readonly CancellationTokenSource _stop = new CancellationTokenSource();
         private Job _job;
+        internal bool IsBusy { get { lock(_sync) return _job!=null && _job.Running; } }
         private sealed class Job
         {
             internal string Id, RunId, SourcePath, Error;
@@ -139,6 +140,15 @@ namespace VisionQC.LocalAgent.Services
                 var job=Resolve(request==null?null:request.analysisId);
                 if(!job.Completed || job.Projection==null)return StatusObject(job);
                 return new {ok=true,analysisId=job.Id,page=job.Projection.ScorePage(request.tool,request.position,request.scope,request.afterScore,request.afterId,request.pageSize)};
+            }
+        }
+        internal object ToolImages(string body)
+        {
+            var request=new JavaScriptSerializer().Deserialize<Request>(body??"{}")??new Request();
+            lock(_sync)
+            {
+                var job=Resolve(request.analysisId);if(job.Running||!job.Completed)return new {ok=false,busy=true,error="분석 갱신이 끝난 뒤 다시 조회하세요."};
+                return new {ok=true,analysisId=job.Id,page=job.Projection.ToolImages(request.date,request.position,request.tool,request.afterId,request.pageSize,request.previous,job.Cancellation.Token)};
             }
         }
         internal object ScoreWindow(string body)

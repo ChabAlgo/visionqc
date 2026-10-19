@@ -78,6 +78,7 @@
     <Compile Include="Services\VpdlWorkerLocator.cs" />
     <Compile Include="Services\HistoryService.cs" />
     <Compile Include="Services\AnalysisService.cs" />
+    <Compile Include="Services\LogMaintenance.cs" />
     <Compile Include="Services\CsvHistoryFileImporter.cs" />
     <Compile Include="Services\XlsxResultReader.cs" />
     <Compile Include="Services\ResultCsv.cs" />

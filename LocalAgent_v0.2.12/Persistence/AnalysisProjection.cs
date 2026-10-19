@@ -710,6 +710,29 @@ FROM tools t WHERE day=@day AND cell=@cell AND position=@position ORDER BY tool"
             }
         }
 
+        internal object ToolImages(string date,string position,string tool,long afterId,int requestedSize,bool previous,CancellationToken cancellation)
+        {
+            if(string.IsNullOrWhiteSpace(position)||string.IsNullOrWhiteSpace(tool))throw new InvalidDataException("Position과 Tool을 선택하세요.");
+            int size=Math.Max(1,Math.Min(100,requestedSize));
+            lock(_sync)
+            {
+                string comparison=previous?"<":">",order=previous?" DESC":" ASC";
+                var rows=Query(@"SELECT i.image_id AS imageId,i.cell_id AS cellId,i.position_key AS position,
+i.capture_timestamp AS captureTimestamp,i.full_path AS fullPath,i.source_file_name AS sourceFileName,i.total_result AS totalResult
+FROM source.images i JOIN cells c ON c.cell=i.cell_id AND c.position=i.position_key AND c.day=substr(COALESCE(i.capture_timestamp,''),1,10)
+WHERE i.run_id=@run AND i.image_id<=(SELECT cursor FROM meta WHERE run_id=@run)
+AND i.image_id"+comparison+@"@after AND c.position=@position AND (@date='' OR c.day=@date) AND trim(COALESCE(i.full_path,''))<>''
+AND EXISTS(SELECT 1 FROM tools n WHERE n.day=c.day AND n.cell=c.cell AND n.position=c.position AND n.tool=@tool AND n.ng=1)
+AND EXISTS(SELECT 1 FROM source.tool_results inspected WHERE inspected.image_id=i.image_id AND inspected.run_id=@run AND inspected.tool_name=@tool AND inspected.result='NG'
+AND (inspected.score IS NULL OR inspected.score>=COALESCE((SELECT value FROM thresholds h WHERE h.position=c.position AND h.tool=@tool),0.5)))
+ORDER BY i.image_id"+order+" LIMIT @limit",cancellation,"@after",afterId,"@position",position,"@tool",tool,"@date",date??"","@limit",size+1);
+                bool more=rows.Count>size;if(more)rows.RemoveAt(rows.Count-1);if(previous)rows.Reverse();
+                foreach(var row in rows)row["tools"]=Query("SELECT tool_name AS tool,result,score,overlay_path AS overlayPath FROM source.tool_results WHERE image_id=@image AND tool_name=@tool ORDER BY tool_result_id",cancellation,"@image",row["imageId"],"@tool",tool);
+                return new {records=rows,hasMore=previous?afterId>0:more,hasPrevious=previous?more:afterId>0,
+                    firstId=rows.Count==0?afterId:Convert.ToInt64(rows.First()["imageId"]),lastId=rows.Count==0?afterId:Convert.ToInt64(rows.Last()["imageId"])};
+            }
+        }
+
         internal object CellDetail(string day,string cell,string position,long afterImageId,int requestedSize,CancellationToken cancellation)
         {
             int size=Math.Max(1,Math.Min(200,requestedSize));

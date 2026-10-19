@@ -1,7 +1,7 @@
 (() => {
   'use strict';
 
-  const VERSION = '4.8.16';
+  const VERSION = '4.8.17';
   const DEFAULT_POSITION_DEFS = [
     { key:'CA_TOP', name:'CA(TOP)' },
     { key:'AN_TOP', name:'AN(TOP)' },
@@ -27,9 +27,9 @@
   const NG_POSITION_PREFIX = 'ng-position:';
   const IMG_RE = /\.(png|jpe?g|bmp|gif|webp|tif?f)$/i;
   const LOCAL_AGENT_URL = 'http://127.0.0.1:17891';
-  const EXPECTED_AGENT_VERSION = '1.4.16';
-  const AGENT_INSTALLER_URL = './downloads/VisionQC_Agent_Installer_v1.4.16.exe';
-  const OFFLINE_PACKAGE_URL = './downloads/VisionQC_Offline_v4.8.16.zip';
+  const EXPECTED_AGENT_VERSION = '1.4.17';
+  const AGENT_INSTALLER_URL = './downloads/VisionQC_Agent_Installer_v1.4.17.exe';
+  const OFFLINE_PACKAGE_URL = './downloads/VisionQC_Offline_v4.8.17.zip';
   // SQLite에는 사용자가 명시적으로 남기려는 두 종류의 결과만 표시한다.
   // 이전 버전의 단발 검사(single-inspection) 이력은 보존하되 화면 집계에서는 제외한다.
   const PERSISTED_HISTORY_SOURCE_TYPES = ['simulation', 'csv-import', 'csv-file-stream'];
@@ -194,6 +194,8 @@
     modalSequence: [],
     modalSequenceIndex: -1,
     modalSequenceKind: '',
+    toolNgViewer: null,
+    logMaintenance: { loaded:false, loading:false, settings:{automatic:true,retentionDays:30,maxMegabytes:1024}, preview:null, error:'' },
     modalIndex: 0,
     modalUrl: '',
     modalImageRequestKey: '',
@@ -840,6 +842,10 @@
     else if (action === 'download-all-results') downloadAllResultsCsv();
     else if (action === 'download-tool-ng') downloadSelectedResults(control.dataset.position,control.dataset.tool);
     else if (action === 'copy-tool-images') exportAgentAnalysis('tool-ng',control.dataset.position,{tool:control.dataset.tool,copyImages:true});
+    else if (action === 'view-tool-images') openToolNgViewer(control.dataset.position,control.dataset.tool);
+    else if (action === 'maintenance-preview') runLogMaintenance('preview');
+    else if (action === 'maintenance-save') runLogMaintenance('settings');
+    else if (action === 'maintenance-clean') runLogMaintenance('clean');
     else if (action === 'copy-chart-images') control.dataset.chartScope==='history'?exportHistoryCsv(true):exportAgentAnalysis('selection','',{positions:state.dashboardPositions,copyImages:true});
     else if (action === 'copy-score-images') exportAgentAnalysis('score','',{copyImages:true});
     else if (action === 'copy-all-images') exportAgentAnalysis('all','',{copyImages:true});
@@ -2996,7 +3002,7 @@
 
   function toolDonut(position, tool, isMax = false) {
     const percent = Math.max(0, Math.min(100, tool.rate * 100));
-    return `<div class="vq43-tool-donut-item ${isMax ? 'is-max' : ''}">${isMax ? '<span class="vq43-max-badge">최고</span>' : ''}<div class="vq43-donut" style="--vq-rate:${percent.toFixed(2)}"><div><strong>${percent.toFixed(1)}%</strong><span>${numberText(tool.ng)} / ${numberText(tool.denominator)}</span></div></div><b>${escapeHtml(tool.tool)}</b><div class="vq43-tool-score-meta"><span>실제 NG 최소 <strong>${scoreText(tool.minNgScore)}</strong></span><label>Threshold<input class="vq43-threshold-input" type="number" inputmode="decimal" min="0.50" max="1.00" step="0.01" value="${tool.threshold.toFixed(2)}" data-position="${escapeHtml(position)}" data-tool="${escapeHtml(tool.tool)}" aria-label="${escapeHtml(position)} ${escapeHtml(tool.tool)} Threshold"></label><button class="vq482-tool-csv" data-vq-action="download-tool-ng" data-position="${escapeHtml(position)}" data-tool="${escapeHtml(tool.tool)}" aria-label="${escapeHtml(position)} ${escapeHtml(tool.tool)} NG CSV Download" title="현재 날짜·포지션·Tool·Threshold 조건의 NG CSV 저장">CSV<br>Download</button><button class="vq482-tool-csv" data-vq-action="copy-tool-images" data-position="${escapeHtml(position)}" data-tool="${escapeHtml(tool.tool)}" title="같은 NG 조건의 CSV와 원본 이미지를 함께 저장합니다. 중복 원본은 한 번만 복사합니다.">이미지<br>복사</button></div></div>`;
+    return `<div class="vq43-tool-donut-item ${isMax ? 'is-max' : ''}">${isMax ? '<span class="vq43-max-badge">최고</span>' : ''}<div class="vq43-donut" style="--vq-rate:${percent.toFixed(2)}"><div><strong>${percent.toFixed(1)}%</strong><span>${numberText(tool.ng)} / ${numberText(tool.denominator)}</span></div></div><b>${escapeHtml(tool.tool)}</b><div class="vq43-tool-score-meta"><span>실제 NG 최소 <strong>${scoreText(tool.minNgScore)}</strong></span><label>Threshold<input class="vq43-threshold-input" type="number" inputmode="decimal" min="0.50" max="1.00" step="0.01" value="${tool.threshold.toFixed(2)}" data-position="${escapeHtml(position)}" data-tool="${escapeHtml(tool.tool)}" aria-label="${escapeHtml(position)} ${escapeHtml(tool.tool)} Threshold"></label><button class="vq482-tool-csv" data-vq-action="download-tool-ng" data-position="${escapeHtml(position)}" data-tool="${escapeHtml(tool.tool)}" aria-label="${escapeHtml(position)} ${escapeHtml(tool.tool)} NG CSV Download" title="현재 날짜·포지션·Tool·Threshold 조건의 NG CSV 저장">CSV<br>Download</button><button class="vq482-tool-csv" data-vq-action="view-tool-images" data-position="${escapeHtml(position)}" data-tool="${escapeHtml(tool.tool)}" title="현재 날짜·포지션·Tool·Threshold 조건의 NG 검사 원본을 봅니다. 방향키로 이동합니다.">이미지<br>보기</button><button class="vq482-tool-csv" data-vq-action="copy-tool-images" data-position="${escapeHtml(position)}" data-tool="${escapeHtml(tool.tool)}" title="같은 NG 조건의 CSV와 원본 이미지를 함께 저장합니다. 중복 원본은 한 번만 복사합니다.">이미지<br>복사</button></div></div>`;
   }
 
   function matchDiagnostic(model) {
@@ -3995,6 +4001,7 @@
   }
 
   function openHistoryImage(imageId) {
+    state.toolNgViewer=null;
     const sequence = (state.historyData?.items || []).map(historyModalItem).filter(Boolean);
     const index = sequence.findIndex((item) => item.key === `history-${Number(imageId)}`);
     if (index < 0) return showToast('저장된 원본 또는 Overlay 이미지 경로가 없습니다.', true);
@@ -6778,6 +6785,34 @@
     renderSettings(); bindPageControls();
   }
 
+  function logMaintenanceCard() {
+    const value=state.logMaintenance, settings=value.settings, preview=value.preview;
+    const busy=value.loading || !!state.simulationProgress?.running || !!state.simulationWorkspaceLoading;
+    return `<section class="vq43-settings-card vq4817-maintenance"><div class="vq43-settings-title"><span class="vq43-settings-icon">▤</span><div><h3>진단 로그·임시 기록 정리</h3><p>Agent 진단 로그와 작업별 임시 진단 기록만 정리합니다. 검사 결과 CSV·Excel, DB, 이미지, Workspace는 유지합니다.</p></div></div><div class="vq4817-maintenance-controls"><label><input id="vq4817-auto-clean" type="checkbox" ${settings.automatic?'checked':''} ${busy?'disabled':''}> 자동 정리</label><label>보관 기간 <input id="vq4817-log-days" type="number" min="1" max="3650" value="${settings.retentionDays}" ${busy?'disabled':''}> 일</label><label>용량 한도 <input id="vq4817-log-mb" type="number" min="64" max="102400" value="${settings.maxMegabytes}" ${busy?'disabled':''}> MB</label><button class="vq43-btn" data-vq-action="maintenance-save" title="이 PC의 Agent에 보관 정책을 저장합니다. 검사·Runtime 로드 중에는 정리하지 않습니다." ${busy||!value.loaded?'disabled':''}>설정 저장</button><button class="vq43-btn" data-vq-action="maintenance-preview" title="삭제하지 않고 로그 사용량과 현재 정책에 따른 정리 가능 용량을 조회합니다." ${busy?'disabled':''}>사용량 조회</button><button class="vq43-btn vq43-btn-amber" data-vq-action="maintenance-clean" title="조회한 진단 기록만 정리합니다. 조회 후 변경됐거나 사용 중인 파일은 건너뜁니다." ${busy||!preview?.reclaimableFiles?'disabled':''}>${value.loading?'처리 중…':'정리 실행'}</button></div><div class="vq4817-maintenance-summary" role="status">${preview?`진단 기록 ${formatBytes(preview.totalBytes)} · ${numberText(preview.fileCount)}개 / 정리 가능 ${formatBytes(preview.reclaimableBytes)} · ${numberText(preview.reclaimableFiles)}개`:'사용량 조회를 누르면 정리 대상을 먼저 확인할 수 있습니다.'}${value.message?`<br>${escapeHtml(value.message)}`:''}${value.error?`<br><span class="vq43-red">${escapeHtml(value.error)}</span>`:''}</div><p class="vq43-input-meta">검사·Runtime 로드·분석 중에는 정리를 미룹니다. 용량 한도를 넘으면 오래된 일반 로그부터 정리하며, 사용 중인 파일은 유지합니다.</p></section>`;
+  }
+
+  async function runLogMaintenance(action) {
+    const value=state.logMaintenance;if(value.loading)return;
+    if(state.simulationProgress?.running||state.simulationWorkspaceLoading)return showToast('검사·Runtime 로드 완료 후 정리하세요.',true);
+    const settings={automatic:$('#vq4817-auto-clean')?.checked??value.settings.automatic,retentionDays:Number($('#vq4817-log-days')?.value??value.settings.retentionDays),maxMegabytes:Number($('#vq4817-log-mb')?.value??value.settings.maxMegabytes)};
+    if(action==='settings'&&(!Number.isInteger(settings.retentionDays)||settings.retentionDays<1||settings.retentionDays>3650||!Number.isInteger(settings.maxMegabytes)||settings.maxMegabytes<64||settings.maxMegabytes>102400))return showToast('보관 기간은 1~3650일, 용량 한도는 64~102400MB로 입력하세요.',true);
+    if((action==='preview'||action==='clean')&&JSON.stringify(settings)!==JSON.stringify(value.settings))return showToast('변경한 보관 정책을 먼저 저장한 뒤 조회하세요.',true);
+    const planId=value.preview?.planId;
+    value.loading=true;value.error='';if(state.page==='settings')renderSettings();
+    try{
+      if(state.simulationAgent.status!=='connected')await pollSimulationAgentStatus();
+      if(state.simulationAgent.status!=='connected'||state.simulationAgent.version!==EXPECTED_AGENT_VERSION)throw new Error(`Agent ${EXPECTED_AGENT_VERSION} 연결이 필요합니다.`);
+      const body=action==='settings'?settings:action==='clean'?{planId}:{};
+      const result=await agentFetch(`/api/maintenance/${action}`,{method:'POST',body,timeout:60000});
+      if(!result?.ok)throw new Error(result?.error||'정리 응답을 확인하지 못했습니다.');
+      if(result.settings)value.settings=result.settings;
+      if(action==='preview'){value.preview=result;value.message='표시된 보관 정책으로 정리 대상을 조회했습니다.';}
+      if(action==='settings'){value.preview=null;value.message='보관 정책을 저장했습니다.';}
+      if(action==='clean'){value.preview=null;value.message=`${numberText(result.deletedFiles)}개 정리 · ${formatBytes(result.freedBytes)} 확보 · 사용 중/변경된 파일 ${numberText(result.skippedFiles)}개 유지`;}
+    }catch(error){value.error=error.message||String(error);if(action!=='status')showToast(value.error,true);}
+    finally{value.loading=false;value.loaded=true;if(state.page==='settings'){renderSettings();bindPageControls();}}
+  }
+
   function renderSettings() {
     const model = state.model || { uniqueCellCount:0, misses:[], duplicates:[] };
     const positions = positionNames();
@@ -6801,9 +6836,11 @@
         ${namingProfileCardHtml()}
         ${exclusionSettingsCard()}
         </div></div>
+        ${logMaintenanceCard()}
         <section class="vq43-settings-card"><div class="vq43-settings-title"><span class="vq43-settings-icon green">▤</span><div><h3>SQLite 분석 이력</h3><p>CSV 분석 결과를 명시적으로 영구 저장합니다. 원본 이미지 파일은 복사하지 않고 FullPath·Cell ID·결과·Tool Score·파일명 규칙만 보관합니다.</p></div><button class="vq43-btn vq43-btn-green" data-vq-action="save-csv-history" ${state.historyImporting || !(state.remoteAnalysis?analysisRecordCount(state.model):Object.values(state.resultInputs || {}).some(input=>input?.rows?.length))?'disabled':''}>${state.historyImporting?'SQLite 저장 중...':'현재 CSV 이력 저장'}</button></div></section>
         ${(warningList.length || (model.duplicateCount ?? model.duplicates.length)) ? `<section class="vq43-warning"><strong>⚠ 확인 필요</strong>${warningList.map((warning)=>`<div>• ${escapeHtml(warning)}</div>`).join('')}${(model.duplicateCount ?? model.duplicates.length)?`<div>• 중복 Cell ID + Position ${numberText((model.duplicateCount ?? model.duplicates.length))}건: 하나라도 NG이면 NG로 통합하고 Score 원본 행은 유지합니다.</div>`:''}</section>`:''}
       </div>`;
+    if (!state.logMaintenance.loaded && !state.logMaintenance.loading && state.simulationAgent.status === 'connected') queueMicrotask(() => runLogMaintenance('status'));
   }
 
   function resultInputRow(position) {
@@ -6967,7 +7004,59 @@
     viewport.addEventListener('dblclick', resetModalView);
   }
 
+  function toolNgViewerItem(row, viewer, index) {
+    const path=String(row.originalFullPath||row.fullPath||'');
+    const tools=Array.isArray(row.tools)?Object.fromEntries(row.tools.map(tool=>[tool.tool,tool])):row.tools||{};
+    const source={...row,fullPath:path,tools};
+    return {key:`tool-ng:${row.imageId??index}`,cellId:row.cellId,position:viewer.position,
+      label:`${viewer.tool} NG · ${viewer.date||'전체 날짜'} · Threshold ${viewer.threshold.toFixed(2)}`,
+      record:{cellId:row.cellId,position:viewer.position,tools,sourceRows:[source],totalResult:row.totalResult},
+      images:[{fullPath:path,relativePath:path,name:path.split(/[\\/]/).pop(),agentPath:true}],overlayImages:overlayImagesForRecord({tools})};
+  }
+
+  async function loadToolNgViewerPage(viewer, direction=0) {
+    if(viewer.loading)return;
+    viewer.loading=true;
+    try{
+      let page;
+      if(viewer.remote){
+        if(state.remoteAnalysis!==viewer.remote)throw new Error('분석 결과가 변경되었습니다. 다시 이미지 보기를 누르세요.');
+        const afterId=direction<0?viewer.page.firstId:direction>0?viewer.page.lastId:0;
+        const result=await analysisApi('tool-images',{analysisId:viewer.remote.analysisId,date:viewer.date,position:viewer.position,tool:viewer.tool,afterId,pageSize:50,previous:direction<0});
+        if(!result?.page)throw new Error(result?.error||'NG 이미지 조회가 끝난 뒤 다시 시도하세요.');page=result.page;
+      }else{
+        const offset=direction<0?Math.max(0,viewer.offset-50):direction>0?viewer.offset+viewer.page.records.length:0;
+        page={records:viewer.local.slice(offset,offset+50),hasPrevious:offset>0,hasMore:offset+50<viewer.local.length,offset};
+      }
+      if(state.toolNgViewer!==viewer)return;
+      if(!page.records?.length){if(direction)showModalBoundary(direction);else showToast('현재 조건의 검사 이미지 경로가 없습니다. CSV FullPath를 확인하세요.',true);return;}
+      viewer.offset=page.offset??(direction<0?Math.max(0,viewer.offset-page.records.length):direction>0?viewer.offset+(viewer.page?.records.length||0):0);
+      viewer.page=page;
+      state.modalSequence=page.records.map((row,index)=>toolNgViewerItem(row,viewer,viewer.offset+index));
+      state.modalSequenceKind='Tool NG';state.modalSequenceIndex=direction<0?state.modalSequence.length-1:0;
+      state.modalItem=state.modalSequence[state.modalSequenceIndex];state.modalMissKey=null;state.modalIndex=0;state.modalImageView='source';state.modalOverlayPath='';
+      resetModalView();renderModal();
+    }catch(error){if(state.toolNgViewer===viewer)showToast(error.message,true);}
+    finally{viewer.loading=false;}
+  }
+
+  async function openToolNgViewer(position,tool) {
+    const viewer={position,tool,date:state.dashboardDate||'',threshold:getThreshold(position,tool),remote:state.remoteAnalysis,offset:0,page:null,loading:false,local:[]};
+    state.toolNgViewer=viewer;
+    if(!viewer.remote){
+      for(const record of (state.dashboardModel||state.model)?.records||[]){
+        if(record.position!==position||record.tools[tool]?.result!=='NG')continue;
+        for(const row of record.sourceRows||[]){
+          const observation=row.tools?.[tool],path=row.originalFullPath||row.fullPath;
+          if(path&&observation?.result==='NG'&&(!Number.isFinite(observation.score)||observation.score>=viewer.threshold))viewer.local.push(row);
+        }
+      }
+    }
+    await loadToolNgViewerPage(viewer);
+  }
+
   async function openMissModal(key) {
+    state.toolNgViewer=null;
     const model = state.page === 'main' ? state.dashboardModel : state.model;
     const misses = (model?.misses || []).filter((item) => item.position === state.selectedMissPosition);
     const miss = misses.find((item) => item.key === key);
@@ -7067,6 +7156,7 @@
   }
 
   async function openScorePointImage(pointKey, options = {}) {
+    state.toolNgViewer=null;
     const point = state.analysisPointMap.get(pointKey);
     if (!point) return;
     if(state.remoteAnalysis&&!point.hydrated){
@@ -7242,15 +7332,16 @@
     const scoreNavigation = scorePointCount > 1 || (scorePointIndex>=0 && state.remoteAnalysis?.scores?.stats.total.count>1);
     const sequenceCount = Array.isArray(state.modalSequence) ? state.modalSequence.length : 0;
     const sequenceIndex = Number(state.modalSequenceIndex);
-    const sequenceNavigation = scorePointIndex < 0 && sequenceIndex>=0 && (sequenceCount>1 || !!state.remoteAnalysis?.missPage?.hasMore || !!state.remoteAnalysis?.missCursors?.length);
+    const toolViewer=state.modalSequenceKind==='Tool NG'?state.toolNgViewer:null;
+    const sequenceNavigation = scorePointIndex < 0 && sequenceIndex>=0 && (sequenceCount>1 || !!toolViewer?.page?.hasMore || !!toolViewer?.page?.hasPrevious || (!toolViewer && (!!state.remoteAnalysis?.missPage?.hasMore || !!state.remoteAnalysis?.missCursors?.length)));
     const mediaPrevious = navigationIndex > 0;
     const mediaNext = navigationIndex < navigationImages.length - 1;
-    const countText = scorePointIndex >= 0
+    const countText = toolViewer ? `${toolViewer.tool} NG 검사 이미지 ${toolViewer.offset+sequenceIndex+1} / ${toolViewer.remote ? toolViewer.offset+sequenceCount+(toolViewer.page.hasMore?"+":String()) : toolViewer.local.length}` : scorePointIndex >= 0
       ? ('Score ' + ((state.remoteAnalysis?.scores?.offset||0) + scorePointIndex + 1) + ' / ' + (state.remoteAnalysis?.scores?.stats.total.count||scorePointCount))
       : (sequenceNavigation ? `${state.modalSequenceKind} ${sequenceIndex + 1} / ${sequenceCount} · ` : '') + (selectedOverlay ? ('Heatmap ' + (navigationIndex + 1) + ' / ' + overlayImages.length) : ((state.modalIndex+1) + ' / ' + displayImages.length));
     const showNavigation = scoreNavigation || sequenceNavigation || navigationImages.length > 1;
-    const previousDisabled = scoreNavigation ? scorePointIndex <= 0&&!state.remoteAnalysis?.scores?.offset : (!mediaPrevious && (!sequenceNavigation || sequenceIndex <= 0)&&!state.remoteAnalysis?.missCursors?.length&&!miss.detailCursors?.length);
-    const nextDisabled = scoreNavigation ? scorePointIndex >= scorePointCount - 1&&!state.remoteAnalysis?.scores?.page.hasMore : (!mediaNext && (!sequenceNavigation || sequenceIndex >= sequenceCount - 1)&&!state.remoteAnalysis?.missPage?.hasMore&&!miss.detailPage?.hasMore);
+    const previousDisabled = toolViewer ? (!mediaPrevious && sequenceIndex<=0 && !toolViewer.page.hasPrevious) : scoreNavigation ? scorePointIndex <= 0&&!state.remoteAnalysis?.scores?.offset : (!mediaPrevious && (!sequenceNavigation || sequenceIndex <= 0)&&!state.remoteAnalysis?.missCursors?.length&&!miss.detailCursors?.length);
+    const nextDisabled = toolViewer ? (!mediaNext && sequenceIndex>=sequenceCount-1 && !toolViewer.page.hasMore) : scoreNavigation ? scorePointIndex >= scorePointCount - 1&&!state.remoteAnalysis?.scores?.page.hasMore : (!mediaNext && (!sequenceNavigation || sequenceIndex >= sequenceCount - 1)&&!state.remoteAnalysis?.missPage?.hasMore&&!miss.detailPage?.hasMore);
     const canMoveActualNg = !selectedOverlay && !!image.actualNg && !!image.fileHandle && !!image.rootHandleKey;
     const moveButton = canMoveActualNg ? '<button type="button" class="vq43-modal-delete" data-vq-action="modal-move-delet">이미지 제외</button>' : '';
     modal.innerHTML = `<div class="vq43-modal-card"><div class="vq43-modal-head"><div><small>${escapeHtml(miss.label || 'Actual NG Image')}</small><strong>${escapeHtml(miss.cellId)} · ${miss.position}</strong></div><div class="vq43-modal-head-actions"><button class="vq43-btn" data-vq-action="copy-single-image" title="현재 선택한 이미지 원본 한 장을 저장합니다.">이미지 복사</button>${moveButton}<button class="vq43-close" data-vq-action="close-modal">×</button></div></div>${switcher}${heatmapCreate}<div class="vq43-modal-image" id="vq43-modal-viewport"><div class="vq43-modal-media-layer"><img id="vq43-modal-zoom-image" draggable="false" src="${state.modalUrl}" alt="${escapeHtml(image.file?.name || image.name || image.relativePath)}"></div><div class="vq43-modal-zoom-tools"><span id="vq43-modal-zoom-value">100%</span><button data-vq-action="modal-reset">원위치</button></div><div class="vq43-modal-help">마우스 휠: 확대/축소 · 드래그: 이동 · 더블클릭: 원위치</div></div><div class="vq43-modal-foot"><div class="vq4816-viewer-navigation">${showNavigation?`<button class="vq43-modal-nav prev" data-vq-action="modal-prev" ${previousDisabled?'disabled':''}>‹</button><button class="vq43-modal-nav next" data-vq-action="modal-next" ${nextDisabled?'disabled':''}>›</button>`:''}</div><div class="vq43-modal-path"><span>${escapeHtml(image.relativePath)}</span><b>${countText}</b></div><div class="vq43-modal-scores">${scores}</div></div></div>`;
@@ -7390,6 +7481,15 @@
     const sequence = Array.isArray(state.modalSequence) ? state.modalSequence : [];
     const current = Number(state.modalSequenceIndex);
     const next = current + (delta < 0 ? -1 : 1);
+    if(state.modalSequenceKind==='Tool NG' && state.toolNgViewer){
+      const viewer=state.toolNgViewer;
+      if(viewer.loading)return true;
+      if(next<0||next>=sequence.length){
+        if(delta<0?viewer.page.hasPrevious:viewer.page.hasMore)loadToolNgViewerPage(viewer,delta);
+        else showModalBoundary(delta);
+        return true;
+      }
+    }
     if(state.remoteAnalysis&&state.modalSequenceKind==='미검'){
       if(state.remoteAnalysis.missLoading)return true;
       const item=(state.dashboardModel||state.model).misses.find(m=>m.key===state.modalMissKey);
@@ -7594,6 +7694,7 @@
   }
 
   function closeModal() {
+    state.toolNgViewer=null;
     const modal = $('#vq43-modal');
     modal?.classList.remove('open');
     if (modal) modal.innerHTML = '';

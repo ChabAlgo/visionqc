@@ -1,19 +1,19 @@
 {
-  "releaseTag": "visionqc-v4.8.16-agent-v1.4.16",
-  "webVersion": "4.8.16",
-  "agentVersion": "1.4.16",
-  "minimumAgentVersion": "1.4.16",
+  "releaseTag": "visionqc-v4.8.17-agent-v1.4.17",
+  "webVersion": "4.8.17",
+  "agentVersion": "1.4.17",
+  "minimumAgentVersion": "1.4.17",
   "compatibility": {
-    "web": "4.8.16",
-    "agent": "1.4.16"
+    "web": "4.8.17",
+    "agent": "1.4.17"
   },
   "artifacts": {
-    "agentInstaller": "downloads/VisionQC_Agent_Installer_v1.4.16.exe",
-    "offlinePackage": "downloads/VisionQC_Offline_v4.8.16.zip",
+    "agentInstaller": "downloads/VisionQC_Agent_Installer_v1.4.17.exe",
+    "offlinePackage": "downloads/VisionQC_Offline_v4.8.17.zip",
     "sha256": {
-      "agentInstaller": "A2E93ED14298BD80E8A6D015E7D3AA1D82B2A5B17A44BFCE8F4652A21520C11F",
-      "offlinePackage": "AA952279B2273A3B9FEA204B8CCD1228982F1A242BCAC833A22583F7B750A8BA"
+      "agentInstaller": "4EFCD5867C67D80ED9C7B1FFF41C2C3D1315158BF9313DF072D2FF07E81DB60E",
+      "offlinePackage": "E115AE4EB51BA98B0E457345A1477903CA1484A4692919E1A528E05E7D7E6EAD"
     }
   },
-  "notes": "검사 FullPath 우선 및 Tool NG 개별 검사 기록 기준 이미지 복사 수정."
+  "notes": "30일 진단 로그 자동 정리와 안전한 수동 정리, 날짜·Position·Tool·Threshold 조건의 NG 이미지 뷰어 추가."
 }
