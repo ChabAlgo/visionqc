@@ -16,7 +16,7 @@ namespace VisionQC.AgentInstaller
     internal static class Program
     {
         private const string AgentExe = "VisionQC.LocalAgent.exe";
-        private const string ProductVersion = "1.4.15";
+        private const string ProductVersion = "1.4.16";
         private static readonly PayloadFile[] Payload =
         {
             new PayloadFile("VisionQC.AgentInstaller.Payload.Launcher.VisionQC.LocalAgent.exe", AgentExe),
@@ -50,24 +50,26 @@ namespace VisionQC.AgentInstaller
             {
                 string installDir = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "VisionQC", "LocalAgent");
                 StopRunningAgent(Path.Combine(installDir, AgentExe));
+                if (IsLoopbackAgentPortOpen()) throw new InvalidOperationException("기존 Agent 포트(17891)가 아직 사용 중입니다. 기존 실행을 종료한 뒤 설치하세요.");
                 RemovePreviousInstallation(installDir);
                 ExtractPayload(installDir);
                 string agentPath = Path.Combine(installDir, AgentExe);
                 RunAndWait(agentPath, "--register", 10000);
                 CreateOfflineShortcut(installDir, agentPath);
-                Process.Start(new ProcessStartInfo { FileName = agentPath, Arguments = "", WorkingDirectory = installDir, UseShellExecute = true });
+                Process.Start(new ProcessStartInfo { FileName = agentPath, Arguments = silent ? "" : "--offline", WorkingDirectory = installDir, UseShellExecute = true });
+                WaitForInstalledAgent();
 
                 if (!silent)
                 {
                     string runtimeWarning = HasVpdlRuntime() ? "" : "\r\n\r\n참고: Cognex VPDL Runtime은 라이선스 제품이므로 설치 패키지에 포함되지 않습니다. 이 PC에 VPDL이 설치되어 있어야 시뮬레이션을 실행할 수 있습니다.";
-                    MessageBox.Show("VisionQC Agent v" + ProductVersion + " 설치가 완료되었습니다.\r\n프로토콜 등록과 Agent 시작을 완료했습니다. 기존 웹 화면을 새로고침하세요. 오프라인 화면은 바탕화면 바로가기로 열 수 있습니다.\r\n\r\n설치 위치: " + installDir + runtimeWarning,
+                    ForegroundMessage.Show("VisionQC Agent v" + ProductVersion + " 설치가 완료되었습니다.\r\n프로토콜 등록과 Agent 시작을 확인했습니다. 오프라인 화면을 자동으로 열고 바탕화면 바로가기를 생성했습니다.\r\n\r\n설치 위치: " + installDir + runtimeWarning,
                         "VisionQC 설치 완료", MessageBoxButtons.OK, MessageBoxIcon.Information);
                 }
                 return 0;
             }
             catch (Exception ex)
             {
-                if (!silent) MessageBox.Show("VisionQC Agent 설치 중 오류가 발생했습니다.\r\n\r\n" + ex.Message, "VisionQC 설치 오류", MessageBoxButtons.OK, MessageBoxIcon.Error);
+                if (!silent) ForegroundMessage.Show("VisionQC Agent 설치 중 오류가 발생했습니다.\r\n\r\n" + ex.Message, "VisionQC 설치 오류", MessageBoxButtons.OK, MessageBoxIcon.Error);
                 else try { File.WriteAllText(silentErrorLog, ex.ToString(), Encoding.UTF8); } catch { }
                 return 1;
             }
@@ -119,6 +121,8 @@ namespace VisionQC.AgentInstaller
             try
             {
                 var request = (HttpWebRequest)WebRequest.Create("http://127.0.0.1:17891/api/agent/exit");
+                request.Timeout = 2000;
+                request.ReadWriteTimeout = 2000;
                 request.Method = "POST";
                 request.ContentType = "application/json";
                 byte[] body = Encoding.UTF8.GetBytes("{}");
@@ -230,28 +234,34 @@ namespace VisionQC.AgentInstaller
 
         private static void CreateOfflineShortcut(string installDir, string agentPath)
         {
-            try
+            string desktop = Environment.GetFolderPath(Environment.SpecialFolder.DesktopDirectory);
+            if (string.IsNullOrWhiteSpace(desktop) || !Directory.Exists(desktop)) throw new IOException("바탕화면 경로를 찾지 못했습니다.");
+            string shortcutPath = Path.Combine(desktop, "VisionQC 오프라인 실행.lnk");
+            DesktopShortcut.Create(shortcutPath, agentPath, installDir);
+            if (!File.Exists(shortcutPath) || new FileInfo(shortcutPath).Length == 0) throw new IOException("바탕화면 바로가기를 생성하지 못했습니다: " + shortcutPath);
+        }
+
+        private static void WaitForInstalledAgent()
+        {
+            var deadline = DateTime.UtcNow.AddSeconds(60);
+            while (DateTime.UtcNow < deadline)
             {
-                string shortcutPath = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.DesktopDirectory), "VisionQC 오프라인 실행.lnk");
-                Type shellType = Type.GetTypeFromProgID("WScript.Shell");
-                if (shellType == null) return;
-                dynamic shell = Activator.CreateInstance(shellType);
-                dynamic shortcut = shell.CreateShortcut(shortcutPath);
-                shortcut.TargetPath = agentPath;
-                shortcut.Arguments = "--offline";
-                shortcut.WorkingDirectory = installDir;
-                shortcut.IconLocation = agentPath + ",0";
-                shortcut.Description = "VisionQC 오프라인 UI 실행";
-                shortcut.Save();
-                string diagnosticPath = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.DesktopDirectory), "VisionQC Green 비교 진단.lnk");
-                if (File.Exists(diagnosticPath)) {
-                    dynamic diagnostic = shell.CreateShortcut(diagnosticPath);
-                    // Remove only the shortcut installed by VisionQC, never a user replacement.
-                    if (string.Equals((string)diagnostic.TargetPath, agentPath, StringComparison.OrdinalIgnoreCase)
-                        && (string)diagnostic.Arguments == "--green-compare") File.Delete(diagnosticPath);
+                try
+                {
+                    var request = (HttpWebRequest)WebRequest.Create("http://127.0.0.1:17891/api/status");
+                    request.Timeout = 1500; request.ReadWriteTimeout = 1500;
+                    using (var response = (HttpWebResponse)request.GetResponse())
+                    using (var reader = new StreamReader(response.GetResponseStream()))
+                    {
+                        var status = new System.Web.Script.Serialization.JavaScriptSerializer().Deserialize<System.Collections.Generic.Dictionary<string, object>>(reader.ReadToEnd());
+                        object version;
+                        if (status.TryGetValue("agentVersion", out version) && string.Equals(Convert.ToString(version), ProductVersion, StringComparison.Ordinal)) return;
+                    }
                 }
+                catch { }
+                Thread.Sleep(250);
             }
-            catch { }
+            throw new InvalidOperationException("새 Agent의 시작을 확인하지 못했습니다. 설치 폴더의 logs에서 agent-startup.log를 확인하세요.");
         }
 
         private static bool HasVpdlRuntime()

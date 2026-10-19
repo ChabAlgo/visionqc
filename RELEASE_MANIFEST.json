@@ -1,18 +1,18 @@
 {
-  "releaseTag": "visionqc-v4.8.15-agent-v1.4.15",
-  "webVersion": "4.8.15",
-  "agentVersion": "1.4.15",
-  "minimumAgentVersion": "1.4.15",
+  "releaseTag": "visionqc-v4.8.16-agent-v1.4.16",
+  "webVersion": "4.8.16",
+  "agentVersion": "1.4.16",
+  "minimumAgentVersion": "1.4.16",
   "compatibility": {
-    "web": "4.8.15",
-    "agent": "1.4.15"
+    "web": "4.8.16",
+    "agent": "1.4.16"
   },
   "artifacts": {
-    "agentInstaller": "downloads/VisionQC_Agent_Installer_v1.4.15.exe",
-    "offlinePackage": "downloads/VisionQC_Offline_v4.8.15.zip",
+    "agentInstaller": "downloads/VisionQC_Agent_Installer_v1.4.16.exe",
+    "offlinePackage": "downloads/VisionQC_Offline_v4.8.16.zip",
     "sha256": {
-      "agentInstaller": "7917210BD6A0BF2B1F27A70044AA39D7688E2121777517E2537F85A846FA385E",
-      "offlinePackage": "35E04B0425DF86FFD738E10C239768CA575A6C247C2FC6D52380B5778F3EDE4D"
+      "agentInstaller": "A2E93ED14298BD80E8A6D015E7D3AA1D82B2A5B17A44BFCE8F4652A21520C11F",
+      "offlinePackage": "AA952279B2273A3B9FEA204B8CCD1228982F1A242BCAC833A22583F7B750A8BA"
     }
   },
   "notes": "검사 FullPath 우선 및 Tool NG 개별 검사 기록 기준 이미지 복사 수정."

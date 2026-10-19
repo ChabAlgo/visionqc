@@ -31,5 +31,6 @@ test('installer and multi-version build exclude comparison executables but prese
   assert.ok(!build.includes("@('GreenBaseline', 'GreenCompare')"));
   assert.ok(!build.includes("$diagnosticProject + '\\VisionQC.' + $diagnosticProject + '.csproj'"));
   assert.ok(!read(dir+'Launcher/Program.cs').includes('--green-compare'));
-  assert.ok(read(dir+'OfflineInstaller/Program.cs').includes('VisionQC Green 비교 진단'));
+  assert.ok(read(dir+'OfflineInstaller/Program.cs').includes('DesktopShortcut.Create'));
+  assert.ok(!read(dir+'OfflineInstaller/DesktopShortcut.cs').includes('--green-compare'));
 });

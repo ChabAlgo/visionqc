@@ -703,6 +703,7 @@ namespace VisionQC.LocalAgent
 
                 LocalRuntime.Control control = null;
                 Dictionary<string, PositionWorkerClient> positionWorkers = null;
+                string preloadStage = "초기화";
                 try
                 {
                     bool useGpu;
@@ -732,40 +733,46 @@ namespace VisionQC.LocalAgent
                         positionWorkers = new Dictionary<string, PositionWorkerClient>(StringComparer.OrdinalIgnoreCase);
                         foreach (var position in positions)
                         {
+                            preloadStage = position.displayName + " / GPU=" + assignments[position.key] + " / Worker 준비 및 Runtime 로드";
                             AppendAgentLog("INFO", "Position Worker 준비 | " + position.displayName + " | GPU=" + assignments[position.key]);
                             PositionWorkerClient worker = StartPositionWorker(position, assignments[position.key]);
                             positionWorkers[position.key] = worker;
                             AgentStartRequest childRequest = ClonePositionRequest(req, position, assignments);
                             RuntimePreloadResponse childResponse = WorkerPost<RuntimePreloadResponse>(worker, "/api/runtime/preload", childRequest, 15 * 60 * 1000);
-                            if (childResponse == null || !childResponse.ok) throw new SysInvalidOperationException(position.displayName + " Worker Runtime Load 실패: " + (childResponse == null ? "응답 없음" : childResponse.error));
+                            if (childResponse == null || !childResponse.ok) throw new SysInvalidOperationException(position.displayName + " | GPU=" + assignments[position.key] + " | Worker Runtime Load 실패: " + (childResponse == null ? "응답 없음" : childResponse.error));
                             response.items.AddRange(childResponse.items ?? new List<RuntimePreloadItem>());
                             completed += childResponse.workspaceCount;
                             AppendAgentLog("INFO", "Runtime File Load 진행 " + completed + "/" + total + " | " + position.displayName);
                         }
+                        preloadStage = "Workspace 변경 여부 검증 및 준비 완료";
                         RememberPreloadedPositionWorkersLocked(positionWorkers, assignments, req, signature);
                         positionWorkers = null;
                     }
                     else
                     {
                         var gpuList = ParseGpuList(gpuDevices, useGpu);
+                        preloadStage = "Runtime 생성";
+                        AgentDiagnostics.Write("PRELOAD_STAGE", "Runtime.Create | Mode=" + mode + " | GPU=" + string.Join(",", gpuList));
+                        if (useGpu) AgentDiagnostics.WriteNvidiaEnvironment();
                         control = CreateRuntimeControl(req, mode, useGpu, gpuList, "Runtime File Load");
                         foreach (var position in positions)
                         {
                             if (mode != "blue")
                             {
                                 string path = FirstNonEmpty(position.greenWorkspacePath, position.workspacePath);
-                                response.items.Add(LoadPreloadedWorkspace(control, position, "green", "ws_" + position.key, path, mode == "green" && GetGreenOptions(req).detailedDiagnostics));
+                                response.items.Add(LoadPreloadedWorkspace(control, position, "green", "ws_" + position.key, path, mode == "green" && GetGreenOptions(req).detailedDiagnostics, stage => preloadStage = position.displayName + " / " + stage));
                                 completed++;
                                 AppendAgentLog("INFO", "Runtime File Load 진행 " + completed + "/" + total + " | " + position.displayName + " Green");
                             }
                             if (mode != "green")
                             {
                                 string path = FirstNonEmpty(position.blueWorkspacePath, position.workspacePath);
-                                response.items.Add(LoadPreloadedWorkspace(control, position, "blue", "blue_" + position.key, path));
+                                response.items.Add(LoadPreloadedWorkspace(control, position, "blue", "blue_" + position.key, path, false, stage => preloadStage = position.displayName + " / " + stage));
                                 completed++;
                                 AppendAgentLog("INFO", "Runtime File Load 진행 " + completed + "/" + total + " | " + position.displayName + " Blue");
                             }
                         }
+                        preloadStage = "Workspace 변경 여부 검증 및 준비 완료";
                         RememberPreloadedRuntimeLocked(control, req, signature);
                         control = null;
                     }
@@ -784,6 +791,8 @@ namespace VisionQC.LocalAgent
                 }
                 catch (SysException ex)
                 {
+                    AgentDiagnostics.Write("PRELOAD_ERROR_DETAIL", "Stage=" + preloadStage + Environment.NewLine + ex);
+                    AgentDiagnostics.WriteNvidiaEnvironment();
                     try
                     {
                         if (control != null)
@@ -797,28 +806,34 @@ namespace VisionQC.LocalAgent
                         {
                             foreach (PositionWorkerClient failedWorker in positionWorkers.Values)
                             {
+                                AgentDiagnostics.PreserveWorkerFailure(failedWorker.HomePath, failedWorker.DisplayName + " | GPU=" + failedWorker.GpuAssignment, ex);
                                 DisposePositionWorker(failedWorker);
                             }
                         }
                     DisposePreloadedRuntimeLocked();
                     sw.Stop();
                     _licenseStatus = "Runtime Error";
-                    _runtimeMessage = ex.Message;
-                    AppendAgentLog("ERROR", "Runtime File Load 실패: " + ex.Message);
+                    string failureMessage = preloadStage + " 단계 실패: " + ex.Message;
+                    _runtimeMessage = failureMessage;
+                    AppendAgentLog("ERROR", "Runtime File Load 실패: " + failureMessage);
                     AgentDiagnostics.Write("PRELOAD_ERROR", ex.ToString());
-                    return new RuntimePreloadResponse { ok = false, mode = mode, error = ex.Message, elapsedMs = sw.ElapsedMilliseconds };
+                    return new RuntimePreloadResponse { ok = false, mode = mode, error = failureMessage, elapsedMs = sw.ElapsedMilliseconds };
                 }
             }
         }
 
-        private RuntimePreloadItem LoadPreloadedWorkspace(LocalRuntime.Control control, AgentPositionRequest position, string kind, string workspaceName, string path, bool detailed = false)
+        private RuntimePreloadItem LoadPreloadedWorkspace(LocalRuntime.Control control, AgentPositionRequest position, string kind, string workspaceName, string path, bool detailed = false, Action<string> updateStage = null)
         {
             AppendAgentLog("INFO", position.displayName + " " + kind.ToUpperInvariant() + " Runtime 로드 중: " + Path.GetFileName(path));
+            updateStage?.Invoke("Workspace 로드");
+            AgentDiagnostics.Write("PRELOAD_STAGE", position.displayName + " | Workspace.Load | " + path);
             ViDi2.Runtime.IWorkspace workspace = AgentDiagnostics.Measure("Workspace.Load", GreenRuntimeFactory.Describe(control) + " | Workspace=" + path, detailed,
                 () => control.Workspaces.Add(workspaceName, path));
             // VPDL Workspaces 컬렉션은 버전에 따라 문자열 indexer가 동일하게 동작하지 않습니다.
             // Add가 반환한 실제 객체를 Control과 이름으로 직접 보관해 Simulation에서 재사용합니다.
             RuntimeWorkspaceRegistry.Register(control, workspaceName, workspace);
+            updateStage?.Invoke("Tool 구조 조회");
+            AgentDiagnostics.Write("PRELOAD_STAGE", position.displayName + " | Workspace.Structure");
             WorkspaceInspectionResponse info = AgentDiagnostics.Measure("Workspace.Structure", GreenRuntimeFactory.Describe(control), detailed,
                 () => BuildWorkspaceInspectionResult(workspace, path, "RuntimePreload"));
             if (detailed) AgentDiagnostics.CaptureEnvironment("after-workspace-load");

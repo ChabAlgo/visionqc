@@ -926,3 +926,13 @@ body.vq43-theme-light .vq482-tool-csv{background:#ecfdf5;color:#065f46;border-co
 @media(max-width:1200px){.vq4812-settings-grid{grid-template-columns:minmax(0,1fr)}.vq4812-export-actions{flex-wrap:wrap}}
 
 body[data-vq-page="settings"] #vq43-page>.vq43-content>.vq4812-settings-grid~.vq43-settings-card{grid-column:1/-1}
+
+/* v4.8.16: independent viewer navigation and individually removable NG registrations. */
+#vq43-modal .vq4816-viewer-navigation{display:flex;justify-content:space-between;gap:24px;margin-bottom:9px;width:100%}
+#vq43-modal .vq4816-viewer-navigation .vq43-modal-nav{position:static!important;inset:auto!important;transform:none!important;flex:0 0 45px;margin:0!important;display:inline-flex;align-items:center;justify-content:center}
+.vq4816-ng-sources{display:flex;flex-wrap:wrap;gap:6px;margin:7px 0;min-width:0}
+.vq4816-ng-source{display:inline-flex;align-items:center;gap:8px;max-width:100%;padding:4px 7px;border:1px solid #334155;border-radius:8px;background:#0b1b2d;color:#cbd5e1;font-size:12px}
+.vq4816-ng-source>span{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;min-width:0}
+.vq4816-ng-source>button{flex:0 0 24px;width:24px;height:24px;padding:0;border:1px solid #475569;border-radius:5px;background:#172033;color:#fda4af;cursor:pointer}
+.vq43-sim-path>div{grid-template-columns:minmax(0,1fr) auto auto}
+body.vq43-theme-light .vq4816-ng-source{background:#eff6ff;color:#1e293b;border-color:#94a3b8}

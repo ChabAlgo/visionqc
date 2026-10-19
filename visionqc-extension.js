@@ -1,7 +1,7 @@
 (() => {
   'use strict';
 
-  const VERSION = '4.8.15';
+  const VERSION = '4.8.16';
   const DEFAULT_POSITION_DEFS = [
     { key:'CA_TOP', name:'CA(TOP)' },
     { key:'AN_TOP', name:'AN(TOP)' },
@@ -27,9 +27,9 @@
   const NG_POSITION_PREFIX = 'ng-position:';
   const IMG_RE = /\.(png|jpe?g|bmp|gif|webp|tif?f)$/i;
   const LOCAL_AGENT_URL = 'http://127.0.0.1:17891';
-  const EXPECTED_AGENT_VERSION = '1.4.15';
-  const AGENT_INSTALLER_URL = './downloads/VisionQC_Agent_Installer_v1.4.15.exe';
-  const OFFLINE_PACKAGE_URL = './downloads/VisionQC_Offline_v4.8.15.zip';
+  const EXPECTED_AGENT_VERSION = '1.4.16';
+  const AGENT_INSTALLER_URL = './downloads/VisionQC_Agent_Installer_v1.4.16.exe';
+  const OFFLINE_PACKAGE_URL = './downloads/VisionQC_Offline_v4.8.16.zip';
   // SQLite에는 사용자가 명시적으로 남기려는 두 종류의 결과만 표시한다.
   // 이전 버전의 단발 검사(single-inspection) 이력은 보존하되 화면 집계에서는 제외한다.
   const PERSISTED_HISTORY_SOURCE_TYPES = ['simulation', 'csv-import', 'csv-file-stream'];
@@ -124,6 +124,7 @@
     ngFolderNames: {},
     ngWarnings: [],
     restoreWarnings: [],
+    ngSources: [],
     model: null,
     selectedMissPosition: initialPositions[0]?.name || 'CA(TOP)',
     analysisTool: '',
@@ -824,6 +825,7 @@
     else if (action === 'modal-move-delet') moveCurrentActualNgImage();
     else if (action === 'choose-ng-folder') chooseNgFolder();
     else if (action === 'add-ng-folder') chooseNgFolder(true);
+    else if (action === 'remove-ng-source') removeNgSource(control.dataset.ngSource);
     else if (action === 'clear-inputs') clearAnalysisInputs();
     else if (action === 'miss-tab') {
       state.selectedMissPosition = control.closest('[data-vq-position]')?.dataset.vqPosition || state.selectedMissPosition;
@@ -1391,7 +1393,7 @@
     const remote=state.remoteAnalysis;
     const reference=remote ? {analysisId:remote.analysisId,runId:remote.runId,inputs:remote.inputs,filePaths:remote.filePaths,excludedPositions:remote.excludedPositions,saved:!!remote.saved,live:!!remote.live} : null;
     const data = structuredClone({ remoteAnalysis:reference,resultInputs:state.resultInputs, ngImages:state.ngImages,
-      ngRootName:state.ngRootName, ngFolderNames:state.ngFolderNames, ngWarnings:state.ngWarnings,
+      ngRootName:state.ngRootName, ngFolderNames:state.ngFolderNames, ngWarnings:state.ngWarnings, ngSources:state.ngSources,
       thresholds:state.thresholds, dashboardDate:state.dashboardDate, dashboardPositions:state.dashboardPositions, page:state.page });
     const write = snapshotWrites.catch(()=>{}).then(()=>saveHandle(ANALYSIS_SNAPSHOT_KEY, data));
     snapshotWrites = write;
@@ -1404,6 +1406,7 @@
       const snapshot = handles.find(item=>item.key===ANALYSIS_SNAPSHOT_KEY)?.handle;
       if (snapshot?.resultInputs && Array.isArray(snapshot.ngImages)) {
         Object.assign(state, snapshot);
+        await refreshNgSourceList(handles);
         state.simulationLiveActive = false;
         if(state.remoteAnalysis){state.remoteAnalysis.needsRestore=true;if(state.remoteAnalysis.live)state.simulationLiveRunId=state.remoteAnalysis.runId;}
         return;
@@ -1428,39 +1431,9 @@
         }
       }
 
-      for (const ngSaved of handles.filter(item => (item.key === NG_ROOT_KEY || item.key.startsWith(`${NG_ROOT_KEY}:`)) && !item.key.endsWith(':exclusion-parent'))) {
-        if (ngSaved?.handle) {
-          if (await hasPermission(ngSaved.handle)) {
-            try {
-              const scanned = await scanNgDirectory(ngSaved.handle, false, ngSaved.key);
-              state.ngRootName = [state.ngRootName, scanned.rootName].filter(Boolean).join(' / ');
-              state.ngImages = state.ngImages.concat(scanned.images);
-              state.ngWarnings.push(...scanned.warnings);
-              positionNames().forEach(position => {
-                if (scanned.images.some(image => image.position === position)) state.ngFolderNames[position] = [state.ngFolderNames[position], `${scanned.rootName} / ${position}`].filter(Boolean).join(' / ');
-              });
-            } catch (error) { state.restoreWarnings.push(error.message || '실제 NG 폴더 복원 실패'); }
-          } else {
-            state.ngRootName = ngSaved.name || '';
-            state.restoreWarnings.push('저장된 실제 NG 폴더 권한이 해제되어 다시 선택해야 합니다.');
-          }
-        }
+      try { await refreshActualNgFolders(false, false); }
+      catch (error) { state.restoreWarnings.push(error.message || '실제 NG 폴더를 다시 선택하세요.'); }
 
-      }
-      for (const position of positionNames()) {
-        const saved = handles.find((item) => item.key === `${NG_POSITION_PREFIX}${position}`);
-        if (!saved?.handle) continue;
-        if (!(await hasPermission(saved.handle))) {
-          state.restoreWarnings.push(`${position}: 저장된 실제 NG 폴더 권한이 해제되어 다시 선택해야 합니다.`);
-          continue;
-        }
-        try {
-          const scanned = await scanNgDirectoryForPosition(saved.handle, position, false);
-          state.ngImages = state.ngImages.filter(image => image.position !== position).concat(scanned.images);
-          state.ngFolderNames[position] = scanned.rootName;
-          state.ngWarnings.push(...scanned.warnings.map(w => `${position}: ${w}`));
-        } catch (error) { state.restoreWarnings.push(`${position}: ${error.message || '실제 NG 폴더 복원 실패'}`); }
-      }
     } catch (error) {
       console.error(error);
     } finally {
@@ -1983,6 +1956,68 @@
     }
   }
 
+  function ngSourcePosition(key) {
+    return positionNames().find(position => key === `${NG_POSITION_PREFIX}${position}` || key.startsWith(`${NG_POSITION_PREFIX}${position}:`)) || '';
+  }
+
+  function isNgFolderEntry(entry) {
+    return !entry.key.endsWith(':exclusion-parent') && (entry.key === NG_ROOT_KEY || entry.key.startsWith(`${NG_ROOT_KEY}:`) || entry.key.startsWith(NG_POSITION_PREFIX));
+  }
+
+  async function refreshNgSourceList(entries = null) {
+    const saved = entries || await loadHandles();
+    state.ngSources = saved.filter(isNgFolderEntry).map(entry => ({key:entry.key,name:entry.handle?.name || entry.name || 'NG',position:ngSourcePosition(entry.key)}));
+    state.ngRootName = state.ngSources.filter(source => !source.position).map(source => source.name).join(' / ');
+    positionNames().forEach(position => {
+      const names = state.ngSources.filter(source => !source.position || source.position === position).map(source => source.name);
+      const csvNames = state.ngImages.filter(image => image.position === position && image.csvOnly).map(image => image.sourceFileName).filter(Boolean);
+      state.ngFolderNames[position] = [...new Set([...names,...csvNames])].join(' / ');
+    });
+  }
+
+  function ngSourceListHtml(position = '') {
+    return `<div class="vq4816-ng-sources">${(state.ngSources || []).filter(source => source.position === position).map(source => `<span class="vq4816-ng-source"><span title="${escapeHtml(source.name)}">${escapeHtml(source.name)}</span><button type="button" data-vq-action="remove-ng-source" data-ng-source="${escapeHtml(source.key)}" title="이 폴더 등록만 해제합니다. 원본 폴더와 이미지는 삭제하지 않습니다." aria-label="${escapeHtml(source.name)} 폴더 등록 해제" ${state.loading || state.simulationStartPending || state.simulationProgress?.running ? 'disabled' : ''}>×</button></span>`).join('')}</div>`;
+  }
+
+  async function removeNgSource(key) {
+    if (!key || state.loading || state.simulationStartPending || state.simulationProgress?.running) return;
+    await deleteHandle(key);
+    state.ngImages = state.ngImages.filter(image => image.rootHandleKey !== key);
+    await refreshNgSourceList();
+    rebuildModel();
+    await saveAnalysisSnapshot();
+    renderSettings();
+    showToast('선택한 NG 폴더 등록을 해제했습니다. 원본 파일은 유지됩니다.');
+  }
+
+  async function refreshActualNgFolders(requestPermission = true, updateModel = true) {
+    const entries = (await loadHandles()).filter(isNgFolderEntry);
+    if (!entries.length) return;
+    const keys = new Set(entries.map(entry => entry.key));
+    const images = [], warnings = [];
+    // Stage every root before replacing the index. A denied/missing root must not silently remove NG labels.
+    for (const entry of entries) {
+      const position = ngSourcePosition(entry.key);
+      const scanned = position
+        ? await scanNgDirectoryForPosition(entry.handle, position, requestPermission, false)
+        : await scanNgDirectory(entry.handle, requestPermission, entry.key, false);
+      for (const image of scanned.images) {
+        if (position) { image.rootHandleKey = entry.key; image.key = `${entry.key}|${image.key}`; }
+        images.push(image);
+      }
+      warnings.push(...scanned.warnings);
+    }
+    state.ngImages = state.ngImages.filter(image => !keys.has(image.rootHandleKey)).concat(images);
+    state.ngWarnings = warnings;
+    await refreshNgSourceList();
+    if (updateModel) {
+      if (state.remoteAnalysis) await refreshAgentDashboard();
+      else rebuildModel(false);
+    }
+    await saveAnalysisSnapshot();
+    appendSimulationLog({level:'INFO',message:`실제 NG 폴더 재조회 완료 · ${entries.length}개 폴더 · ${numberText(images.length)}개 이미지`});
+  }
+
   async function chooseNgFolder(append = false) {
     if (state.loading) return;
     try {
@@ -2023,6 +2058,7 @@
           if (scanned.images.some(image => image.position === position)) state.ngFolderNames[position] = `${scanned.rootName} / ${position}`;
         });
       }
+      await refreshNgSourceList();
       rebuildModel();
       showToast(`실제 NG 이미지 ${numberText(state.ngImages.length)}개를 불러왔습니다.`);
     } catch (error) {
@@ -2030,7 +2066,7 @@
     } finally { state.loading = ''; renderSettings(); }
   }
 
-  async function scanNgDirectory(rootHandle, requestPermission = true, rootKey = NG_ROOT_KEY) {
+  async function scanNgDirectory(rootHandle, requestPermission = true, rootKey = NG_ROOT_KEY, filterLoadedResults = true) {
     if (rootHandle.queryPermission) {
       let permission = await rootHandle.queryPermission({ mode: 'read' });
       if (permission !== 'granted' && requestPermission && rootHandle.requestPermission) permission = await rootHandle.requestPermission({ mode: 'read' });
@@ -2039,8 +2075,8 @@
     const images = [], warnings = [];
     // Index matching Cell IDs without reading image bytes; retain every date and image.
     // 실제 NG 원본을 미리 getFile()로 읽지 않아 대용량 루트의 메모리/지연을 크게 줄인다.
-    const pendingTargets = actualNgTargetKeys();
-    const limitToLoadedResults = pendingTargets.size > 0;
+    const pendingTargets = filterLoadedResults ? actualNgTargetKeys() : new Set();
+    const limitToLoadedResults = filterLoadedResults && pendingTargets.size > 0;
     let invalidCell = 0, unknownPosition = 0;
     async function walk(directory, parts) {
       if(isExcludedFolder(directory.name)) return;
@@ -2074,7 +2110,7 @@
   }
 
 
-  async function scanNgDirectoryForPosition(rootHandle, position, requestPermission = true) {
+  async function scanNgDirectoryForPosition(rootHandle, position, requestPermission = true, filterLoadedResults = true) {
     if (!position) throw new Error('Position이 없습니다.');
     if (rootHandle.queryPermission) {
       let permission = await rootHandle.queryPermission({ mode:'read' });
@@ -2082,8 +2118,8 @@
       if (permission !== 'granted') throw new Error('실제 NG 폴더 접근 권한이 없습니다.');
     }
     const images = [], warnings = [];
-    const pendingTargets = actualNgTargetKeys(position);
-    const limitToLoadedResults = pendingTargets.size > 0;
+    const pendingTargets = filterLoadedResults ? actualNgTargetKeys(position) : new Set();
+    const limitToLoadedResults = filterLoadedResults && pendingTargets.size > 0;
     let invalidCell = 0;
     async function walk(directory, parts) {
       if(isExcludedFolder(directory.name)) return;
@@ -2191,6 +2227,8 @@
         state.ngWarnings = state.ngWarnings.filter(w => !String(w).startsWith(`${position}:`)).concat(scanned.warnings.map(w => `${position}: ${w}`));
       }
       rebuildModel();
+      await refreshNgSourceList();
+      await saveAnalysisSnapshot();
       showToast(`${position} 실제 NG 이미지 ${numberText(state.ngImages.filter(x => x.position === position).length)}개를 불러왔습니다.`);
     } catch (error) {
       if (error.name !== 'AbortError') { console.error(error); showToast(`${position} NG 폴더를 읽지 못했습니다: ${error.message || error}`, true); }
@@ -2206,7 +2244,9 @@
     delete state.ngFolderNames[position];
     state.ngWarnings = state.ngWarnings.filter(w => !String(w).startsWith(`${position}:`));
     try { for (const entry of await loadHandles()) if (entry.key===`${NG_POSITION_PREFIX}${position}` || entry.key.startsWith(`${NG_POSITION_PREFIX}${position}:`)) await deleteHandle(entry.key); } catch (_) { }
+    await refreshNgSourceList();
     rebuildModel();
+    await saveAnalysisSnapshot();
     renderSettings(); bindPageControls();
   }
 
@@ -2248,7 +2288,7 @@
   async function clearAnalysisInputs() {
     if (!window.confirm('Position 결과 파일과 실제 NG 이미지 설정을 모두 초기화할까요?')) return;
     state.remoteAnalysis=null;
-    state.resultInputs = {}; state.ngRootName = ''; state.ngImages = []; state.ngFolderNames = {}; state.ngWarnings = []; state.restoreWarnings = [];
+    state.resultInputs = {}; state.ngRootName = ''; state.ngImages = []; state.ngFolderNames = {}; state.ngWarnings = []; state.ngSources = []; state.restoreWarnings = [];
     try { await clearHandles(); } catch (error) { console.error(error); }
     state.dashboardDate = '';
     rebuildModel(); renderSettings();
@@ -4984,7 +5024,7 @@
     }
     try {
       const data = await requestSimulationPicker(kind === 'file' ? '/api/pick/file' : '/api/pick/folder', { initialPath:current, fileType, multiple:imageFolderList });
-      const selectedPaths = Array.isArray(data?.paths) ? data.paths.filter(Boolean) : (data?.path ? [data.path] : []);
+      let selectedPaths = Array.isArray(data?.paths) ? data.paths.filter(Boolean) : (data?.path ? [data.path] : []);
       if (!data.ok || selectedPaths.length === 0) {
         if (workspaceKind) clearWorkspaceInspectStatus(key, workspaceKind, true);
         if (data.error) showToast(`선택 실패: ${data.error}`, true);
@@ -4992,7 +5032,10 @@
       }
       const currentTarget = simulationScopeObject(scope, key);
       if (!currentTarget) return;
-      if (imageFolderList) setSimulationFolderRoots(currentTarget, scope, field, selectedPaths);
+      if (imageFolderList) {
+        if (control.dataset.simAppend === '1') selectedPaths = [...simulationFolderRoots(currentTarget, scope, field), ...selectedPaths];
+        selectedPaths = setSimulationFolderRoots(currentTarget, scope, field, selectedPaths);
+      }
       else currentTarget[field] = selectedPaths[0];
       if (workspaceKind === 'green') currentTarget.greenWorkspaceInfo = null;
       else if (workspaceKind === 'blue') currentTarget.blueWorkspaceInfo = null;
@@ -5705,6 +5748,7 @@
         clearSimulationRuntimeReadiness();
         throw new Error('Agent의 Runtime 세션이 변경되었습니다. Runtime File Load를 다시 실행하세요.');
       }
+      await refreshActualNgFolders(true, false);
       prepareLiveSimulationData(request);
       appendSimulationLog({level:'START',message:`Simulation 시작 요청 · Mode=${request.mode} · Position=${request.positions.map(p=>p.displayName).join(', ')} · Batch=${request.mode==='blue'?request.blue.printEvery:request.green.printEvery}`});
       state.simulationProgress = { ...state.simulationProgress, running:true, message:'Simulation 시작 요청 중...', error:'' };
@@ -6246,7 +6290,7 @@
     const buttonText = status?.phase === 'picking' ? '선택 중' : status?.phase === 'queued' ? '대기 중' : status?.phase === 'reading' ? '읽는 중' : value ? '변경' : '선택';
     const displayTitle = multipleImageFolders ? `${title} (다중 선택)` : title;
     const displayPlaceholder = multipleImageFolders ? `${placeholder} — Ctrl/Shift로 여러 폴더 선택` : placeholder;
-    return `<div class="vq43-sim-path ${disabled?'disabled':''}"><span>${escapeHtml(displayTitle)}</span><div><input data-sim-scope="${scope}" data-sim-field="${field}" data-vq-base-disabled="${disabled?'1':'0'}" ${key?`data-sim-key="${key}"`:''} value="${escapeHtml(value)}" placeholder="${escapeHtml(displayPlaceholder)}" ${disabled?'disabled':''}><button type="button" data-vq-action="simulation-browse" data-sim-scope="${scope}" data-sim-kind="${kind}" data-sim-file-type="${fileType}" data-sim-multiple="${multipleImageFolders?'1':'0'}" data-sim-field="${field}" data-vq-base-disabled="${disabled?'1':'0'}" ${key?`data-sim-key="${key}"`:''} data-vq-workspace-busy="${busy?'1':'0'}" ${disabled||busy?'disabled':''} aria-busy="${busy?'true':'false'}">${escapeHtml(buttonText)}</button></div></div>`;
+    return `<div class="vq43-sim-path ${disabled?'disabled':''}"><span>${escapeHtml(displayTitle)}</span><div><input data-sim-scope="${scope}" data-sim-field="${field}" data-vq-base-disabled="${disabled?'1':'0'}" ${key?`data-sim-key="${key}"`:''} value="${escapeHtml(value)}" placeholder="${escapeHtml(displayPlaceholder)}" ${disabled?'disabled':''}><button type="button" data-vq-action="simulation-browse" data-sim-scope="${scope}" data-sim-kind="${kind}" data-sim-file-type="${fileType}" data-sim-multiple="${multipleImageFolders?'1':'0'}" data-sim-field="${field}" data-vq-base-disabled="${disabled?'1':'0'}" ${key?`data-sim-key="${key}"`:''} data-vq-workspace-busy="${busy?'1':'0'}" ${disabled||busy?'disabled':''} aria-busy="${busy?'true':'false'}">${escapeHtml(buttonText)}</button>${multipleImageFolders?`<button type="button" data-vq-action="simulation-browse" data-sim-append="1" data-sim-scope="${scope}" data-sim-kind="folder" data-sim-file-type="folder" data-sim-multiple="1" data-sim-field="${field}" ${key?`data-sim-key="${key}"`:""} data-vq-base-disabled="${disabled?"1":"0"}" title="기존 폴더를 유지하고 다른 경로의 이미지 폴더를 추가합니다. 중복 경로는 한 번만 검사합니다." ${disabled?"disabled":""}>＋ 추가</button>`:""}</div></div>`;
   }
 
   function simulationPositionRows() {
@@ -6744,14 +6788,14 @@
       const count = ngCounts[position] || 0;
       const loading = state.loading === `ng:${position}`;
       const folder = state.ngFolderNames[position] || (count ? `${state.ngRootName || '선택된 루트'} / ${position}` : '폴더 미입력');
-      return `<div class="vq43-ng-position-row" data-vq-position="${escapeHtml(position)}"><div class="vq43-position-label">${escapeHtml(position)}</div><div><div class="vq43-input-name">${escapeHtml(folder)}</div><div class="vq43-input-meta">실제 NG 이미지 ${numberText(count)}개</div></div><button class="vq43-btn vq43-btn-amber" data-vq-action="choose-ng-position" ${state.loading?'disabled':''}>${loading?'읽는 중...':count?'폴더 추가':'폴더 선택'}</button><button class="vq43-btn" data-vq-action="choose-ng-csv" ${state.loading?'disabled':''}>Cell ID CSV</button>${count||state.ngFolderNames[position]?'<button class="vq43-icon-btn" data-vq-action="remove-ng-position" title="해당 Position NG 경로 제거">×</button>':'<span></span>'}</div>`;
+      return `<div class="vq43-ng-position-row" data-vq-position="${escapeHtml(position)}"><div class="vq43-position-label">${escapeHtml(position)}</div><div><div class="vq43-input-name">${escapeHtml(folder)}</div>${ngSourceListHtml(position)}<div class="vq43-input-meta">실제 NG 이미지 ${numberText(count)}개</div></div><button class="vq43-btn vq43-btn-amber" data-vq-action="choose-ng-position" ${state.loading?'disabled':''}>${loading?'읽는 중...':count?'폴더 추가':'폴더 선택'}</button><button class="vq43-btn" data-vq-action="choose-ng-csv" ${state.loading?'disabled':''}>Cell ID CSV</button>${count||state.ngFolderNames[position]?'<button class="vq43-icon-btn" data-vq-action="remove-ng-position" title="해당 Position NG 경로 제거">×</button>':'<span></span>'}</div>`;
     }).join('');
     $('#vq43-page').innerHTML = `
       <div class="vq43-content"><div class="vq43-topline"><div><div class="vq43-eyebrow" style="color:#22d3ee">Input & Configuration</div><h1 class="vq43-title">분석 Input 설정</h1><p class="vq43-subtitle">Position 목록은 Simulation · Main · Analysis · 실제 NG 경로에 공통 적용됩니다.</p></div><button class="vq43-btn vq43-btn-red" data-vq-action="clear-inputs">Input 전체 초기화</button></div>
         <div class="vq4812-settings-grid"><div class="vq4812-settings-left">
         <section class="vq43-settings-card"><div class="vq43-settings-title"><span class="vq43-settings-icon green">✓</span><div><h3>분석 준비 상태</h3><p>현재 입력 데이터의 집계 결과</p></div></div><div class="vq43-ready-grid"><div><span>결과 Position</span><b>${positions.filter((position)=>state.resultInputs[position]).length} / ${positions.length}</b></div><div><span>고유 Cell</span><b>${numberText(model.uniqueCellCount)}</b></div><div><span>실제 NG 고유값</span><b>${numberText(model.actualUniqueCount || 0)}</b></div><div><span>CSV 매칭</span><b class="vq43-blue">${numberText(model.matchedActualCount || 0)}</b></div><div><span>미매칭</span><b class="vq43-red">${numberText(model.unmatchedActualCount || 0)}</b></div><div><span>미검</span><b class="vq43-amber">${numberText(analysisMissCount(model))}</b></div></div>${model.actualUniqueCount ? matchDiagnostic(model) : ''}</section>
         <section class="vq43-settings-card"><div class="vq43-settings-title"><span class="vq43-settings-icon cyan">${railIconSvg('settings')}</span><div><h3>1. Position 구성</h3><p>대표 이름은 표시·저장에, 별칭은 데이터 매칭에 사용합니다. 별칭은 쉼표로 구분하며 입력 후 다른 곳을 누르면 저장됩니다.</p></div></div><div class="vq43-position-config-list">${positionRows}</div><div class="vq43-position-add-row"><input id="vq43-new-position-name" placeholder="대표 이름: TCA"><input id="vq43-new-position-aliases" placeholder="별칭: CA(TOP), CA_TOP" title="선택 사항. 쉼표로 여러 별칭을 구분합니다."><button class="vq43-btn vq43-btn-blue" data-vq-action="position-add">+ Position 추가</button></div></section>
-        <section class="vq43-settings-card"><div class="vq43-settings-title"><span class="vq43-settings-icon amber">▣</span><div><h3>2. 실제 최종 NG 이미지 경로</h3><p>각 Position별 폴더를 독립적으로 선택/교체할 수 있습니다. 전체 루트를 한 번에 읽는 기존 방식도 유지합니다.</p></div><button class="vq43-btn vq43-btn-amber" data-vq-action="choose-ng-folder" title="기존 실제 NG 입력을 선택한 전체 루트로 교체합니다." ${state.loading?'disabled':''}>${state.loading==='ng'?'◌ 전체 루트 읽는 중...':'▣ 전체 NG 루트 선택'}</button><button class="vq43-btn vq43-btn-amber" data-vq-action="add-ng-folder" title="기존 입력을 유지하고 전체 NG 루트를 추가합니다. 이름이 같아도 다른 경로의 폴더는 각각 추가됩니다. 같은 폴더를 다시 선택하면 다시 읽습니다." ${state.loading?'disabled':''}>＋ 전체 NG 루트 추가</button></div><div class="vq43-ng-position-list">${ngRows}</div></section>
+        <section class="vq43-settings-card"><div class="vq43-settings-title"><span class="vq43-settings-icon amber">▣</span><div><h3>2. 실제 최종 NG 이미지 경로</h3><p>다른 경로의 폴더를 추가할 수 있습니다. ×는 해당 폴더 등록만 해제합니다. 시뮬레이션 시작 전 모든 등록 폴더를 다시 읽습니다.</p></div><button class="vq43-btn vq43-btn-amber" data-vq-action="choose-ng-folder" title="기존 실제 NG 입력을 선택한 전체 루트로 교체합니다." ${state.loading?'disabled':''}>${state.loading==='ng'?'◌ 전체 루트 읽는 중...':'▣ 전체 NG 루트 선택'}</button><button class="vq43-btn vq43-btn-amber" data-vq-action="add-ng-folder" title="기존 입력을 유지하고 전체 NG 루트를 추가합니다. 이름이 같아도 다른 경로의 폴더는 각각 추가됩니다. 같은 폴더를 다시 선택하면 다시 읽습니다." ${state.loading?'disabled':''}>＋ 전체 NG 루트 추가</button></div>${ngSourceListHtml()}<div class="vq43-ng-position-list">${ngRows}</div></section>
         <section class="vq43-settings-card"><div class="vq43-settings-title"><span class="vq43-settings-icon">▦</span><div><h3>3. Position별 시뮬레이션 결과 파일</h3><p>CSV 또는 XLSX · Cell ID, Total_result, Tool_result, Tool_score 열 자동 인식</p></div></div><div class="vq43-input-list">${positions.map(resultInputRow).join('')}</div></section>
         </div><div class="vq4812-settings-right">
         ${namingProfileCardHtml()}
@@ -7209,7 +7253,7 @@
     const nextDisabled = scoreNavigation ? scorePointIndex >= scorePointCount - 1&&!state.remoteAnalysis?.scores?.page.hasMore : (!mediaNext && (!sequenceNavigation || sequenceIndex >= sequenceCount - 1)&&!state.remoteAnalysis?.missPage?.hasMore&&!miss.detailPage?.hasMore);
     const canMoveActualNg = !selectedOverlay && !!image.actualNg && !!image.fileHandle && !!image.rootHandleKey;
     const moveButton = canMoveActualNg ? '<button type="button" class="vq43-modal-delete" data-vq-action="modal-move-delet">이미지 제외</button>' : '';
-    modal.innerHTML = `<div class="vq43-modal-card"><div class="vq43-modal-head"><div><small>${escapeHtml(miss.label || 'Actual NG Image')}</small><strong>${escapeHtml(miss.cellId)} · ${miss.position}</strong></div><div class="vq43-modal-head-actions"><button class="vq43-btn" data-vq-action="copy-single-image" title="현재 선택한 이미지 원본 한 장을 저장합니다.">이미지 복사</button>${moveButton}<button class="vq43-close" data-vq-action="close-modal">×</button></div></div>${switcher}${heatmapCreate}<div class="vq43-modal-image" id="vq43-modal-viewport"><div class="vq43-modal-media-layer"><img id="vq43-modal-zoom-image" draggable="false" src="${state.modalUrl}" alt="${escapeHtml(image.file?.name || image.name || image.relativePath)}"></div><div class="vq43-modal-zoom-tools"><span id="vq43-modal-zoom-value">100%</span><button data-vq-action="modal-reset">원위치</button></div><div class="vq43-modal-help">마우스 휠: 확대/축소 · 드래그: 이동 · 더블클릭: 원위치</div>${showNavigation?`<button class="vq43-modal-nav prev" data-vq-action="modal-prev" ${previousDisabled?'disabled':''}>‹</button><button class="vq43-modal-nav next" data-vq-action="modal-next" ${nextDisabled?'disabled':''}>›</button>`:''}</div><div class="vq43-modal-foot"><div class="vq43-modal-path"><span>${escapeHtml(image.relativePath)}</span><b>${countText}</b></div><div class="vq43-modal-scores">${scores}</div></div></div>`;
+    modal.innerHTML = `<div class="vq43-modal-card"><div class="vq43-modal-head"><div><small>${escapeHtml(miss.label || 'Actual NG Image')}</small><strong>${escapeHtml(miss.cellId)} · ${miss.position}</strong></div><div class="vq43-modal-head-actions"><button class="vq43-btn" data-vq-action="copy-single-image" title="현재 선택한 이미지 원본 한 장을 저장합니다.">이미지 복사</button>${moveButton}<button class="vq43-close" data-vq-action="close-modal">×</button></div></div>${switcher}${heatmapCreate}<div class="vq43-modal-image" id="vq43-modal-viewport"><div class="vq43-modal-media-layer"><img id="vq43-modal-zoom-image" draggable="false" src="${state.modalUrl}" alt="${escapeHtml(image.file?.name || image.name || image.relativePath)}"></div><div class="vq43-modal-zoom-tools"><span id="vq43-modal-zoom-value">100%</span><button data-vq-action="modal-reset">원위치</button></div><div class="vq43-modal-help">마우스 휠: 확대/축소 · 드래그: 이동 · 더블클릭: 원위치</div></div><div class="vq43-modal-foot"><div class="vq4816-viewer-navigation">${showNavigation?`<button class="vq43-modal-nav prev" data-vq-action="modal-prev" ${previousDisabled?'disabled':''}>‹</button><button class="vq43-modal-nav next" data-vq-action="modal-next" ${nextDisabled?'disabled':''}>›</button>`:''}</div><div class="vq43-modal-path"><span>${escapeHtml(image.relativePath)}</span><b>${countText}</b></div><div class="vq43-modal-scores">${scores}</div></div></div>`;
     modal.querySelector('[data-vq-action="copy-single-image"]')?.addEventListener('click',event=>{event.stopPropagation();copySingleModalImage(image,miss.position,event.currentTarget);});
     modal.classList.add('open');
     applyModalTransform();
@@ -7709,6 +7753,9 @@
       importNgCellCsv,
       chooseNgPositionFolder,
       chooseNgFolder,
+      refreshActualNgFolders,
+      removeNgSource,
+      ngSources() { return structuredClone(state.ngSources); },
       configuredPositionOrder,
       positionDefinitions, normalizePosition, addPositionDefinition, updatePositionAliases, renameCustomPosition,
       analysisInputSnapshot() { return { images:state.ngImages.map(image=>({key:image.key,cellId:image.cellId,rootHandleKey:image.rootHandleKey})), summaries:state.model.positionSummaries, misses:state.model.misses.map(item=>item.key) }; },

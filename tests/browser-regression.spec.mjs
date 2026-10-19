@@ -37,17 +37,21 @@ test.describe('VisionQC v4.4.38 FHD interaction regression', () => {
     await openSimulation(page);
     const keywordMode = page.locator('input[data-sim-scope="integrated"][data-sim-field="keywordMode"]');
     const keywordRoot = page.locator('input[data-sim-scope="integrated"][data-sim-field="keywordInputRoot"]');
-    const keywordBrowse = page.locator('button[data-sim-scope="integrated"][data-sim-field="keywordInputRoot"]');
+    const keywordBrowse = page.locator('button[data-sim-scope="integrated"][data-sim-field="keywordInputRoot"]:not([data-sim-append])');
+    const keywordAdd = page.locator('button[data-sim-scope="integrated"][data-sim-field="keywordInputRoot"][data-sim-append]');
 
     await keywordMode.uncheck();
     await expect(keywordRoot).toBeDisabled();
     await expect(keywordBrowse).toBeDisabled();
+    await expect(keywordAdd).toBeDisabled();
     await keywordMode.check();
     await expect(keywordRoot).toBeEnabled();
     await expect(keywordBrowse).toBeEnabled();
+    await expect(keywordAdd).toBeEnabled();
     await keywordMode.uncheck();
     await expect(keywordRoot).toBeDisabled();
     await expect(keywordBrowse).toBeDisabled();
+    await expect(keywordAdd).toBeDisabled();
   });
 
   test('disconnect cleanup removes loaded Workspace cards and preserves selected paths', async ({ page }) => {

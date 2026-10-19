@@ -61,6 +61,36 @@ namespace VisionQC.LocalAgent.Services
             SaveText("last-operation.txt", DateTime.Now.ToString("O") + " | PID=" + Process.GetCurrentProcess().Id + " | " + operation);
         }
 
+        internal static void PreserveWorkerFailure(string workerHome, string context, Exception error)
+        {
+            if (string.IsNullOrEmpty(_directory)) return;
+            try
+            {
+                string root = Path.Combine(_directory, "runtime-failures");
+                Directory.CreateDirectory(root);
+                string target = Path.Combine(root, DateTime.UtcNow.ToString("yyyyMMdd-HHmmss-fffffff") + "-" + Guid.NewGuid().ToString("N"));
+                Directory.CreateDirectory(target);
+                File.WriteAllText(Path.Combine(target, "failure.txt"), context + Environment.NewLine + error, Encoding.UTF8);
+                foreach (string sourceRoot in new[] { workerHome, Path.Combine(workerHome, "logs") })
+                {
+                    if (!Directory.Exists(sourceRoot)) continue;
+                    foreach (string source in Directory.GetFiles(sourceRoot))
+                    {
+                        string extension = Path.GetExtension(source);
+                        if (!extension.Equals(".log", StringComparison.OrdinalIgnoreCase) && !extension.Equals(".txt", StringComparison.OrdinalIgnoreCase)) continue;
+                        // Bound diagnostics independently of model/image size; retain the end of each log.
+                        using (var input = new FileStream(source, FileMode.Open, FileAccess.Read, FileShare.ReadWrite | FileShare.Delete))
+                        using (var output = File.Create(Path.Combine(target, (sourceRoot == workerHome ? "native-" : "worker-") + Path.GetFileName(source))))
+                        { if (input.Length > MaxLogBytes) input.Position = input.Length - MaxLogBytes; input.CopyTo(output); }
+                    }
+                }
+                // This dedicated folder contains only archives created above; never prune user logs/data.
+                foreach (var old in new DirectoryInfo(root).GetDirectories().OrderByDescending(item => item.Name).Skip(12)) old.Delete(true);
+                Write("PRELOAD_DIAGNOSTICS", context + " | Saved=" + target);
+            }
+            catch (Exception ex) { Write("PRELOAD_DIAGNOSTICS_ERROR", ex.ToString()); }
+        }
+
         internal static void SaveText(string fileName, string text)
         {
             if (string.IsNullOrEmpty(_directory)) return;

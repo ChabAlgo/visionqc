@@ -40,8 +40,8 @@ test('selected VPDL native path is prepended even if already present later in PA
 test('download controls point to the versioned single-exe and offline package', () => {
   assert.match(web, /simulation-agent-download/);
   assert.match(web, /simulation-offline-download/);
-  assert.match(web, /VisionQC_Agent_Installer_v1\.4\.15\.exe/);
-  assert.match(web, /VisionQC_Offline_v4\.8\.15\.zip/);
+  assert.match(web, /VisionQC_Agent_Installer_v1\.4\.16\.exe/);
+  assert.match(web, /VisionQC_Offline_v4\.8\.16\.zip/);
   assert.match(web, /function downloadAgentInstaller/);
   assert.match(web, /function downloadOfflinePackage/);
 });
@@ -69,7 +69,7 @@ test('single installer embeds the launcher, all Worker APIs, local UI, and offli
   assert.match(installer, /ExtractPayload/);
   assert.match(installer, /ExtractVpdlWorkerBundle/);
   assert.match(installer, /RunAndWait\(agentPath, "--register"/);
-  assert.match(installer, /Arguments = "--offline"/);
+  assert.match(installer, /Arguments = silent \? "" : "--offline"/);
   assert.match(installer, /StopRunningAgent/);
   assert.match(installer, /RemovePreviousInstallation\(installDir\)/);
   assert.match(installer, /preservedDirectories = \{ "data", "logs", "output" \}/);

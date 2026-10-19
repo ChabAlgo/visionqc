@@ -243,6 +243,7 @@ test('Selected TCA and BCA rows retain independent multi-file assignments, label
 });
 
 test('Without Agent, one picker imports multiple CSV and XLSX into selected Position and preserves other rows',async({page})=>{
+ await page.route('http://127.0.0.1:*/api/**',route=>route.abort());
  await page.goto('/index.html?vqDebug=1&browserRegression=1');await page.waitForFunction(()=>window.__VISIONQC_DEBUG__?.analysisRestoreReady());
  await page.evaluate(async()=>{
   const d=window.__VISIONQC_DEBUG__;await d.renameCustomPosition('CA_TOP','TCA');await d.renameCustomPosition('CA_BOT','BCA');

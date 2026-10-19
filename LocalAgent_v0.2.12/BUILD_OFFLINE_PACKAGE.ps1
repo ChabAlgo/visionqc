@@ -15,10 +15,13 @@ foreach ($taskFile in $taskFiles) { if (-not (Test-Path -LiteralPath $taskFile -
 Add-Type -AssemblyName System.IO.Compression
 Add-Type -AssemblyName System.IO.Compression.FileSystem
 # Write a unique staging ZIP and replace only this versioned build artifact after success.
-$taskStage = Join-Path ([IO.Path]::GetTempPath()) ('VisionQC-offline-' + [guid]::NewGuid().ToString('N') + '.zip')
+$taskScratch = Join-Path (Split-Path -Parent $taskRepo) 'Temp'
+New-Item -ItemType Directory -Path $taskScratch -Force | Out-Null
+$taskStage = Join-Path $taskScratch ('VisionQC-offline-' + [guid]::NewGuid().ToString('N') + '.zip')
 $taskArchive = [IO.Compression.ZipFile]::Open($taskStage,[IO.Compression.ZipArchiveMode]::Create)
 try {
     foreach ($taskFile in $taskFiles) { [IO.Compression.ZipFileExtensions]::CreateEntryFromFile($taskArchive,$taskFile,[IO.Path]::GetFileName($taskFile),[IO.Compression.CompressionLevel]::Optimal) | Out-Null }
 } finally { $taskArchive.Dispose() }
 Copy-Item -LiteralPath $taskStage -Destination $taskZip -Force
+Remove-Item -LiteralPath $taskStage -Force
 Get-FileHash -LiteralPath $taskInstaller,$taskZip -Algorithm SHA256
