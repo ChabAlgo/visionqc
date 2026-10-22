@@ -69,5 +69,16 @@ class IndependentExportTests
             }
         }
         Console.WriteLine("PASS read-only export snapshots: concurrent threshold writes, aliases, date splitting, raw/score/empty exports and original-data preservation");
+        string many=Path.Combine(root,"buffers"),small=Path.Combine(many,"source"),target=Path.Combine(many,"output");Directory.CreateDirectory(small);Directory.CreateDirectory(target);
+        for(int i=0;i<512;i++)File.WriteAllText(Path.Combine(small,i+".jpg"),new string('x',1037));
+        byte[] large=new byte[3*1048576+123];for(int i=0;i<large.Length;i++)large[i]=(byte)(i%251);File.WriteAllBytes(Path.Combine(small,"large.jpg"),large);
+        using(var plan=new ImageCopyPlan(target,"buffer-fixture","Tool",Path.Combine(many,"queue"))){
+            foreach(string path in Directory.GetFiles(small))plan.Add(path,"AN(TOP)");
+            GC.Collect();GC.WaitForPendingFinalizers();GC.Collect();int before=GC.CollectionCount(2);var clock=Stopwatch.StartNew();var copied=Obj(plan.Copy(CancellationToken.None));
+            Check(Convert.ToInt64(copied["copied"])==513&&Convert.ToInt64(copied["failed"])==0,"Bulk buffer fixture copy mismatch");
+            Console.WriteLine("COPY BUFFER PASS files=513 gen2Collections="+(GC.CollectionCount(2)-before)+" elapsedMs="+clock.ElapsedMilliseconds);
+        }
+        Check(File.ReadAllBytes(Path.Combine(target,"AN(TOP)/Tool/large.jpg")).SequenceEqual(large),"Large image tail bytes changed");
+        Check(Directory.GetFiles(Path.Combine(target,"AN(TOP)/Tool")).Length==513,"Bulk copy lost files");
     }
 }

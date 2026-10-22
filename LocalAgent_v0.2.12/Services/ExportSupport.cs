@@ -43,6 +43,7 @@ namespace VisionQC.LocalAgent.Services
             using(var log=new StreamWriter(report,false,new UTF8Encoding(true)))
             using(var cmd=db.CreateCommand())
             {
+                // Transfer through one shared buffer; small FileStream buffers avoid per-file LOH allocations.
                 byte[] buffer=new byte[1048576];
                 log.WriteLine("Position,Source,Destination,Status,Message,Selection");cmd.CommandText="SELECT path,position FROM files ORDER BY rowid";
                 using(var rows=cmd.ExecuteReader())while(rows.Read())
@@ -53,12 +54,12 @@ namespace VisionQC.LocalAgent.Services
                     {
                         if(string.IsNullOrWhiteSpace(source)||!Path.IsPathRooted(source))throw new IOException("원본 절대 경로가 없습니다.");
                         source=Path.GetFullPath(source);
-                        using(var input=new FileStream(source,FileMode.Open,FileAccess.Read,FileShare.Read,1048576,FileOptions.SequentialScan))
+                        using(var input=new FileStream(source,FileMode.Open,FileAccess.Read,FileShare.Read,4096,FileOptions.SequentialScan))
                         {
                             string positionFolder=ExportLabel.Safe(position,80);if(string.IsNullOrWhiteSpace(positionFolder))positionFolder="Position";
                             string folder=Path.Combine(DirectoryPath,positionFolder,group);Directory.CreateDirectory(folder);
                             target=AvailableTarget(folder,source);partial=target+"."+Guid.NewGuid().ToString("N")+".partial";
-                            using(var output=new FileStream(partial,FileMode.CreateNew,FileAccess.Write,FileShare.None,1048576,FileOptions.SequentialScan))
+                            using(var output=new FileStream(partial,FileMode.CreateNew,FileAccess.Write,FileShare.None,4096,FileOptions.SequentialScan))
                             {int n;while((n=input.Read(buffer,0,buffer.Length))>0){token.ThrowIfCancellationRequested();output.Write(buffer,0,n);}output.Flush();}
                         }
                         File.Move(partial,target);Success++;
