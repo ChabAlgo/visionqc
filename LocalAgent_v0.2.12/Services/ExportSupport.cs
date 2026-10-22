@@ -22,16 +22,19 @@ namespace VisionQC.LocalAgent.Services
         internal readonly string DirectoryPath;
         private readonly string description;
         private readonly string group;
-        internal long Processed,Total,Success,Failed;
+        internal long Processed,Total,Success,Failed,Prepared;
         internal ImageCopyPlan(string root,string label,string group=null)
+            : this(root,label,group,null) { }
+        internal ImageCopyPlan(string root,string label,string group,string scratchRoot)
         {
             description=label;this.group=ExportLabel.Safe(group??"정보",80);if(string.IsNullOrWhiteSpace(this.group))this.group="정보";DirectoryPath=Path.GetFullPath(root);Directory.CreateDirectory(DirectoryPath);
-            queue=Path.Combine(DirectoryPath,".copy-queue-"+Guid.NewGuid().ToString("N")+".sqlite");db=new SQLiteConnection("Data Source="+queue+";Version=3;Pooling=False;");db.Open();
+            string queueRoot=string.IsNullOrWhiteSpace(scratchRoot)?DirectoryPath:Path.GetFullPath(scratchRoot);Directory.CreateDirectory(queueRoot);
+            queue=Path.Combine(queueRoot,".copy-queue-"+Guid.NewGuid().ToString("N")+".sqlite");db=new SQLiteConnection("Data Source="+queue+";Version=3;Pooling=False;");db.Open();
             using(var cmd=db.CreateCommand()){cmd.CommandText="PRAGMA journal_mode=OFF;PRAGMA synchronous=OFF;PRAGMA cache_size=-2048;CREATE TABLE files(path TEXT COLLATE NOCASE,position TEXT COLLATE NOCASE,PRIMARY KEY(path,position));";cmd.ExecuteNonQuery();}
             transaction=db.BeginTransaction();
         }
         internal void Add(string path,string position)
-        {using(var cmd=db.CreateCommand()){cmd.Transaction=transaction;cmd.CommandText="INSERT OR IGNORE INTO files VALUES(@p,@pos)";cmd.Parameters.AddWithValue("@p",path??"");cmd.Parameters.AddWithValue("@pos",position??"");cmd.ExecuteNonQuery();}}
+        {using(var cmd=db.CreateCommand()){cmd.Transaction=transaction;cmd.CommandText="INSERT OR IGNORE INTO files VALUES(@p,@pos)";cmd.Parameters.AddWithValue("@p",path??"");cmd.Parameters.AddWithValue("@pos",position??"");if(cmd.ExecuteNonQuery()>0)Interlocked.Increment(ref Prepared);}}
         internal object Copy(CancellationToken token)
         {
             transaction.Commit();transaction.Dispose();transaction=null;
@@ -40,6 +43,7 @@ namespace VisionQC.LocalAgent.Services
             using(var log=new StreamWriter(report,false,new UTF8Encoding(true)))
             using(var cmd=db.CreateCommand())
             {
+                byte[] buffer=new byte[1048576];
                 log.WriteLine("Position,Source,Destination,Status,Message,Selection");cmd.CommandText="SELECT path,position FROM files ORDER BY rowid";
                 using(var rows=cmd.ExecuteReader())while(rows.Read())
                 {
@@ -55,7 +59,7 @@ namespace VisionQC.LocalAgent.Services
                             string folder=Path.Combine(DirectoryPath,positionFolder,group);Directory.CreateDirectory(folder);
                             target=AvailableTarget(folder,source);partial=target+"."+Guid.NewGuid().ToString("N")+".partial";
                             using(var output=new FileStream(partial,FileMode.CreateNew,FileAccess.Write,FileShare.None,1048576,FileOptions.SequentialScan))
-                            {byte[] buffer=new byte[1048576];int n;while((n=input.Read(buffer,0,buffer.Length))>0){token.ThrowIfCancellationRequested();output.Write(buffer,0,n);}output.Flush();}
+                            {int n;while((n=input.Read(buffer,0,buffer.Length))>0){token.ThrowIfCancellationRequested();output.Write(buffer,0,n);}output.Flush();}
                         }
                         File.Move(partial,target);Success++;
                     }

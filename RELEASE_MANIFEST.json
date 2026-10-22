@@ -1,19 +1,19 @@
 {
-  "releaseTag": "visionqc-v4.8.17-agent-v1.4.17",
-  "webVersion": "4.8.17",
-  "agentVersion": "1.4.17",
-  "minimumAgentVersion": "1.4.17",
+  "releaseTag": "visionqc-v4.8.18-agent-v1.4.18",
+  "webVersion": "4.8.18",
+  "agentVersion": "1.4.18",
+  "minimumAgentVersion": "1.4.18",
   "compatibility": {
-    "web": "4.8.17",
-    "agent": "1.4.17"
+    "web": "4.8.18",
+    "agent": "1.4.18"
   },
   "artifacts": {
-    "agentInstaller": "downloads/VisionQC_Agent_Installer_v1.4.17.exe",
-    "offlinePackage": "downloads/VisionQC_Offline_v4.8.17.zip",
+    "agentInstaller": "downloads/VisionQC_Agent_Installer_v1.4.18.exe",
+    "offlinePackage": "downloads/VisionQC_Offline_v4.8.18.zip",
     "sha256": {
-      "agentInstaller": "4EFCD5867C67D80ED9C7B1FFF41C2C3D1315158BF9313DF072D2FF07E81DB60E",
-      "offlinePackage": "E115AE4EB51BA98B0E457345A1477903CA1484A4692919E1A528E05E7D7E6EAD"
+      "agentInstaller": "8CF2B3321E4A03742A5A238DC5D8BFE4A4CD97CD8A0BE2DC5C2C2BF09F1161C9",
+      "offlinePackage": "A61D4B4D0D73525F9E20B14645EF313EBC42AFA9EEE0E3096444B338C1452179"
     }
   },
-  "notes": "30일 진단 로그 자동 정리와 안전한 수동 정리, 날짜·Position·Tool·Threshold 조건의 NG 이미지 뷰어 추가."
+  "notes": "Tool NG 경로 조회 색인 수정, 독립 CSV·이미지 저장과 조건 스냅샷, 로컬 대기 목록 및 버퍼 재사용으로 복사 중 대시보드 조회 개선."
 }

@@ -1,7 +1,7 @@
 (() => {
   'use strict';
 
-  const VERSION = '4.8.17';
+  const VERSION = '4.8.18';
   const DEFAULT_POSITION_DEFS = [
     { key:'CA_TOP', name:'CA(TOP)' },
     { key:'AN_TOP', name:'AN(TOP)' },
@@ -27,9 +27,9 @@
   const NG_POSITION_PREFIX = 'ng-position:';
   const IMG_RE = /\.(png|jpe?g|bmp|gif|webp|tif?f)$/i;
   const LOCAL_AGENT_URL = 'http://127.0.0.1:17891';
-  const EXPECTED_AGENT_VERSION = '1.4.17';
-  const AGENT_INSTALLER_URL = './downloads/VisionQC_Agent_Installer_v1.4.17.exe';
-  const OFFLINE_PACKAGE_URL = './downloads/VisionQC_Offline_v4.8.17.zip';
+  const EXPECTED_AGENT_VERSION = '1.4.18';
+  const AGENT_INSTALLER_URL = './downloads/VisionQC_Agent_Installer_v1.4.18.exe';
+  const OFFLINE_PACKAGE_URL = './downloads/VisionQC_Offline_v4.8.18.zip';
   // SQLite에는 사용자가 명시적으로 남기려는 두 종류의 결과만 표시한다.
   // 이전 버전의 단발 검사(single-inspection) 이력은 보존하되 화면 집계에서는 제외한다.
   const PERSISTED_HISTORY_SOURCE_TYPES = ['simulation', 'csv-import', 'csv-file-stream'];
@@ -1636,7 +1636,7 @@
     while (status.running) {
       if (onProgress) onProgress(status);
       await new Promise(resolve=>setTimeout(resolve, 250));
-      status = await analysisApi('status', {analysisId:started.analysisId}, 8000);
+      status = await analysisApi(started.exportId?'export/status':'status', {analysisId:started.analysisId,...(started.exportId?{exportId:started.exportId}:{})}, 8000);
       if (operationId && status.operationId !== operationId) throw new Error('분석 요청이 교체되었습니다. 현재 결과를 다시 조회하세요.');
     }
     if (!status.completed) throw new Error(status.error || '분석을 완료하지 못했습니다.');
@@ -3191,7 +3191,7 @@
   function exportProgress(cancel) {
     const bar=document.createElement('div');bar.className='vq4811-export-progress';bar.innerHTML='<span>저장 목록 준비 중…</span><button class="vq43-btn">취소</button>';document.body.append(bar);
     bar.querySelector('button').onclick=()=>{Promise.resolve(cancel()).catch(error=>showToast(error.message,true));bar.querySelector('button').disabled=true;};
-    return {update:job=>{bar.querySelector('span').textContent=job.copyTotal?`이미지 복사 ${numberText(job.copyProcessed)} / ${numberText(job.copyTotal)}`:'CSV 및 복사 목록 준비 중…';},remove:()=>bar.remove()};
+    return {update:job=>{bar.querySelector('span').textContent=job.phase==='preparing'?`CSV 및 복사 목록 준비 중…${job.copyPrepared?` · ${numberText(job.copyPrepared)}개 확인`:''}`:job.copyTotal?`이미지 복사 ${numberText(job.copyProcessed)} / ${numberText(job.copyTotal)}`:'CSV 및 복사 목록 준비 중…';},remove:()=>bar.remove()};
   }
   function exportCompletion(result,path){const im=result.images;return `${numberText(result.count)}행 CSV 저장 완료${im?` · 이미지 ${numberText(im.copied)}개 복사 / ${numberText(im.failed)}개 실패${im.cancelled?' (취소됨)':''}`:''}: ${im?.directory||path}`;}
 
@@ -3285,20 +3285,24 @@
   async function exportAgentAnalysis(kind='all',position='',extra={}) {
     const remote=state.remoteAnalysis;if(!remote)return extra.copyImages?copyBrowserSelection(kind,position,extra):undefined;
     if(extra.copyImages&&state.simulationAgent.version!==EXPECTED_AGENT_VERSION)return showToast(`이미지 복사에는 Agent ${EXPECTED_AGENT_VERSION} 업데이트가 필요합니다.`,true);
+    if(remote.exporting)return showToast('진행 중인 CSV·이미지 저장을 완료하거나 취소하세요.',true);
+    remote.exporting=true;
     let copyProgress;
     try {
       const form=ensureSimulationForm();
-      const body=JSON.parse(JSON.stringify({analysisId:remote.analysisId,maxRows:form.csvMaxRows,splitByDate:form.csvSplitByDate,kind,position,date:state.dashboardDate,...extra}));
+      const body=JSON.parse(JSON.stringify({analysisId:remote.analysisId,independent:true,maxRows:form.csvMaxRows,splitByDate:form.csvSplitByDate,kind,position,date:state.dashboardDate,...extra}));
       if(kind==='score')Object.assign(body,agentScoreRequest(),{cutoff:clampScore($('#vq43-score-cutoff')?.value ?? state.analysisScoreCutoff,.8),compare:state.analysisScoreCompare});
       body.exportLabel=exportConditionLabel(kind,position,body);
       body.imageGroup=imageCopyGroup(kind,body);
       const picked=await requestSimulationPicker('/api/pick/folder',{initialPath:form.outputRoot||''});
       if(!picked?.ok||!picked.path)return;body.outputDirectory=picked.path;
-      if(body.copyImages)copyProgress=exportProgress(()=>analysisApi('cancel',{analysisId:remote.analysisId}));
-      const done=await agentAnalysisOperation('export',body,job=>copyProgress?.update(job));
+      let activeExport=null,cancelRequested=false,cancelSent=false;
+      const cancelExport=()=>{cancelRequested=true;if(!activeExport)return;cancelSent=true;return analysisApi(activeExport.exportId?'export/cancel':'cancel',{analysisId:remote.analysisId,...(activeExport.exportId?{exportId:activeExport.exportId}:{})});};
+      if(body.copyImages)copyProgress=exportProgress(cancelExport);
+      const done=await agentAnalysisOperation('export',body,job=>{activeExport=job;copyProgress?.update(job);if(cancelRequested&&!cancelSent)Promise.resolve(cancelExport()).catch(error=>showToast(error.message,true));});
       showToast(exportCompletion(done.result,picked.path));
     }catch(error){showToast(`저장 실패: ${error.message}`,true);}
-    finally{copyProgress?.remove();}
+    finally{copyProgress?.remove();remote.exporting=false;}
   }
 
   function downloadAllResultsCsv() {

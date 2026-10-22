@@ -173,6 +173,8 @@ namespace VisionQC.LocalAgent
                     case "/api/analysis/dashboard": result = _analysis.Dashboard(request.Body); break;
                     case "/api/analysis/dates": result = _analysis.Dates(request.Body); break;
                     case "/api/analysis/export": result = _analysis.Export(request.Body); break;
+                    case "/api/analysis/export/status": result = _analysis.ExportStatus(request.Body); break;
+                    case "/api/analysis/export/cancel": result = _analysis.ExportStatus(request.Body,true); break;
                     case "/api/analysis/save-history": result = _analysis.SaveHistory(request.Body, _historyStore); break;
                     case "/api/analysis/scores": result = _analysis.Scores(request.Body); break;
                     case "/api/analysis/tool-images": result = _analysis.ToolImages(request.Body); break;

@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.IO;
+using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
 using System.Web.Script.Serialization;
@@ -16,7 +17,18 @@ namespace VisionQC.LocalAgent.Services
         private readonly object _sync = new object();
         private readonly CancellationTokenSource _stop = new CancellationTokenSource();
         private Job _job;
-        internal bool IsBusy { get { lock(_sync) return _job!=null && _job.Running; } }
+        private readonly Dictionary<string,ExportJob> _exports = new Dictionary<string,ExportJob>();
+        internal Action<string> ExportCopyStarting {get;set;}
+        internal bool IsBusy { get { lock(_sync) return (_job!=null && _job.Running) || _exports.Values.Any(item=>item.Running); } }
+        private sealed class ExportJob
+        {
+            internal string Id,AnalysisId,Error,Phase="preparing";
+            internal volatile bool Running=true,Completed;
+            internal CancellationTokenSource Cancellation;
+            internal ImageCopyPlan Copy;
+            internal Task Task;
+            internal object Result;
+        }
         private sealed class Job
         {
             internal string Id, RunId, SourcePath, Error;
@@ -60,6 +72,8 @@ namespace VisionQC.LocalAgent.Services
             public AnalysisProjection.ActualNgValue[] actualNg {get;set;}
             public string outputDirectory {get;set;}
             public bool copyImages {get;set;}
+            public bool independent {get;set;}
+            public string exportId {get;set;}
             public string exportLabel {get;set;}
             public string imageGroup {get;set;}
             public string kind {get;set;}="all";
@@ -189,6 +203,8 @@ namespace VisionQC.LocalAgent.Services
                 var job=Resolve(request.analysisId);if(job.Running)return new {ok=false,busy=true,error="분석 갱신 중입니다."};
                 if(request.kind!="all"&&request.kind!="score"&&request.kind!="misses"&&request.kind!="selection"&&request.kind!="tool-ng")throw new InvalidDataException("지원하지 않는 내보내기 형식입니다.");
                 if(request.kind=="tool-ng"&&(string.IsNullOrWhiteSpace(request.tool)||string.IsNullOrWhiteSpace(request.position)))throw new InvalidDataException("Position과 Tool을 선택하세요.");
+                if(_exports.Values.Any(item=>item.Running))return new {ok=false,busy=true,error="진행 중인 CSV·이미지 저장을 완료하거나 취소하세요."};
+                if(request.independent)return StartIndependentExport(job,request);
                 StartOperation(job,()=>{
                     string name=ExportLabel.Name(request.exportLabel??string.Join("_",new[]{request.position,request.tool,request.kind,request.date}));
                     using(var plan=request.copyImages?new ImageCopyPlan(request.outputDirectory,request.exportLabel??request.kind,request.imageGroup??(request.kind=="misses"?"미검Cell":(request.kind=="score"||request.kind=="tool-ng"?request.tool:"정보"))):null)
@@ -205,6 +221,55 @@ namespace VisionQC.LocalAgent.Services
                 });return StatusObject(job);
             }
         }
+
+        private object StartIndependentExport(Job job,Request request)
+        {
+            if(!job.Completed||job.Projection==null)return new {ok=false,busy=true,error="분석 갱신 완료 후 저장하세요."};
+            if(_exports.Values.Any(item=>item.Running))return new {ok=false,busy=true,error="진행 중인 CSV·이미지 저장을 완료하거나 취소하세요."};
+            foreach(string id in _exports.Keys.Where(id=>!_exports[id].Running).Take(Math.Max(0,_exports.Count-7)).ToArray())
+            { _exports[id].Cancellation.Dispose();_exports.Remove(id); }
+            var snapshot=job.Projection.OpenExportReader();
+            var export=new ExportJob{Id=Guid.NewGuid().ToString("N"),AnalysisId=job.Id,Cancellation=CancellationTokenSource.CreateLinkedTokenSource(_stop.Token)};
+            _exports.Add(export.Id,export);
+            export.Task=Task.Run(()=>{
+                try
+                {
+                    string name=ExportLabel.Name(request.exportLabel??string.Join("_",new[]{request.position,request.tool,request.kind,request.date}));
+                    using(var plan=request.copyImages?new ImageCopyPlan(request.outputDirectory,request.exportLabel??request.kind,request.imageGroup??(request.kind=="misses"?"미검Cell":(request.kind=="score"||request.kind=="tool-ng"?request.tool:"정보")),Path.Combine(_root,"export-work")):null)
+                    {
+                        export.Copy=plan;Action<string,string> add=plan==null?(Action<string,string>)null:plan.Add;object result;
+                        using(snapshot)
+                        {
+                            result=request.kind=="selection"||request.kind=="tool-ng"
+                                ?snapshot.ExportSelection(request.outputDirectory,request.maxRows,request.splitByDate,request.date,request.kind=="tool-ng"?new[]{request.position}:request.positions,request.kind=="tool-ng"?request.tool:"",export.Cancellation.Token,name,add)
+                                :request.kind=="all"?snapshot.ExportRaw(request.outputDirectory,request.maxRows,request.splitByDate,export.Cancellation.Token,null,name,add)
+                                :snapshot.ExportFiltered(request.outputDirectory,request.maxRows,request.splitByDate,request.kind,request.date,request.position,request.tool,request.scope,request.excludeOtherToolNg,request.exclusionThreshold,request.compare,request.cutoff,export.Cancellation.Token,name,add);
+                        }
+                        // Release the DB snapshot before potentially slow network image transfer.
+                        var json=new JavaScriptSerializer();var data=json.Deserialize<Dictionary<string,object>>(json.Serialize(result));
+                        if(plan!=null){export.Phase="copying";ExportCopyStarting?.Invoke(export.Id);data["images"]=plan.Copy(export.Cancellation.Token);}
+                        export.Result=data;export.Completed=true;export.Phase="completed";
+                    }
+                }
+                catch(OperationCanceledException){export.Error="CSV·이미지 저장을 취소했습니다.";export.Phase="cancelled";}
+                catch(Exception error){export.Error=error.Message;export.Phase="failed";}
+                finally{snapshot.Dispose();export.Running=false;}
+            });
+            return ExportStatusObject(export);
+        }
+        internal object ExportStatus(string body,bool cancel=false)
+        {
+            var request=new JavaScriptSerializer().Deserialize<Request>(body??"{}")??new Request();
+            lock(_sync)
+            {
+                ExportJob export;
+                if(string.IsNullOrEmpty(request.exportId)||!_exports.TryGetValue(request.exportId,out export)||(!string.IsNullOrEmpty(request.analysisId)&&request.analysisId!=export.AnalysisId))throw new InvalidDataException("저장 작업을 찾을 수 없습니다.");
+                if(cancel&&export.Running)export.Cancellation.Cancel();
+                return ExportStatusObject(export);
+            }
+        }
+        private static object ExportStatusObject(ExportJob job)
+        { var copy=job.Copy;return new{ok=string.IsNullOrEmpty(job.Error),analysisId=job.AnalysisId,exportId=job.Id,operationId=job.Id,running=job.Running,completed=job.Completed,phase=job.Phase,copyPrepared=copy==null?0:Interlocked.Read(ref copy.Prepared),copyProcessed=copy==null?0:Interlocked.Read(ref copy.Processed),copyTotal=copy==null?0:Interlocked.Read(ref copy.Total),error=job.Error,result=job.Completed?job.Result:null}; }
         internal object SaveHistory(string body,SqliteRunStore history)
         {
             var request=new JavaScriptSerializer().Deserialize<Request>(body??"{}")??new Request();
@@ -351,6 +416,8 @@ namespace VisionQC.LocalAgent.Services
             if(job!=null && job.Task!=null) { try {job.Task.Wait();} catch(AggregateException){} }
             if(job!=null && job.Projection!=null) job.Projection.Dispose();
             if(job!=null && job.Cancellation!=null) job.Cancellation.Dispose();
+            foreach(var export in _exports.Values)
+            {if(export.Task!=null)try{export.Task.Wait();}catch(AggregateException){}export.Cancellation.Dispose();}
             _stop.Dispose();
         }
     }

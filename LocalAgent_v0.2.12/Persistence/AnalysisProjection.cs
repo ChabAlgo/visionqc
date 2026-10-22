@@ -18,16 +18,18 @@ namespace VisionQC.LocalAgent.Persistence
         private readonly SQLiteConnection _connection;
         private readonly object _sync = new object();
         private readonly string _runId;
+        private readonly string _sourcePath, _cachePath;
         private string _positionDefinitionsJson="[]";
         private bool _positionAliasesActive;
         internal Action<string,double> Timing;
-        internal AnalysisProjection(string sourcePath, string cachePath, string runId)
+        internal AnalysisProjection(string sourcePath, string cachePath, string runId, bool exportReader = false)
         {
             if (string.IsNullOrWhiteSpace(runId)) throw new ArgumentException("runId");
             if (!File.Exists(sourcePath)) throw new FileNotFoundException("Analysis source is missing", sourcePath);
             _runId = runId;
+            _sourcePath = sourcePath; _cachePath = cachePath;
             Directory.CreateDirectory(Path.GetDirectoryName(Path.GetFullPath(cachePath)));
-            _connection = new SQLiteConnection("Data Source=" + cachePath + ";Version=3;");
+            _connection = new SQLiteConnection("Data Source=" + cachePath + ";Version=3;" + (exportReader ? "Read Only=True;Pooling=False;" : ""));
             try
             {
             _connection.Open();
@@ -36,11 +38,19 @@ namespace VisionQC.LocalAgent.Persistence
                 command.CommandText = "ATTACH DATABASE @path AS source;";
                 command.Parameters.AddWithValue("@path", sourcePath); NormalizeCommand(command).ExecuteNonQuery();
             }
-            Execute("CREATE TABLE IF NOT EXISTS position_configuration(id INTEGER PRIMARY KEY,json TEXT NOT NULL);");
+            // An independent export pins the committed projection (including thresholds) in WAL.
+            // Its temporary selection/alias tables are connection-local; the inspection DB is read-only.
+            if (exportReader) Execute("BEGIN DEFERRED;");
+            else Execute("CREATE TABLE IF NOT EXISTS position_configuration(id INTEGER PRIMARY KEY,json TEXT NOT NULL);");
             using(var saved=Command("SELECT json FROM position_configuration WHERE id=1")) _positionDefinitionsJson=Convert.ToString(saved.ExecuteScalar());
             if(string.IsNullOrWhiteSpace(_positionDefinitionsJson))_positionDefinitionsJson="[]";
             var savedDefinitions=new JavaScriptSerializer().Deserialize<List<PositionAliasDefinition>>(_positionDefinitionsJson);
             _positionAliasesActive=PositionAliases.Active(savedDefinitions);
+            if(exportReader)
+            {
+                if(_positionAliasesActive)PositionAliases.CreateView(_connection,"source","canonical_images",savedDefinitions);
+                return;
+            }
             Execute(@"PRAGMA journal_mode=WAL; PRAGMA synchronous=NORMAL; PRAGMA cache_size=-32768;
 PRAGMA source.cache_size=-16384; PRAGMA temp_store=FILE;
 CREATE TABLE IF NOT EXISTS meta(run_id TEXT PRIMARY KEY, cursor INTEGER NOT NULL);
@@ -100,6 +110,9 @@ INSERT INTO stats_ready VALUES(2);"))
                 if(rebuild)while(Advance(cancellation,10000)){}
             }
         }
+
+        internal AnalysisProjection OpenExportReader()
+        { lock(_sync) return new AnalysisProjection(_sourcePath,_cachePath,_runId,true); }
 
         private SQLiteCommand NormalizeCommand(SQLiteCommand command)
         {
@@ -547,7 +560,7 @@ ORDER BY c.day,c.position,c.cell,t.tool"))
                     string where=PreparePositions(positions,"c.position");
                     using(var command=Command(@"SELECT DISTINCT i.full_path,c.position FROM cells c JOIN source.images i ON i.run_id=@run AND i.cell_id=c.cell AND i.position_key=c.position AND substr(COALESCE(i.capture_timestamp,''),1,10)=c.day WHERE "+where+@" AND i.image_id<=(SELECT cursor FROM meta WHERE run_id=@run) AND (@date='' OR c.day=@date) AND (@tool='' OR (
 EXISTS(SELECT 1 FROM tools n WHERE n.day=c.day AND n.cell=c.cell AND n.position=c.position AND n.tool=@tool AND n.ng=1)
-AND EXISTS(SELECT 1 FROM source.tool_results inspected WHERE inspected.image_id=i.image_id AND inspected.run_id=@run AND inspected.tool_name=@tool AND inspected.result='NG'
+AND EXISTS(SELECT 1 FROM source.tool_results inspected INDEXED BY idx_tool_results_image WHERE inspected.image_id=i.image_id AND inspected.run_id=@run AND inspected.tool_name=@tool AND inspected.result='NG'
 AND (inspected.score IS NULL OR inspected.score>=COALESCE((SELECT value FROM thresholds h WHERE h.position=c.position AND h.tool=@tool),0.5)))))"))
                     {command.Parameters.AddWithValue("@date",date??"");command.Parameters.AddWithValue("@tool",tool??"");using(cancellation.Register(()=>command.Cancel()))using(var reader=command.ExecuteReader())while(reader.Read()){cancellation.ThrowIfCancellationRequested();image(Convert.ToString(reader[0]),Convert.ToString(reader[1]));}}
                 }
@@ -723,7 +736,7 @@ FROM source.images i JOIN cells c ON c.cell=i.cell_id AND c.position=i.position_
 WHERE i.run_id=@run AND i.image_id<=(SELECT cursor FROM meta WHERE run_id=@run)
 AND i.image_id"+comparison+@"@after AND c.position=@position AND (@date='' OR c.day=@date) AND trim(COALESCE(i.full_path,''))<>''
 AND EXISTS(SELECT 1 FROM tools n WHERE n.day=c.day AND n.cell=c.cell AND n.position=c.position AND n.tool=@tool AND n.ng=1)
-AND EXISTS(SELECT 1 FROM source.tool_results inspected WHERE inspected.image_id=i.image_id AND inspected.run_id=@run AND inspected.tool_name=@tool AND inspected.result='NG'
+AND EXISTS(SELECT 1 FROM source.tool_results inspected INDEXED BY idx_tool_results_image WHERE inspected.image_id=i.image_id AND inspected.run_id=@run AND inspected.tool_name=@tool AND inspected.result='NG'
 AND (inspected.score IS NULL OR inspected.score>=COALESCE((SELECT value FROM thresholds h WHERE h.position=c.position AND h.tool=@tool),0.5)))
 ORDER BY i.image_id"+order+" LIMIT @limit",cancellation,"@after",afterId,"@position",position,"@tool",tool,"@date",date??"","@limit",size+1);
                 bool more=rows.Count>size;if(more)rows.RemoveAt(rows.Count-1);if(previous)rows.Reverse();
