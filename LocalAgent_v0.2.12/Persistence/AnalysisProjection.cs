@@ -73,6 +73,7 @@ CREATE TABLE IF NOT EXISTS tool_stats(day TEXT,position TEXT,tool TEXT,total INT
 CREATE TABLE IF NOT EXISTS unknown_stats(day TEXT,position TEXT,count INTEGER,PRIMARY KEY(day,position)) WITHOUT ROWID;
 CREATE TABLE IF NOT EXISTS workspace_refs(position TEXT,workspace_name TEXT,workspace_key TEXT,PRIMARY KEY(position,workspace_name,workspace_key)) WITHOUT ROWID;
 CREATE TABLE IF NOT EXISTS stats_ready(id INTEGER PRIMARY KEY);
+CREATE TABLE IF NOT EXISTS analysis_revision(id INTEGER PRIMARY KEY,revision TEXT NOT NULL);
 CREATE TEMP TABLE affected(day TEXT,cell TEXT,position TEXT,PRIMARY KEY(day,cell,position)) WITHOUT ROWID;");
             if(_positionAliasesActive)PositionAliases.CreateView(_connection,"source","canonical_images",savedDefinitions);
             using (var command = Command("SELECT run_id FROM meta LIMIT 1"))
@@ -81,6 +82,7 @@ CREATE TEMP TABLE affected(day TEXT,cell TEXT,position TEXT,PRIMARY KEY(day,cell
                 if (existing != null && Convert.ToString(existing) != _runId) throw new InvalidDataException("Analysis cache belongs to another run");
             }
             using (var command = Command("INSERT OR IGNORE INTO meta VALUES(@run,0)")) NormalizeCommand(command).ExecuteNonQuery();
+            RecoverPositionImport();
             using (var command = Command("SELECT COUNT(*) FROM stats_ready WHERE id=2")) if (Convert.ToInt64(command.ExecuteScalar()) == 0)
             {
                 using (var tx = _connection.BeginTransaction(System.Data.IsolationLevel.ReadCommitted)) using (var initialize = Command(RebuildCountersSql()+@"
@@ -92,7 +94,102 @@ INSERT INTO stats_ready VALUES(2);"))
             catch { _connection.Dispose(); throw; }
         }
 
-        internal void ConfigurePositions(List<PositionAliasDefinition> definitions, CancellationToken cancellation)
+        // WAL commits on attached databases are individually durable. If a process/power failure
+        // splits their commits, the raw revision is authoritative and the disposable facts rebuild.
+        private void RecoverPositionImport()
+        {
+            using(var command=Command("SELECT COUNT(*) FROM source.sqlite_master WHERE type='table' AND name='analysis_revision'"))
+            {
+                if(Convert.ToInt64(command.ExecuteScalar())==0)return;
+                command.CommandText="SELECT revision FROM source.analysis_revision WHERE id=1";
+                string revision=Convert.ToString(command.ExecuteScalar());
+                command.CommandText="SELECT revision FROM main.analysis_revision WHERE id=1";
+                if(revision==Convert.ToString(command.ExecuteScalar()))return;
+                using(var tx=_connection.BeginTransaction(System.Data.IsolationLevel.ReadCommitted))
+                {
+                    command.Transaction=tx;command.Parameters.AddWithValue("@revision",revision);
+                    command.CommandText="DELETE FROM cells;DELETE FROM tools;DELETE FROM position_stats;DELETE FROM cell_stats;DELETE FROM tool_stats;DELETE FROM unknown_stats;DELETE FROM workspace_refs;UPDATE meta SET cursor=0 WHERE run_id=@run;INSERT OR REPLACE INTO main.analysis_revision VALUES(1,@revision);";
+                    command.ExecuteNonQuery();tx.Commit();
+                }
+            }
+        }
+
+        internal string HistoryRunId
+        { get {lock(_sync)using(var command=Command("SELECT revision FROM main.analysis_revision WHERE id=1")){string value=Convert.ToString(command.ExecuteScalar());return string.IsNullOrEmpty(value)?_runId:value;}} }
+
+        internal bool HasPositionConfiguration(List<PositionAliasDefinition> definitions)
+        {return definitions==null || new JavaScriptSerializer().Serialize(definitions)==_positionDefinitionsJson;}
+
+        // Only the selected Position is replaced. Unchanged CSVs, raw rows and tool facts are
+        // never parsed/copied/re-aggregated. Staging has already validated every incoming row.
+        internal void ReplacePosition(string position,string stagedSource,string stagedProjection,CancellationToken cancellation)
+        {
+            lock(_sync)
+            {
+                if(string.IsNullOrWhiteSpace(position))throw new InvalidDataException("Position을 선택하세요.");
+                // Read-only exports must finish preparing their path list before this mutation.
+                Execute("CREATE TABLE IF NOT EXISTS source.analysis_revision(id INTEGER PRIMARY KEY,revision TEXT NOT NULL);");
+                using(var attach=Command("ATTACH DATABASE @path AS incoming_source"))
+                {attach.Parameters.AddWithValue("@path",stagedSource);attach.ExecuteNonQuery();}
+                try
+                {
+                    using(var attach=Command("ATTACH DATABASE @path AS incoming_projection"))
+                    {attach.Parameters.AddWithValue("@path",stagedProjection);attach.ExecuteNonQuery();}
+                    try
+                    {
+                        using(var tx=_connection.BeginTransaction(System.Data.IsolationLevel.ReadCommitted))
+                        using(var command=Command(""))
+                        using(cancellation.Register(()=>command.Cancel()))
+                        {
+                            command.Transaction=tx;command.Parameters.AddWithValue("@position",position);
+                            command.Parameters.AddWithValue("@revision",Guid.NewGuid().ToString("N"));
+                            command.CommandText="SELECT COUNT(*) FROM incoming_source.images WHERE position_key<>@position OR position_key IS NULL";
+                            if(Convert.ToInt64(command.ExecuteScalar())!=0)throw new InvalidDataException("선택한 Position 이외의 결과가 포함되어 있습니다.");
+                            command.CommandText="SELECT COALESCE(MAX(image_id),0) FROM source.images";
+                            command.Parameters.AddWithValue("@offset",Math.Max(Cursor,Convert.ToInt64(command.ExecuteScalar())));
+                            cancellation.ThrowIfCancellationRequested();
+                            command.CommandText=@"CREATE TEMP TABLE IF NOT EXISTS replacing_ids(id INTEGER PRIMARY KEY);
+DELETE FROM replacing_ids;
+INSERT INTO replacing_ids SELECT image_id FROM source.images INDEXED BY idx_images_position_alias WHERE run_id=@run AND "+(_positionAliasesActive?"position_key IN (SELECT @position UNION SELECT raw FROM temp.vq_position_aliases WHERE canonical=@position)":"position_key=@position")+@";
+DELETE FROM affected;
+INSERT OR IGNORE INTO affected SELECT day,cell,position FROM cells WHERE position=@position;
+INSERT OR IGNORE INTO affected SELECT day,cell,position FROM incoming_projection.cells WHERE position=@position;";
+                            command.ExecuteNonQuery();
+                            command.CommandText=CountersSql(-1,true);command.ExecuteNonQuery();
+                            command.CommandText=@"DELETE FROM tools WHERE position=@position;
+DELETE FROM cells WHERE position=@position;
+DELETE FROM workspace_refs WHERE position=@position;
+DELETE FROM source.tool_results WHERE image_id IN (SELECT id FROM replacing_ids);
+DELETE FROM source.images WHERE image_id IN (SELECT id FROM replacing_ids);
+INSERT INTO source.images(image_id,run_id,sequence_no,source_file_name,source_row_number,full_path,processed_path,cell_id,position_key,total_result,judgement,capture_timestamp,inspected_at_utc,workspace_type,workspace_name,workspace_key)
+SELECT image_id+@offset,@run,sequence_no+@offset,source_file_name,source_row_number,full_path,processed_path,cell_id,position_key,total_result,judgement,capture_timestamp,inspected_at_utc,workspace_type,workspace_name,workspace_key FROM incoming_source.images;
+INSERT INTO source.tool_results(run_id,image_id,tool_name,result,score,overlay_path)
+SELECT @run,image_id+@offset,tool_name,result,score,overlay_path FROM incoming_source.tool_results;
+INSERT INTO cells SELECT * FROM incoming_projection.cells;
+INSERT INTO tools SELECT * FROM incoming_projection.tools;
+INSERT INTO workspace_refs SELECT * FROM incoming_projection.workspace_refs;";
+                            command.ExecuteNonQuery();
+                            // Existing thresholds apply to the incoming Position without recalculating others.
+                            command.CommandText=RecalculateSql(true)+CountersSql(1,true)+@"
+DELETE FROM position_stats WHERE total=0;
+DELETE FROM cell_stats WHERE total=0;
+DELETE FROM tool_stats WHERE total=0;
+DELETE FROM unknown_stats WHERE count=0;
+UPDATE meta SET cursor=MAX(@offset,COALESCE((SELECT MAX(image_id) FROM source.images WHERE run_id=@run),0)) WHERE run_id=@run;
+UPDATE source.runs SET record_count=(SELECT COALESCE(SUM(raw_rows),0) FROM position_stats),ended_at_utc=strftime('%Y-%m-%dT%H:%M:%fZ','now') WHERE run_id=@run;
+INSERT OR REPLACE INTO source.analysis_revision VALUES(1,@revision);
+INSERT OR REPLACE INTO main.analysis_revision VALUES(1,@revision);
+DELETE FROM replacing_ids;DELETE FROM affected;";
+                            command.ExecuteNonQuery();Timing?.Invoke("position-import-before-commit",0);cancellation.ThrowIfCancellationRequested();tx.Commit();
+                        }
+                    }
+                    finally{Execute("DETACH DATABASE incoming_projection");}
+                }
+                finally{Execute("DETACH DATABASE incoming_source");}
+            }
+        }
+
+        internal void ConfigurePositions(List<PositionAliasDefinition> definitions, CancellationToken cancellation, bool advance = true)
         {
             if(definitions==null)return;
             var resolver=new PositionAliases(definitions);
@@ -107,7 +204,7 @@ INSERT INTO stats_ready VALUES(2);"))
                 using(var command=Command("INSERT OR REPLACE INTO position_configuration VALUES(1,@json);"+(rebuild?"DELETE FROM cells;DELETE FROM tools;DELETE FROM position_stats;DELETE FROM cell_stats;DELETE FROM tool_stats;DELETE FROM unknown_stats;DELETE FROM workspace_refs;UPDATE meta SET cursor=0 WHERE run_id=@run;":"")))
                 {command.Transaction=tx;command.Parameters.AddWithValue("@json",json);NormalizeCommand(command).ExecuteNonQuery();tx.Commit();}
                 _positionDefinitionsJson=json;_positionAliasesActive=active;
-                if(rebuild)while(Advance(cancellation,10000)){}
+                if(rebuild&&advance)while(Advance(cancellation,10000)){}
             }
         }
 
@@ -210,7 +307,8 @@ THEN EXISTS(SELECT 1 FROM tools t WHERE t.day=cells.day AND t.cell=cells.cell AN
 
         internal void SetThresholds(IEnumerable<ThresholdValue> values, CancellationToken cancellation)
         {
-            lock (_sync) using (var tx = _connection.BeginTransaction(System.Data.IsolationLevel.ReadCommitted)) using (var command = Command("DELETE FROM thresholds"))
+            lock (_sync) using (var tx = _connection.BeginTransaction(System.Data.IsolationLevel.ReadCommitted)) using (var command = Command(@"CREATE TEMP TABLE IF NOT EXISTS previous_thresholds(position TEXT,tool TEXT,value REAL,PRIMARY KEY(position,tool)) WITHOUT ROWID;
+DELETE FROM previous_thresholds;INSERT INTO previous_thresholds SELECT * FROM thresholds;DELETE FROM thresholds;"))
             using(cancellation.Register(()=>command.Cancel()))
             {
                 cancellation.ThrowIfCancellationRequested();
@@ -222,7 +320,16 @@ THEN EXISTS(SELECT 1 FROM tools t WHERE t.day=cells.day AND t.cell=cells.cell AN
                     command.Parameters.Clear(); command.Parameters.AddWithValue("@position", value.position);
                     command.Parameters.AddWithValue("@tool", value.tool); command.Parameters.AddWithValue("@value", value.value); NormalizeCommand(command).ExecuteNonQuery();
                 }
-                cancellation.ThrowIfCancellationRequested(); command.CommandText = RecalculateSql(false)+RebuildCountersSql(); NormalizeCommand(command).ExecuteNonQuery();
+                cancellation.ThrowIfCancellationRequested();
+                command.CommandText=@"CREATE TEMP TABLE IF NOT EXISTS changed_threshold_keys(position TEXT,tool TEXT,PRIMARY KEY(position,tool)) WITHOUT ROWID;
+DELETE FROM changed_threshold_keys;DELETE FROM affected;
+INSERT INTO changed_threshold_keys SELECT h.position,h.tool FROM
+(SELECT position,tool FROM thresholds UNION SELECT position,tool FROM previous_thresholds) h
+WHERE COALESCE((SELECT value FROM thresholds n WHERE n.position=h.position AND n.tool=h.tool),0.5)
+<>COALESCE((SELECT value FROM previous_thresholds p WHERE p.position=h.position AND p.tool=h.tool),0.5);
+INSERT OR IGNORE INTO affected SELECT t.day,t.cell,t.position FROM changed_threshold_keys h
+CROSS JOIN tools t INDEXED BY tools_position ON t.position=h.position AND t.tool=h.tool;"+CountersSql(-1,true)+RecalculateSql(true)+CountersSql(1,true)+"DELETE FROM affected;DELETE FROM previous_thresholds;DELETE FROM changed_threshold_keys;";
+                NormalizeCommand(command).ExecuteNonQuery();
                 cancellation.ThrowIfCancellationRequested(); tx.Commit();
             }
         }

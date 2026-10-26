@@ -96,6 +96,7 @@ namespace VisionQC.LocalAgent.Services
             lock (_sync)
             {
                 if (_job != null && _job.Running) return new { ok=false,error="진행 중인 분석 입력을 완료하거나 취소하세요." };
+                if(!string.IsNullOrEmpty(request.analysisId))return StartPositionImport(request);
                 if (_job != null && _job.Projection != null) _job.Projection.Dispose();
                 if (_job != null && _job.Cancellation != null) _job.Cancellation.Dispose();
                 var id=Guid.NewGuid().ToString("N");
@@ -115,6 +116,8 @@ namespace VisionQC.LocalAgent.Services
                             job.RunId=runId;
                             File.WriteAllText(Path.Combine(directory,"run.txt"),runId);
                             job.Projection=new AnalysisProjection(job.SourcePath,Path.Combine(directory,"projection.sqlite"),runId);
+                            // Configure aliases while facts are still empty, before the single projection pass.
+                            job.Projection.ConfigurePositions(request.options?.positionDefinitions,job.Cancellation.Token,false);
                             while(job.Projection.Advance(job.Cancellation.Token,10000)) Interlocked.Exchange(ref job.Projected,job.Projection.Cursor);
                             job.Completed=true;
                         }
@@ -125,6 +128,42 @@ namespace VisionQC.LocalAgent.Services
                 });
                 return StatusObject(job);
             }
+        }
+
+        private object StartPositionImport(Request request)
+        {
+            var job=Resolve(request.analysisId);
+            if(job.Running||job.Projection==null)return new{ok=false,error="분석 복원이 끝난 뒤 다시 선택하세요."};
+            if(string.IsNullOrWhiteSpace(request.position)||request.fileAssignments==null||request.fileAssignments.Length==0||request.fileAssignments.Any(a=>a==null||a.position!=request.position))
+                return new{ok=false,error="변경할 Position과 결과 파일의 지정을 확인하세요."};
+            if(File.Exists(Path.Combine(_root,job.Id,"source.txt")))return new{ok=false,error="실행 중인 원본은 교체할 수 없습니다. 새 분석으로 불러오세요."};
+            if(!job.Projection.HasPositionConfiguration(request.options?.positionDefinitions))return new{ok=false,error="Position 설정을 적용한 뒤 다시 선택하세요."};
+            if(_exports.Values.Any(item=>item.Running&&item.Phase=="preparing"))return new{ok=false,error="CSV·이미지 목록 준비가 끝난 뒤 결과 파일을 교체하세요."};
+            job.Imported=0;job.Projected=0;
+            StartOperation(job,()=>{
+                string staging=Path.Combine(_root,job.Id,"import-"+Guid.NewGuid().ToString("N"));Directory.CreateDirectory(staging);
+                try
+                {
+                    string source=Path.Combine(staging,"source.sqlite"),cache=Path.Combine(staging,"projection.sqlite"),runId;
+                    using(var store=new SqliteRunStore(source))
+                    {
+                        var importer=new CsvHistoryFileImporter(store,new JavaScriptSerializer());
+                        importer.ImportFiles(request.options,request.filePaths,n=>Interlocked.Exchange(ref job.Imported,n),job.Cancellation.Token,out runId,null,null,request.fileAssignments);
+                        using(var projection=new AnalysisProjection(source,cache,runId))
+                        {
+                            projection.ConfigurePositions(request.options?.positionDefinitions,job.Cancellation.Token,false);
+                            while(projection.Advance(job.Cancellation.Token,10000))Interlocked.Exchange(ref job.Projected,projection.Cursor);
+                        }
+                    }
+                    job.Projection.ReplacePosition(request.position,source,cache,job.Cancellation.Token);
+                }
+                finally
+                {
+                    // Only this operation's private staging files; user CSV/XLSX/images are untouched.
+                    try{Directory.Delete(staging,true);}catch(IOException){}catch(UnauthorizedAccessException){}
+                }
+            });
+            return StatusObject(job);
         }
 
         internal object Status(string body)
@@ -276,7 +315,7 @@ namespace VisionQC.LocalAgent.Services
             lock(_sync)
             {
                 var job=Resolve(request.analysisId);if(job.Running||!job.Completed)return new {ok=false,busy=true,error="분석 갱신 중입니다."};
-                StartOperation(job,()=>{history.CopyCompletedRunFrom(job.SourcePath,job.RunId);job.Result=new {saved=true,runId=job.RunId};});return StatusObject(job);
+                StartOperation(job,()=>{string saved=job.Projection.HistoryRunId;history.CopyCompletedRunFrom(job.SourcePath,job.RunId,saved);job.Result=new {saved=true,runId=saved};});return StatusObject(job);
             }
         }
         internal object RemovePosition(string body)

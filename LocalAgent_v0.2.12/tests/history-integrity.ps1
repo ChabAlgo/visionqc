@@ -1,5 +1,10 @@
+param([string]$ScratchRoot)
 $ErrorActionPreference='Stop'
-$stage=Join-Path ([IO.Path]::GetTempPath()) ('VisionQC-history-test-'+[guid]::NewGuid().ToString('N'))
+$taskAllowed=[IO.Path]::GetFullPath((Join-Path $PSScriptRoot '../../../Temp')).TrimEnd('\')+'\'
+if(!$ScratchRoot){$ScratchRoot=Join-Path $taskAllowed ('hi-'+[guid]::NewGuid().ToString('N').Substring(0,8))}
+$taskRoot=[IO.Path]::GetFullPath($ScratchRoot)
+if(!$taskRoot.StartsWith($taskAllowed,[StringComparison]::OrdinalIgnoreCase)){throw 'Test path must stay within project Temp'}
+$stage=Join-Path $taskRoot 'build'
 New-Item -ItemType Directory -Path $stage | Out-Null
 $built=Join-Path $PSScriptRoot '../CoreWorker/bin/x64/Release'
 Copy-Item -LiteralPath (Join-Path $built 'System.Data.SQLite.dll') -Destination $stage
@@ -10,5 +15,5 @@ $sources=@('AgentDtos.cs','CoreWorker/CoreModels.cs','Domain/NamingProfile.cs','
 $target=Join-Path $stage 'HistoryIntegrityTests.exe'
 & $compiler /nologo /langversion:7.3 /platform:x64 /target:exe /r:System.Data.dll /r:System.Xml.Linq.dll /r:System.IO.Compression.dll /r:System.IO.Compression.FileSystem.dll /r:System.Web.Extensions.dll ("/r:"+(Join-Path $stage 'System.Data.SQLite.dll')) ("/out:$target") $sources (Join-Path $PSScriptRoot 'fixtures/HistoryIntegrityTests.cs')
 if($LASTEXITCODE -ne 0){throw 'History integrity build failed'}
-& $target
+& $target (Join-Path $taskRoot 'data')
 if($LASTEXITCODE -ne 0){throw 'History integrity failed'}

@@ -9,11 +9,12 @@ using VisionQC.LocalAgent.Services;
 namespace VisionQC.LocalAgent { internal static class Program { internal const string AgentVersion = "test"; } }
 class HistoryIntegrityTests
 {
+    static string _runRoot;
     static void Check(bool value, string message) { if (!value) throw new Exception(message); }
-    static void Main() { try { Run(); } catch(Exception e) { Console.WriteLine(e.GetType().FullName + ": " + e.Message); Console.WriteLine(e.StackTrace); Environment.Exit(1); } }
+    static void Main(string[] args) { try { _runRoot=args.Length>0?Path.GetFullPath(args[0]):null;Run(); } catch(Exception e) { Console.WriteLine(e.GetType().FullName + ": " + e.Message); Console.WriteLine(e.StackTrace); Environment.Exit(1); } }
     static void Run()
     {
-        string root = Path.Combine(Path.GetTempPath(), "VisionQC-history-integrity-" + Guid.NewGuid().ToString("N")); Directory.CreateDirectory(root);
+        string root = _runRoot??Path.Combine(Path.GetTempPath(), "VisionQC-history-integrity-" + Guid.NewGuid().ToString("N")); Directory.CreateDirectory(root);
         string path = Path.Combine(root,"input.csv");
         string header = "CaptureTimestamp,Cell ID,Position,Total_result,FullPath,WorkspaceType,WorkspaceName,WorkspaceKey,Crack_result,Crack_score\r\n";
         string row = "2026-02-03T08:00:00,P163GG22M2100001,AN(TOP),NG,C:\\original.jpg,green,Workspace A,green-a,NG,0.9000987654321\r\n";

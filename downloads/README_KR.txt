@@ -1,9 +1,9 @@
-VisionQC v4.7.32 다운로드 파일
+VisionQC v4.8.20 / Agent 1.4.20 다운로드
 
-이번 버전은 저장된 CSV/XLSX 결과를 다시 불러올 때 메인 대시보드가 새 데이터로 갱신되지 않던 문제를 수정합니다.
+- VisionQC_Agent_Installer_v1.4.20.exe: 기존 Agent를 종료한 뒤 프로그램을 업데이트합니다. 데이터와 기존 설정은 보존합니다.
+- VisionQC_Offline_v4.8.20.zip: 인터넷이 없는 PC로 가져갈 오프라인 설치 패키지입니다.
+- OFFLINE_README_v4.8.20_KR.txt: 설치와 Position별 증분 입력 안내입니다.
 
-- `VisionQC_Agent_Installer_v1.3.19.exe`: 실행 중인 구버전 Agent를 교체하고 DB 직접 저장용 통합 CSV 및 검사 이력 전체 삭제 기능을 설치합니다. data/logs/output과 VPDL Worker 선택은 보존합니다.
-- `VisionQC_Offline_v4.7.32.zip`: 인터넷이 없는 PC로 옮길 수 있는 오프라인 패키지입니다. 압축 해제 후 포함된 EXE를 실행하세요.
-- `OFFLINE_README_v4.7.32_KR.txt`: 설치, 기존 결과 재조회, 통합 CSV의 SQLite 직접 저장, DB 삭제 안내입니다.
-
-이전 버전 EXE/ZIP은 복구와 비교를 위해 삭제하지 않고 함께 보관합니다. VPDL 검사에는 대상 PC에 Cognex VPDL Runtime, 유효한 라이선스, Workspace가 별도로 설치돼 있어야 합니다.
+Position 결과 파일을 추가·교체할 때 변경한 Position만 처리해 기존 파일의 반복 입력과 집계를 줄입니다.
+이전 버전 설치 파일은 복구와 비교를 위해 보관합니다.
+VPDL 검사에는 별도 Runtime·라이선스·Workspace가 필요합니다.

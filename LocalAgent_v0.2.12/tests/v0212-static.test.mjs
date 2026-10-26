@@ -15,11 +15,11 @@ const coreServer = read('CoreWorker/CoreAgentServer.cs');
 const coreProject = read('CoreWorker/VisionQC.CoreWorker.csproj');
 const workerBuild = read('BUILD_VPDL_WORKERS.ps1');
 
-test('Agent v1.4.19 version is consistent', () => {
-  assert.match(program, /AgentVersion = "1\.4\.19"/);
-  assert.match(read('CoreWorker/Program.cs'), /AgentVersion = "1\.4\.19"/);
-  assert.match(read('Properties/AssemblyInfo.cs'), /AssemblyVersion\("1\.4\.19\.0"\)/);
-  assert.match(read('BUILD_RELEASE_x64.cmd'), /v1\.4\.19/);
+test('Agent v1.4.20 version is consistent', () => {
+  assert.match(program, /AgentVersion = "1\.4\.20"/);
+  assert.match(read('CoreWorker/Program.cs'), /AgentVersion = "1\.4\.20"/);
+  assert.match(read('Properties/AssemblyInfo.cs'), /AssemblyVersion\("1\.4\.20\.0"\)/);
+  assert.match(read('BUILD_RELEASE_x64.cmd'), /v1\.4\.20/);
 });
 
 test('HTTP server delegates picker lifecycle to the isolated picker service', () => {

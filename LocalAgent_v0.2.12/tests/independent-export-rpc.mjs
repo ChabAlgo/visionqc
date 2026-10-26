@@ -29,6 +29,17 @@ try{
  const cancelled=await request('/api/analysis/export/cancel',{analysisId,exportId:exported.exportId});assert.equal(cancelled.completed,true);assert.equal((await request('/api/analysis/status',{analysisId})).completed,true);
  assert.ok(!readdirSync(output).some(name=>name.startsWith('.copy-queue')));assert.ok(existsSync(input));
  console.log('PASS isolated native Worker RPC: version, independent export/status/cancel routing, main analysis/date availability, split CSV count, exact original names/bytes, failure report and local queue cleanup');
+ const added=await finish(await request('/api/analysis/import/start',{analysisId,position:'AN(BOT)',filePaths:[input],fileAssignments:[{path:input,position:'AN(BOT)'}]}));
+ assert.equal(added.analysisId,analysisId);assert.equal(added.imported,20);
+ let dashboard=(await finish(await request('/api/analysis/dashboard',{analysisId}))).result;
+ assert.equal(dashboard.rawRowCount,40);assert.equal(dashboard.uniqueCellCount,20);
+ assert.deepEqual(dashboard.positionSummaries.filter(p=>p.input).map(p=>p.total),[20,20]);
+ const changed=join(root,'changed.csv');writeFileSync(changed,[lines[0],lines[1]].join('\n'));
+ await finish(await request('/api/analysis/import/start',{analysisId,position:'AN(TOP)',filePaths:[changed],fileAssignments:[{path:changed,position:'AN(TOP)'}]}));
+ dashboard=(await finish(await request('/api/analysis/dashboard',{analysisId}))).result;
+ assert.equal(dashboard.rawRowCount,21);assert.equal(dashboard.positionSummaries.find(p=>p.position==='AN(TOP)').total,1);assert.equal(dashboard.positionSummaries.find(p=>p.position==='AN(BOT)').total,20);
+ const revised=await finish(await request('/api/analysis/save-history',{analysisId}));assert.equal(revised.result.saved,true);assert.notEqual(revised.result.runId,imported.runId);
+ console.log('PASS isolated native Worker RPC: incremental Position add/replace, same-source explicit assignments, preserved other Position, Cell totals and revised history save');
 }finally{
  try{await request('/api/shutdown',{});}catch{}
  await delay(200);if(child.exitCode===null)child.kill();

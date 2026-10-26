@@ -48,7 +48,7 @@ SELECT @new,t.image_id,t.tool_name,t.result,t.score,t.overlay_path FROM analysis
 
         // Copy on explicit approval only. One transaction preserves row IDs, tools and timestamps;
         // the run ID makes retries idempotent even when the HTTP response was lost.
-        internal void CopyCompletedRunFrom(string sourcePath, string runId)
+        internal void CopyCompletedRunFrom(string sourcePath, string runId, string savedRunId = null)
         {
             EnsureSchema();
             using (var connection = new SQLiteConnection("Data Source=" + _databasePath + ";Version=3;Foreign Keys=True;"))
@@ -67,17 +67,18 @@ SELECT @new,t.image_id,t.tool_name,t.result,t.score,t.overlay_path FROM analysis
                 {
                     command.Transaction = tx;
                     Add(command, "@run", runId);
-                    command.CommandText = "SELECT COUNT(*) FROM main.runs WHERE run_id=@run";
+                    Add(command, "@saved", string.IsNullOrEmpty(savedRunId)?runId:savedRunId);
+                    command.CommandText = "SELECT COUNT(*) FROM main.runs WHERE run_id=@saved";
                     if (Convert.ToInt64(command.ExecuteScalar()) > 0) { tx.Commit(); return; }
                     command.CommandText = "SELECT COUNT(*) FROM pending.runs WHERE run_id=@run AND status='completed' AND record_count=(SELECT COUNT(*) FROM pending.images WHERE run_id=@run)";
                     if (Convert.ToInt64(command.ExecuteScalar()) != 1) throw new InvalidDataException("완료된 전체 결과를 확인하지 못했습니다.");
                     command.CommandText = "SELECT COALESCE(MAX(image_id),0) FROM main.images";
                     Add(command, "@offset", Convert.ToInt64(command.ExecuteScalar()));
-                    command.CommandText = @"INSERT INTO main.runs SELECT * FROM pending.runs WHERE run_id=@run;
+                    command.CommandText = @"INSERT INTO main.runs SELECT @saved,source_type,mode,source_name,started_at_utc,ended_at_utc,status,message,record_count,agent_version,web_version,output_root,config_json,naming_profile_json FROM pending.runs WHERE run_id=@run;
 INSERT INTO main.images (image_id,run_id,sequence_no,source_file_name,source_row_number,full_path,processed_path,cell_id,position_key,total_result,judgement,capture_timestamp,inspected_at_utc,workspace_type,workspace_name,workspace_key)
-SELECT image_id+@offset,run_id,sequence_no,source_file_name,source_row_number,full_path,processed_path,cell_id,position_key,total_result,judgement,capture_timestamp,inspected_at_utc,workspace_type,workspace_name,workspace_key FROM pending.images WHERE run_id=@run;
+SELECT image_id+@offset,@saved,sequence_no,source_file_name,source_row_number,full_path,processed_path,cell_id,position_key,total_result,judgement,capture_timestamp,inspected_at_utc,workspace_type,workspace_name,workspace_key FROM pending.images WHERE run_id=@run;
 INSERT INTO main.tool_results (run_id,image_id,tool_name,result,score,overlay_path)
-SELECT run_id,image_id+@offset,tool_name,result,score,overlay_path FROM pending.tool_results WHERE run_id=@run;";
+SELECT @saved,image_id+@offset,tool_name,result,score,overlay_path FROM pending.tool_results WHERE run_id=@run;";
                     command.ExecuteNonQuery(); tx.Commit();
                 }
             }

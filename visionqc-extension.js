@@ -1,7 +1,7 @@
 (() => {
   'use strict';
 
-  const VERSION = '4.8.19';
+  const VERSION = '4.8.20';
   const DEFAULT_POSITION_DEFS = [
     { key:'CA_TOP', name:'CA(TOP)' },
     { key:'AN_TOP', name:'AN(TOP)' },
@@ -27,9 +27,9 @@
   const NG_POSITION_PREFIX = 'ng-position:';
   const IMG_RE = /\.(png|jpe?g|bmp|gif|webp|tif?f)$/i;
   const LOCAL_AGENT_URL = 'http://127.0.0.1:17891';
-  const EXPECTED_AGENT_VERSION = '1.4.19';
-  const AGENT_INSTALLER_URL = './downloads/VisionQC_Agent_Installer_v1.4.19.exe';
-  const OFFLINE_PACKAGE_URL = './downloads/VisionQC_Offline_v4.8.19.zip';
+  const EXPECTED_AGENT_VERSION = '1.4.20';
+  const AGENT_INSTALLER_URL = './downloads/VisionQC_Agent_Installer_v1.4.20.exe';
+  const OFFLINE_PACKAGE_URL = './downloads/VisionQC_Offline_v4.8.20.zip';
   // SQLite에는 사용자가 명시적으로 남기려는 두 종류의 결과만 표시한다.
   // 이전 버전의 단발 검사(single-inspection) 이력은 보존하되 화면 집계에서는 제외한다.
   const PERSISTED_HISTORY_SOURCE_TYPES = ['simulation', 'csv-import', 'csv-file-stream'];
@@ -1674,8 +1674,12 @@
   async function chooseAgentResultFiles(position) {
     if (state.loading) return;
     const previous=state.remoteAnalysis;
+    const incremental=!!previous && !previous.live;
+    let committed=false;
     try {
       state.loading=`result:${position}`;renderSettings();
+      if(previous?.refreshing)await previous.refreshing;
+      if(previous?.needsRestore){await refreshAgentDashboard();if(previous.error)throw new Error(previous.error);}
       const picked=await requestSimulationPicker('/api/pick/file',{fileType:'result',multiple:true});
       const chosen=picked?.paths?.length ? picked.paths : picked?.path ? [picked.path] : [];
       if (!picked?.ok || !chosen.length) return;
@@ -1683,25 +1687,36 @@
       if((previous?.live || (!previous && Object.values(state.resultInputs).some(input=>input?.rows?.length))) && !window.confirm('선택한 CSV로 현재 분석 결과를 교체합니다. 원본 로그와 저장한 DB 이력은 유지됩니다. 계속할까요?'))return;
       state.loading=`result:${position}`;renderSettings();
       const progressBar=document.createElement('div');progressBar.id='vq43-analysis-import-progress';progressBar.className='vq43-agent-import-progress';
-      progressBar.innerHTML='<span>결과 파일 분석을 준비하고 있습니다…</span><button class="vq43-btn">취소</button>';document.body.append(progressBar);
+      progressBar.innerHTML='<span>선택한 포지션의 결과 파일을 읽고 있습니다…</span><button class="vq43-btn">취소</button>';document.body.append(progressBar);
       const inputs={...(previous?.inputs || {}),[position]:chosen};
       const excludedPositions=(previous?.excludedPositions||[]).filter(value=>value!==position);
       const filePaths=[...new Set(Object.values(inputs).flat())];
-      const filePositions=Object.fromEntries(Object.entries(inputs).flatMap(([key,paths])=>paths.map(path=>[path,key])));
-      const fileAssignments=Object.entries(inputs).flatMap(([position,paths])=>paths.map(path=>({path,position})));
+      const changedInputs=incremental?{[position]:chosen}:inputs;
+      const changedPaths=[...new Set(Object.values(changedInputs).flat())];
+      const filePositions=Object.fromEntries(Object.entries(changedInputs).flatMap(([key,paths])=>paths.map(path=>[path,key])));
+      const fileAssignments=Object.entries(changedInputs).flatMap(([position,paths])=>paths.map(path=>({path,position})));
       const imported=await agentAnalysisOperation('import/start',{
-        filePaths,filePositions,fileAssignments,excludedPositions,options:{defaultPosition:position,namingProfile:state.namingProfile,positionDefinitions:positionDefinitions(),webVersion:VERSION,mode:'csv-analysis'}
+        ...(incremental?{analysisId:previous.analysisId,position}:{}),
+        filePaths:changedPaths,filePositions,fileAssignments,excludedPositions,options:{defaultPosition:position,namingProfile:state.namingProfile,positionDefinitions:positionDefinitions(),webVersion:VERSION,mode:'csv-analysis'}
       }, status=>{
         const progress=$('#vq43-analysis-import-progress');
         if(progress){progress.querySelector('span').textContent=`읽기 ${numberText(status.imported)}행 · 집계 ${numberText(status.projectedCursor)}행`;
           progress.querySelector('button').onclick=()=>analysisApi('cancel',{analysisId:status.analysisId}).catch(error=>showToast(error.message,true));}
       });
-      await syncAgentActualNg(imported.analysisId);
+      // The Agent has committed this revision. Persist its file labels before optional
+      // follow-up requests, so a dropped response cannot restore old labels over new data.
+      committed=true;
+      state.remoteAnalysis={analysisId:imported.analysisId,runId:imported.runId,inputs,filePaths,excludedPositions};
+      state.resultInputs={...state.resultInputs,[position]:{position,remote:true,rowCount:imported.imported,rows:[],warnings:[],fileName:chosen.map(path=>path.split(/[\\/]/).pop()).join(', '),updatedAt:Date.now()}};
+      state.dashboardDate='';scheduleAnalysisSnapshot();
+      if(!incremental || previous.actualInput!==state.ngImages || previous.actualInputCount!==state.ngImages.length)await syncAgentActualNg(imported.analysisId);
       const thresholds=Object.entries(state.thresholds).map(([key,value])=>{const split=key.indexOf('|');return {position:key.slice(0,split),tool:key.slice(split+1),value};});
-      await agentAnalysisOperation('thresholds',{analysisId:imported.analysisId,thresholds});
+      const thresholdSignature=JSON.stringify(thresholds);
+      if(!incremental || previous.thresholdSignature!==thresholdSignature)await agentAnalysisOperation('thresholds',{analysisId:imported.analysisId,thresholds});
       const model=await fetchAgentDashboard(imported.analysisId);
       // Publish only after the entire import and projection succeed. The old view survives failure.
-      state.remoteAnalysis={analysisId:imported.analysisId,runId:imported.runId,inputs,filePaths,excludedPositions};
+      state.remoteAnalysis={analysisId:imported.analysisId,runId:imported.runId,inputs,filePaths,excludedPositions,
+        actualInput:state.ngImages,actualInputCount:state.ngImages.length,thresholdSignature,positionDefinitionsSignature:JSON.stringify(positionDefinitions())};
       state.resultInputs=Object.fromEntries(model.positionSummaries.filter(p=>p.input).map(p=>[p.position,{
         position:p.position,remote:true,rowCount:p.rawRows ?? p.total,rows:[],warnings:[],fileName:(inputs[p.position] || []).map(path=>path.split(/[\\/]/).pop()).join(', '),updatedAt:Date.now()
       }]));
@@ -1710,8 +1725,17 @@
       if(!model.tools.includes(state.analysisTool))state.analysisTool=model.tools[0]||'';
       await loadAgentMissPage();
       scheduleAnalysisSnapshot();
-      showToast(`${numberText(model.rawRowCount)}행을 에이전트에서 분석했습니다.`);
-    } catch(error) {showToast(`결과 파일 분석 실패: ${error.message}`,true);}
+      showToast(`${position} ${numberText(imported.imported)}행을 분석했습니다. 전체 ${numberText(model.rawRowCount)}행`);
+    } catch(error) {
+      // A failed/cancelled staged replacement leaves the committed analysis intact.
+      if(incremental&&state.remoteAnalysis===previous){try{await fetchAgentDashboard(previous.analysisId);}catch{}}
+      if(committed&&state.remoteAnalysis){
+        state.remoteAnalysis.needsRestore=true;
+        try{await fetchAgentDashboard(state.remoteAnalysis.analysisId);await refreshAgentDashboard();}catch{}
+        scheduleAnalysisSnapshot();
+        showToast(state.remoteAnalysis.needsRestore?`파일 입력은 완료되었습니다. 집계 화면을 다시 갱신하세요: ${error.message}`:'파일 입력을 완료하고 집계 화면을 다시 갱신했습니다.',!!state.remoteAnalysis.needsRestore);
+      }else showToast(`결과 파일 분석 실패: ${error.message}`,true);
+    }
     finally {$('#vq43-analysis-import-progress')?.remove();state.loading='';renderSettings();}
   }
 
@@ -6850,7 +6874,7 @@
   function resultInputRow(position) {
     const input = state.resultInputs[position], loading = state.loading === `result:${position}`;
     const meta=input?.remote?`${numberText(input.rowCount)}행 · Agent 분석 · Tool ${state.model?.positionToolSummaries?.find(p=>p.position===position)?.tools.length||0}개`:`${numberText(input?.rows.length||0)}행 · ${formatBytes(input?.fileSize||0)} · Tool ${Object.keys(input?.rows[0]?.tools || {}).length}개`;
-    return `<div class="vq43-input-row" data-vq-position="${escapeHtml(position)}"><div class="vq43-position-label">${escapeHtml(position)}</div><div>${input?`<div class="vq43-input-name">${escapeHtml(input.fileName)}</div><div class="vq43-input-meta">${meta}</div>`:'<div class="vq43-input-name" style="color:#475569">결과 파일 미입력</div>'}</div><div><button class="vq43-btn vq43-btn-blue" data-vq-action="choose-result" data-vq-tooltip="CSV와 XLSX를 여러 개 선택할 수 있습니다. 선택한 Position에만 적용하며 해당 칸의 기존 파일을 교체합니다. Agent 연결 시 파일을 에이전트에서 분석합니다. XLSX는 파일당 50MB 이하·첫 시트만 읽습니다. Agent 미연결 시 선택 파일 합계 50MB 이하를 브라우저에서 읽습니다." title="CSV / XLSX 다중 선택 · 선택한 Position에 적용" ${state.loading?'disabled':''}>${loading?'읽는 중...':'파일 선택'}</button></div>${input?'<button class="vq43-icon-btn" data-vq-action="remove-result" title="제거">×</button>':'<span></span>'}</div>`;
+    return `<div class="vq43-input-row" data-vq-position="${escapeHtml(position)}"><div class="vq43-position-label">${escapeHtml(position)}</div><div>${input?`<div class="vq43-input-name">${escapeHtml(input.fileName)}</div><div class="vq43-input-meta">${meta}</div>`:'<div class="vq43-input-name" style="color:#475569">결과 파일 미입력</div>'}</div><div><button class="vq43-btn vq43-btn-blue" data-vq-action="choose-result" data-vq-tooltip="CSV와 XLSX를 여러 개 선택할 수 있습니다. 선택한 Position에만 적용하며 해당 칸의 기존 파일을 교체합니다. Agent 연결 시 변경한 Position만 새로 읽고 집계하며 다른 Position의 결과는 유지합니다. XLSX는 파일당 50MB 이하·첫 시트만 읽습니다. Agent 미연결 시 선택 파일 합계 50MB 이하를 브라우저에서 읽습니다." title="CSV / XLSX 다중 선택 · 선택한 Position에 적용" ${state.loading?'disabled':''}>${loading?'읽는 중...':'파일 선택'}</button></div>${input?'<button class="vq43-icon-btn" data-vq-action="remove-result" title="제거">×</button>':'<span></span>'}</div>`;
   }
 
   function resetChartModalView() {

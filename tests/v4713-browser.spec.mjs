@@ -124,6 +124,8 @@ test('analysis uses the requested left-right order and readable compact light te
 });
 
 test('running Simulation progress remains fixed while moving between menus', async ({ page }) => {
+  // A real idle Agent's SSE status must not overwrite this synthetic running state.
+  await page.route('http://127.0.0.1:*/api/**', route => route.abort());
   await page.route('**/api/status', route => route.fulfill({ status:200, contentType:'application/json', body:JSON.stringify({ ok:true, agentVersion:'1.4.7', vpdlAvailable:true }) }));
   await open(page);
   await page.evaluate(() => window.__VISIONQC_DEBUG__.seedRunningProgress());

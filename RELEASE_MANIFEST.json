@@ -1,19 +1,19 @@
 {
-  "releaseTag": "visionqc-v4.8.19-agent-v1.4.19",
-  "webVersion": "4.8.19",
-  "agentVersion": "1.4.19",
-  "minimumAgentVersion": "1.4.19",
+  "releaseTag": "visionqc-v4.8.20-agent-v1.4.20",
+  "webVersion": "4.8.20",
+  "agentVersion": "1.4.20",
+  "minimumAgentVersion": "1.4.20",
   "compatibility": {
-    "web": "4.8.19",
-    "agent": "1.4.19"
+    "web": "4.8.20",
+    "agent": "1.4.20"
   },
   "artifacts": {
-    "agentInstaller": "downloads/VisionQC_Agent_Installer_v1.4.19.exe",
-    "offlinePackage": "downloads/VisionQC_Offline_v4.8.19.zip",
+    "agentInstaller": "downloads/VisionQC_Agent_Installer_v1.4.20.exe",
+    "offlinePackage": "downloads/VisionQC_Offline_v4.8.20.zip",
     "sha256": {
-      "agentInstaller": "0628AD3AA6CC5E403624D6A63F90AF91300FAB65EE2DE89FDFD94C7CBF137B05",
-      "offlinePackage": "B6C031D4FB0E7D3D8640C09BF578DD3BAD09FA74E27C779C310EF63C7FAAB625"
+      "agentInstaller": "A28A57E413FB3F60D8B2989D047C1CD3E4A27E2CC70214BE0608C7C89FA39C5B",
+      "offlinePackage": "180797AE16468EAC844E526547BC681F50D16F91FD4949264266CC3FDC1C59E2"
     }
   },
-  "notes": "Tool NG 경로 조회 색인 수정, 독립 CSV·이미지 저장과 조건 스냅샷, 로컬 대기 목록 및 버퍼 재사용으로 복사 중 대시보드 조회 개선."
+  "notes": "포지션 결과 파일 증분 입력·교체, 기존 파일 재읽기 및 중복 집계 제거, 교체 취소·실패 복구와 변경 결과 DB 저장 보완."
 }

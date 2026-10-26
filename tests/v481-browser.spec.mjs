@@ -222,24 +222,53 @@ test('Unified result selector explains multi-file import, Position binding and E
 });
 
 test('Selected TCA and BCA rows retain independent multi-file assignments, labels, replacement and cancellation',async({page})=>{
- await setup(page);page.on('dialog',d=>d.accept());
+ const requests=await setup(page);page.on('dialog',d=>d.accept());
  await page.evaluate(async()=>{const d=window.__VISIONQC_DEBUG__;await d.renameCustomPosition('CA_TOP','TCA');await d.renameCustomPosition('CA_BOT','BCA');d.setPage('settings');});
  const imports=[],picks=[];let files=['C:\\Logs\\top_001.csv','C:\\Logs\\top_002.xlsx'],bindings=[],fail=false,cancel=false;
  const current=()=>({...model,positionSummaries:['TCA','BCA'].map(position=>({position,input:bindings.some(b=>b.position===position),total:bindings.filter(b=>b.position===position).length,rawRows:bindings.filter(b=>b.position===position).length,ng:0,ngRate:0,actualNg:0,detected:0,misses:0})),positionToolSummaries:[],tools:[]});
  await page.route('http://127.0.0.1:*/api/pick/start',route=>{picks.push(route.request().postDataJSON());return route.fulfill({json:cancel?{ok:false,cancelled:true}:{ok:true,paths:files,path:files[0]}});});
- await page.route('http://127.0.0.1:*/api/analysis/import/start',route=>{const body=route.request().postDataJSON();imports.push(body);if(!fail)bindings=body.fileAssignments;return route.fulfill({json:fail?{ok:false,error:'fixture malformed CSV'}:done(null)});});
+ await page.route('http://127.0.0.1:*/api/analysis/import/start',route=>{const body=route.request().postDataJSON();imports.push(body);if(!fail)bindings=body.analysisId?[...bindings.filter(b=>b.position!==body.position),...body.fileAssignments]:body.fileAssignments;return route.fulfill({json:fail?{ok:false,error:'fixture malformed CSV'}:done(null)});});
  await page.route('http://127.0.0.1:*/api/analysis/dashboard',route=>route.fulfill({json:done(current())}));
  const row=position=>page.locator(`.vq43-input-row[data-vq-position="${position}"]`);
  await row('TCA').locator('[data-vq-action="choose-result"]').click();
  await expect(row('TCA')).toContainText('top_001.csv, top_002.xlsx');await expect(row('BCA')).toContainText('미입력');
  expect(picks[0]).toMatchObject({fileType:'result',multiple:true});expect(imports[0].fileAssignments).toEqual(files.map(path=>({path,position:'TCA'})));
+ const synced=requests.filter(r=>r.path.endsWith('/actual-ng')||r.path.endsWith('/thresholds')).length;
  files=['C:\\Logs\\bottom.csv'];await row('BCA').locator('[data-vq-action="choose-result"]').click();await expect(row('BCA')).toContainText('bottom.csv');
- await expect(row('TCA')).toContainText('top_001.csv, top_002.xlsx');expect(imports[1].fileAssignments).toHaveLength(3);
+ await expect(row('TCA')).toContainText('top_001.csv, top_002.xlsx');expect(imports[1]).toMatchObject({analysisId:id,position:"BCA",filePaths:["C:\\Logs\\bottom.csv"]});expect(imports[1].fileAssignments).toEqual([{path:files[0],position:"BCA"}]);
  files=['C:\\Logs\\top_new.csv'];await row('TCA').locator('[data-vq-action="choose-result"]').click();await expect(row('TCA')).toContainText('top_new.csv');await expect(row('TCA')).not.toContainText('top_001.csv');await expect(row('BCA')).toContainText('bottom.csv');
- expect(imports[2].fileAssignments).toEqual([{path:files[0],position:'TCA'},{path:'C:\\Logs\\bottom.csv',position:'BCA'}]);
+ expect(imports[2]).toMatchObject({analysisId:id,position:'TCA'});expect(imports[2].fileAssignments).toEqual([{path:files[0],position:'TCA'}]);
+ expect(requests.filter(r=>r.path.endsWith('/actual-ng')||r.path.endsWith('/thresholds'))).toHaveLength(synced);
  fail=true;files=['C:\\Logs\\broken.csv'];await row('TCA').locator('[data-vq-action="choose-result"]').click();await expect(page.locator('#vq43-toast')).toContainText('malformed CSV');await expect(row('TCA')).toContainText('top_new.csv');await expect(row('BCA')).toContainText('bottom.csv');
  cancel=true;await row('BCA').locator('[data-vq-action="choose-result"]').click();await expect(row('BCA').locator('[data-vq-action="choose-result"]')).toBeEnabled();expect(imports).toHaveLength(4);await expect(row('BCA')).toContainText('bottom.csv');
  await page.evaluate(()=>window.__VISIONQC_DEBUG__.saveAnalysisSnapshot());await page.reload();await page.waitForFunction(()=>window.__VISIONQC_DEBUG__?.analysisRestoreReady());await page.evaluate(()=>window.__VISIONQC_DEBUG__.setPage('settings'));await expect(row('TCA')).toContainText('top_new.csv');await expect(row('BCA')).toContainText('bottom.csv');
+});
+
+test('staged Position import cancellation keeps prior input and sends only the selected files',async({page})=>{
+ await setup(page);let cancelled=false;const imports=[];
+ await page.evaluate(()=>window.__VISIONQC_DEBUG__.setPage('settings'));
+ const files=['C:\\Logs\\new_001.csv','C:\\Logs\\new_002.csv'];
+ await page.route('http://127.0.0.1:*/api/pick/start',route=>route.fulfill({json:{ok:true,paths:files}}));
+ const running=()=>({ok:!cancelled,analysisId:id,runId:'test-run',operationId:'staged-import',running:!cancelled,completed:false,imported:250,projectedCursor:0,error:cancelled?'fixture import cancelled':null});
+ await page.route('http://127.0.0.1:*/api/analysis/import/start',route=>{imports.push(route.request().postDataJSON());return route.fulfill({json:running()});});
+ await page.route('http://127.0.0.1:*/api/analysis/status',route=>route.fulfill({json:running()}));
+ await page.route('http://127.0.0.1:*/api/analysis/cancel',route=>{cancelled=true;return route.fulfill({json:{ok:true}});});
+ const row=page.locator('.vq43-input-row[data-vq-position="AN(TOP)"]');await row.locator('[data-vq-action="choose-result"]').click();
+ const progress=page.locator('#vq43-analysis-import-progress');await expect(progress).toContainText('250행');await progress.getByRole('button',{name:'취소'}).click();await expect(progress).toHaveCount(0);
+ await expect(row).toContainText('results.csv');await expect(row).not.toContainText('new_001.csv');await expect(page.locator('#vq43-toast')).toContainText('cancelled');
+ expect(imports[0]).toMatchObject({analysisId:id,position:'AN(TOP)',filePaths:files,fileAssignments:files.map(path=>({path,position:'AN(TOP)'}))});
+});
+
+test('a failed summary request after import commit retains new filenames and recovers the dashboard',async({page})=>{
+ await setup(page);let failures=1;
+ await page.evaluate(()=>window.__VISIONQC_DEBUG__.setPage('settings'));
+ await page.route('http://127.0.0.1:*/api/pick/start',route=>route.fulfill({json:{ok:true,paths:['C:\\Logs\\committed.csv']}}));
+ await page.route('http://127.0.0.1:*/api/analysis/import/start',route=>route.fulfill({json:{...done(null),imported:100000}}));
+ await page.route('http://127.0.0.1:*/api/analysis/dashboard',route=>route.fulfill({json:failures-->0?{ok:false,error:'fixture summary temporarily unavailable'}:done(model)}));
+ const row=page.locator('.vq43-input-row[data-vq-position="AN(TOP)"]');await row.locator('[data-vq-action="choose-result"]').click();
+ await expect(row.locator('[data-vq-action="choose-result"]')).toBeEnabled();await expect(row).toContainText('committed.csv');await expect(row).not.toContainText('results.csv');
+ await expect(page.locator('#vq43-toast')).toContainText('파일 입력을 완료');
+ await page.evaluate(()=>window.__VISIONQC_DEBUG__.saveAnalysisSnapshot());await page.reload();await page.waitForFunction(()=>window.__VISIONQC_DEBUG__?.analysisRestoreReady());await page.evaluate(()=>window.__VISIONQC_DEBUG__.setPage('settings'));await expect(row).toContainText('committed.csv');
 });
 
 test('Without Agent, one picker imports multiple CSV and XLSX into selected Position and preserves other rows',async({page})=>{
