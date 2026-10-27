@@ -29,16 +29,21 @@ namespace VisionQC.LocalAgent.Persistence
 
         // Copy a temporary analysis subset to a new run without loading observations into RAM.
         // The caller owns the destination session; the original run is never changed.
-        internal void CopyAnalysisRows(RunStoreSession session,string sourcePath,string runId,string excludedPosition)
+        internal void CopyAnalysisRows(RunStoreSession session,string sourcePath,string runId,string excludedPosition,List<PositionAliasDefinition> definitions=null)
         {
             using(var command=session.Connection.CreateCommand())
             {
                 command.Transaction=session.Transaction;
                 command.CommandText="ATTACH DATABASE @source AS analysis_source";
                 Add(command,"@source",sourcePath);command.ExecuteNonQuery();
-                Add(command,"@old",runId);Add(command,"@new",session.RunId);Add(command,"@excluded",excludedPosition??"");
+                Add(command,"@old",runId);Add(command,"@new",session.RunId);
+                command.CommandText="CREATE TEMP TABLE excluded_position_names(name TEXT PRIMARY KEY);SELECT DISTINCT position_key FROM analysis_source.images WHERE run_id=@old AND position_key IS NOT NULL";
+                var excluded=new List<string>();var aliases=new PositionAliases(definitions);
+                using(var reader=command.ExecuteReader())while(reader.Read()){string name=reader.GetString(0);if(string.Equals(aliases.Canonical(name),excludedPosition,StringComparison.OrdinalIgnoreCase))excluded.Add(name);}
+                command.CommandText="INSERT INTO excluded_position_names VALUES(@name)";Add(command,"@name","");
+                foreach(string name in excluded){command.Parameters["@name"].Value=name;command.ExecuteNonQuery();}
                 command.CommandText=@"INSERT INTO images(image_id,run_id,sequence_no,source_file_name,source_row_number,full_path,processed_path,cell_id,position_key,total_result,judgement,capture_timestamp,inspected_at_utc,workspace_type,workspace_name,workspace_key)
-SELECT image_id,@new,sequence_no,source_file_name,source_row_number,full_path,processed_path,cell_id,position_key,total_result,judgement,capture_timestamp,inspected_at_utc,workspace_type,workspace_name,workspace_key FROM analysis_source.images WHERE run_id=@old AND position_key<>@excluded;
+SELECT image_id,@new,sequence_no,source_file_name,source_row_number,full_path,processed_path,cell_id,position_key,total_result,judgement,capture_timestamp,inspected_at_utc,workspace_type,workspace_name,workspace_key FROM analysis_source.images WHERE run_id=@old AND (position_key IS NULL OR position_key NOT IN (SELECT name FROM excluded_position_names));
 INSERT INTO tool_results(run_id,image_id,tool_name,result,score,overlay_path)
 SELECT @new,t.image_id,t.tool_name,t.result,t.score,t.overlay_path FROM analysis_source.tool_results t JOIN images i ON i.image_id=t.image_id AND i.run_id=@new WHERE t.run_id=@old;";
                 command.ExecuteNonQuery();command.CommandText="SELECT COUNT(*) FROM images WHERE run_id=@new";

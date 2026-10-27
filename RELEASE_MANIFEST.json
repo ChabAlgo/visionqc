@@ -1,19 +1,19 @@
 {
-  "releaseTag": "visionqc-v4.8.20-agent-v1.4.20",
-  "webVersion": "4.8.20",
-  "agentVersion": "1.4.20",
-  "minimumAgentVersion": "1.4.20",
+  "releaseTag": "visionqc-v4.8.21-agent-v1.4.21",
+  "webVersion": "4.8.21",
+  "agentVersion": "1.4.21",
+  "minimumAgentVersion": "1.4.21",
   "compatibility": {
-    "web": "4.8.20",
-    "agent": "1.4.20"
+    "web": "4.8.21",
+    "agent": "1.4.21"
   },
   "artifacts": {
-    "agentInstaller": "downloads/VisionQC_Agent_Installer_v1.4.20.exe",
-    "offlinePackage": "downloads/VisionQC_Offline_v4.8.20.zip",
+    "agentInstaller": "downloads/VisionQC_Agent_Installer_v1.4.21.exe",
+    "offlinePackage": "downloads/VisionQC_Offline_v4.8.21.zip",
     "sha256": {
-      "agentInstaller": "A28A57E413FB3F60D8B2989D047C1CD3E4A27E2CC70214BE0608C7C89FA39C5B",
-      "offlinePackage": "180797AE16468EAC844E526547BC681F50D16F91FD4949264266CC3FDC1C59E2"
+      "agentInstaller": "CC8382D175EDE370828AE2BFD8438E64D2282AE434C892B0E4F5CFD7782BC7DA",
+      "offlinePackage": "B94F2485D1EA065CF351781AEB1DBA4A3A58E698F09BD2641439D8357D71F765"
     }
   },
-  "notes": "포지션 결과 파일 증분 입력·교체, 기존 파일 재읽기 및 중복 집계 제거, 교체 취소·실패 복구와 변경 결과 DB 저장 보완."
+  "notes": "추가 정합성 점검: 별칭 포지션 제거·이력 표시·실패 후 복원·이전 분석 DB 호환 보완. 입력/제거 요청 ID와 통신 응답 유실·새로고침 복구."
 }

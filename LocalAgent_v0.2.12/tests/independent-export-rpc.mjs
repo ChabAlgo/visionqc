@@ -3,6 +3,7 @@ import {mkdtempSync,mkdirSync,writeFileSync,readFileSync,readdirSync,existsSync}
 import {join,resolve} from 'node:path';
 import {setTimeout as delay} from 'node:timers/promises';
 import assert from 'node:assert/strict';
+import {randomUUID} from 'node:crypto';
 const worker=resolve(process.argv[2]||'LocalAgent_v0.2.12/Launcher/bin/x64/Release/Workers/8.0/VisionQC.VpdlWorker.exe');
 const vpdlRoot=process.env.VISIONQC_TEST_VPDL_ROOT||'C:\\Program Files\\Cognex\\VisionPro Deep Learning\\4.0';
 assert.ok(existsSync(join(vpdlRoot,'Cognex Deep Learning Studio','ViDi.NET.Local.dll')),'A matching installed VPDL runtime is required for this optional native RPC fixture');
@@ -19,7 +20,10 @@ try{
  const lines=['Date,Time,Cell ID,Position,Total_result,Crack_result,Crack_score,FullPath'];
  for(let i=0;i<20;i++){const path=join(source,`original_${i}.jpg`);if(i!==0)writeFileSync(path,`synthetic original ${i}`);lines.push(`2026-02-03,12:00:00,P163GG22M21${String(i).padStart(5,'0')},AN(TOP),${i<5?'NG':'OK'},${i<5?'NG':'OK'},.9,${path}`);}
  const input=join(root,'input.csv');writeFileSync(input,lines.join('\n'));
- const imported=await finish(await request('/api/analysis/import/start',{filePaths:[input]}));const analysisId=imported.analysisId;
+ const initialRequestId=randomUUID().replaceAll('-','');
+ const imported=await finish(await request('/api/analysis/import/start',{importRequestId:initialRequestId,filePaths:[input]}));const analysisId=imported.analysisId;
+ assert.equal(analysisId,initialRequestId);assert.equal(imported.importRequestId,initialRequestId);assert.equal(imported.importCommitted,true);
+ const replayed=await finish(await request('/api/analysis/import/start',{importRequestId:initialRequestId,filePaths:[input]}));assert.equal(replayed.runId,imported.runId);assert.equal(replayed.imported,20);
  const exported=await request('/api/analysis/export',{analysisId,independent:true,kind:'tool-ng',position:'AN(TOP)',tool:'Crack',date:'2026-02-03',outputDirectory:output,copyImages:true,maxRows:3});
  assert.ok(exported.exportId);const main=await request('/api/analysis/status',{analysisId});assert.equal(main.running,false);assert.equal(main.completed,true);
  const dates=await request('/api/analysis/dates',{analysisId});assert.equal(dates.page.summary.totalCount,20);
@@ -40,6 +44,13 @@ try{
  assert.equal(dashboard.rawRowCount,21);assert.equal(dashboard.positionSummaries.find(p=>p.position==='AN(TOP)').total,1);assert.equal(dashboard.positionSummaries.find(p=>p.position==='AN(BOT)').total,20);
  const revised=await finish(await request('/api/analysis/save-history',{analysisId}));assert.equal(revised.result.saved,true);assert.notEqual(revised.result.runId,imported.runId);
  console.log('PASS isolated native Worker RPC: incremental Position add/replace, same-source explicit assignments, preserved other Position, Cell totals and revised history save');
+ const removalId=randomUUID().replaceAll('-','');
+ const removalBody={analysisId,position:'AN(BOT)',importRequestId:removalId};
+ const removed=await finish(await request('/api/analysis/remove-position',removalBody));assert.equal(removed.importCommitted,true);assert.equal(removed.importRequestId,removalId);
+ assert.equal((await finish(await request('/api/analysis/remove-position',removalBody))).importRequestId,removalId);
+ assert.equal((await request('/api/analysis/status',{analysisId,action:'restore'})).importCommitted,true);
+ dashboard=(await finish(await request('/api/analysis/dashboard',{analysisId}))).result;assert.equal(dashboard.rawRowCount,1);assert.equal(dashboard.positionSummaries.find(p=>p.position==='AN(TOP)').total,1);
+ console.log('PASS isolated native Worker RPC: client request identity, acknowledged import replay, Position removal replay, committed receipt and restore routing');
 }finally{
  try{await request('/api/shutdown',{});}catch{}
  await delay(200);if(child.exitCode===null)child.kill();

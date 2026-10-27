@@ -38,11 +38,14 @@ namespace VisionQC.LocalAgent.Services
             internal AnalysisProjection Projection;
             internal Task Task;
             internal string OperationId;
+            internal string ImportRequestId,ImportPosition;
+            internal bool ImportCommitted;
             internal object Result;
             internal ImageCopyPlan Copy;
         }
         internal sealed class Request
         {
+            public string importRequestId {get;set;}
             public string analysisId { get; set; }
             public List<PositionAliasDefinition> positionDefinitions {get;set;}
             public string[] filePaths { get; set; }
@@ -93,15 +96,19 @@ namespace VisionQC.LocalAgent.Services
             if (request == null || request.filePaths == null || request.filePaths.Length == 0 || request.filePaths.Length > 10000)
                 return new { ok=false,error="CSV/XLSX 파일을 선택하세요. 한 번에 최대 10,000개입니다." };
             if(request.fileAssignments!=null&&request.fileAssignments.Length>10000)return new {ok=false,error="한 번에 최대 10,000개의 파일/Position 조합을 지원합니다."};
+            Guid requestToken;if(!string.IsNullOrEmpty(request.importRequestId)&&!Guid.TryParseExact(request.importRequestId,"N",out requestToken))return new{ok=false,error="유효하지 않은 입력 요청 ID입니다."};
             lock (_sync)
             {
+                if(!string.IsNullOrEmpty(request.importRequestId)&&_job?.ImportRequestId==request.importRequestId&&(request.analysisId==_job.Id||string.IsNullOrEmpty(request.analysisId)&&_job.Id==request.importRequestId))return StatusObject(_job);
                 if (_job != null && _job.Running) return new { ok=false,error="진행 중인 분석 입력을 완료하거나 취소하세요." };
                 if(!string.IsNullOrEmpty(request.analysisId))return StartPositionImport(request);
+                var id=string.IsNullOrEmpty(request.importRequestId)?Guid.NewGuid().ToString("N"):request.importRequestId;
+                if(Directory.Exists(Path.Combine(_root,id)))return StatusObject(Resolve(id));
                 if (_job != null && _job.Projection != null) _job.Projection.Dispose();
                 if (_job != null && _job.Cancellation != null) _job.Cancellation.Dispose();
-                var id=Guid.NewGuid().ToString("N");
                 var directory=Path.Combine(_root,id); Directory.CreateDirectory(directory);
                 var job=new Job {Id=id,SourcePath=Path.Combine(directory,"source.sqlite"),Running=true,Cancellation=CancellationTokenSource.CreateLinkedTokenSource(_stop.Token)};
+                RecordImportRequest(job,id,null);job.OperationId=id;
                 _job=job;
                 job.Task=Task.Run(() => {
                     try
@@ -119,7 +126,7 @@ namespace VisionQC.LocalAgent.Services
                             // Configure aliases while facts are still empty, before the single projection pass.
                             job.Projection.ConfigurePositions(request.options?.positionDefinitions,job.Cancellation.Token,false);
                             while(job.Projection.Advance(job.Cancellation.Token,10000)) Interlocked.Exchange(ref job.Projected,job.Projection.Cursor);
-                            job.Completed=true;
+                            CompleteInitialImport(job);job.Completed=true;
                         }
                     }
                     catch(OperationCanceledException) { job.Error="분석 입력을 취소했습니다."; }
@@ -130,15 +137,17 @@ namespace VisionQC.LocalAgent.Services
             }
         }
 
-        private object StartPositionImport(Request request)
+        private object StartPositionImport(Request request,bool remove=false)
         {
             var job=Resolve(request.analysisId);
             if(job.Running||job.Projection==null)return new{ok=false,error="분석 복원이 끝난 뒤 다시 선택하세요."};
-            if(string.IsNullOrWhiteSpace(request.position)||request.fileAssignments==null||request.fileAssignments.Length==0||request.fileAssignments.Any(a=>a==null||a.position!=request.position))
+            if(!string.IsNullOrEmpty(request.importRequestId)&&job.ImportRequestId==request.importRequestId)return StatusObject(job);
+            if(string.IsNullOrWhiteSpace(request.position)||(!remove&&(request.fileAssignments==null||request.fileAssignments.Length==0||request.fileAssignments.Any(a=>a==null||a.position!=request.position))))
                 return new{ok=false,error="변경할 Position과 결과 파일의 지정을 확인하세요."};
             if(File.Exists(Path.Combine(_root,job.Id,"source.txt")))return new{ok=false,error="실행 중인 원본은 교체할 수 없습니다. 새 분석으로 불러오세요."};
             if(!job.Projection.HasPositionConfiguration(request.options?.positionDefinitions))return new{ok=false,error="Position 설정을 적용한 뒤 다시 선택하세요."};
             if(_exports.Values.Any(item=>item.Running&&item.Phase=="preparing"))return new{ok=false,error="CSV·이미지 목록 준비가 끝난 뒤 결과 파일을 교체하세요."};
+            RecordImportRequest(job,string.IsNullOrEmpty(request.importRequestId)?Guid.NewGuid().ToString("N"):request.importRequestId,request.position);
             job.Imported=0;job.Projected=0;
             StartOperation(job,()=>{
                 string staging=Path.Combine(_root,job.Id,"import-"+Guid.NewGuid().ToString("N"));Directory.CreateDirectory(staging);
@@ -147,23 +156,42 @@ namespace VisionQC.LocalAgent.Services
                     string source=Path.Combine(staging,"source.sqlite"),cache=Path.Combine(staging,"projection.sqlite"),runId;
                     using(var store=new SqliteRunStore(source))
                     {
-                        var importer=new CsvHistoryFileImporter(store,new JavaScriptSerializer());
-                        importer.ImportFiles(request.options,request.filePaths,n=>Interlocked.Exchange(ref job.Imported,n),job.Cancellation.Token,out runId,null,null,request.fileAssignments);
+                        if(remove){var session=store.Start(new SqliteRunStore.RunStoreStart{SourceType="csv-file-stream",SourceName="Position removal"});runId=session.RunId;store.Complete(session,"completed","");}
+                        else{var importer=new CsvHistoryFileImporter(store,new JavaScriptSerializer());importer.ImportFiles(request.options,request.filePaths,n=>Interlocked.Exchange(ref job.Imported,n),job.Cancellation.Token,out runId,null,null,request.fileAssignments);}
                         using(var projection=new AnalysisProjection(source,cache,runId))
                         {
                             projection.ConfigurePositions(request.options?.positionDefinitions,job.Cancellation.Token,false);
                             while(projection.Advance(job.Cancellation.Token,10000))Interlocked.Exchange(ref job.Projected,projection.Cursor);
                         }
                     }
-                    job.Projection.ReplacePosition(request.position,source,cache,job.Cancellation.Token);
+                    job.Projection.ReplacePosition(request.position,source,cache,job.Cancellation.Token,job.ImportRequestId);job.ImportCommitted=true;
                 }
                 finally
                 {
                     // Only this operation's private staging files; user CSV/XLSX/images are untouched.
                     try{Directory.Delete(staging,true);}catch(IOException){}catch(UnauthorizedAccessException){}
                 }
-            });
+            },job.ImportRequestId);
             return StatusObject(job);
+        }
+
+        private sealed class ImportRequestMarker {public string id {get;set;} public string position {get;set;} }
+        private void RecordImportRequest(Job job,string requestId,string position)
+        {
+            string path=Path.Combine(_root,job.Id,"import-request.json"),staging=path+".tmp";
+            string content=new JavaScriptSerializer().Serialize(new ImportRequestMarker{id=requestId,position=position});
+            for(int attempt=0;;attempt++)
+            {
+                try{File.WriteAllText(staging,content);if(File.Exists(path))File.Replace(staging,path,null);else File.Move(staging,path);break;}
+                catch(IOException)when(attempt<5){Thread.Sleep(30);}
+            }
+            job.ImportRequestId=requestId;job.ImportPosition=position;job.ImportCommitted=false;
+        }
+        private void CompleteInitialImport(Job job)
+        {
+            job.Cancellation.Token.ThrowIfCancellationRequested();
+            File.WriteAllText(Path.Combine(_root,job.Id,"import-committed.txt"),job.ImportRequestId);
+            job.ImportCommitted=true;
         }
 
         internal object Status(string body)
@@ -172,6 +200,7 @@ namespace VisionQC.LocalAgent.Services
             lock(_sync)
             {
                 var job=Resolve(request == null ? null : request.analysisId);
+                if(request?.action=="restore"&&!job.Running&&job.Projection!=null&&(!job.Completed||!string.IsNullOrEmpty(job.Error)))StartOperation(job,()=>Advance(job));
                 return StatusObject(job);
             }
         }
@@ -322,23 +351,30 @@ namespace VisionQC.LocalAgent.Services
         {
             var request=new JavaScriptSerializer().Deserialize<Request>(body??"{}")??new Request();
             if(string.IsNullOrWhiteSpace(request.position))throw new InvalidDataException("Position을 선택하세요.");
+            Guid token;if(!string.IsNullOrEmpty(request.importRequestId)&&!Guid.TryParseExact(request.importRequestId,"N",out token))return new{ok=false,error="유효하지 않은 입력 요청 ID입니다."};
             lock(_sync)
             {
+                if(!string.IsNullOrEmpty(request.importRequestId)&&_job?.ImportRequestId==request.importRequestId&&(_job.Id==request.analysisId||_job.Id==request.importRequestId))return StatusObject(_job);
+                if(!string.IsNullOrEmpty(request.importRequestId)&&File.Exists(Path.Combine(_root,request.importRequestId,"run.txt")))return StatusObject(Resolve(request.importRequestId));
                 var prior=Resolve(request.analysisId);if(prior.Running||!prior.Completed)return new {ok=false,busy=true,error="분석 갱신 중입니다."};
-                string id=Guid.NewGuid().ToString("N"),directory=Path.Combine(_root,id);Directory.CreateDirectory(directory);
+                if(!File.Exists(Path.Combine(_root,prior.Id,"source.txt")))return StartPositionImport(request,true);
+                string id=string.IsNullOrEmpty(request.importRequestId)?Guid.NewGuid().ToString("N"):request.importRequestId,directory=Path.Combine(_root,id);Directory.CreateDirectory(directory);
                 var job=new Job{Id=id,SourcePath=Path.Combine(directory,"source.sqlite")};
+                RecordImportRequest(job,id,request.position);
                 prior.Projection.Dispose();prior.Cancellation.Dispose();_job=job;
                 StartOperation(job,()=>{
                     using(var store=new SqliteRunStore(job.SourcePath))
                     {
-                        var session=store.Start(new SqliteRunStore.RunStoreStart{SourceType="analysis-subset",SourceName="Position selection"});
-                        try{store.CopyAnalysisRows(session,prior.SourcePath,prior.RunId,request.position);store.Complete(session,"completed","");}
+                        var session=store.Start(new SqliteRunStore.RunStoreStart{SourceType="csv-file-stream",Mode="csv-analysis",SourceName="Position selection"});
+                        try{store.CopyAnalysisRows(session,prior.SourcePath,prior.RunId,request.position,prior.Projection.PositionDefinitions);store.Complete(session,"completed","");}
                         catch{store.DiscardFailedImport(session);throw;}
                         job.RunId=session.RunId;File.WriteAllText(Path.Combine(directory,"run.txt"),job.RunId);
                         job.Projection=new AnalysisProjection(job.SourcePath,Path.Combine(directory,"projection.sqlite"),job.RunId);
+                        job.Projection.CopyConfigurationFrom(prior.Projection);
                         while(job.Projection.Advance(job.Cancellation.Token,10000))Interlocked.Exchange(ref job.Projected,job.Projection.Cursor);
+                        CompleteInitialImport(job);
                     }
-                });return StatusObject(job);
+                },job.ImportRequestId);return StatusObject(job);
             }
         }
         internal object Cancel(string body)
@@ -414,13 +450,16 @@ namespace VisionQC.LocalAgent.Services
                 _job=job;StartOperation(job,()=>Advance(job));return StatusObject(job);
             }
         }
-        private static void Advance(Job job)
-        { while(job.Projection.Advance(job.Cancellation.Token))Interlocked.Exchange(ref job.Projected,job.Projection.Cursor); }
-        private void StartOperation(Job job,Action action)
+        private void Advance(Job job)
+        {
+            while(job.Projection.Advance(job.Cancellation.Token))Interlocked.Exchange(ref job.Projected,job.Projection.Cursor);
+            if(job.ImportRequestId!=null){string revision=job.Projection.HistoryRunId,proof=Path.Combine(_root,job.Id,"import-committed.txt");job.ImportCommitted=revision==job.ImportRequestId||(File.Exists(proof)&&File.ReadAllText(proof)==job.ImportRequestId);if(job.ImportCommitted)job.Imported=job.Projection.ImportedRowCount(job.ImportPosition);}
+        }
+        private void StartOperation(Job job,Action action,string operationId=null)
         {
             job.Cancellation?.Dispose();job.Cancellation=CancellationTokenSource.CreateLinkedTokenSource(_stop.Token);
             job.Running=true;job.Completed=false;job.Error=null;job.Copy=null;
-            job.OperationId=Guid.NewGuid().ToString("N");job.Result=null;
+            job.OperationId=operationId??Guid.NewGuid().ToString("N");job.Result=null;
             job.Task=Task.Run(()=>{try{action();job.Completed=true;}catch(OperationCanceledException){job.Error="분석 갱신을 취소했습니다.";}catch(Exception ex){job.Error=ex.Message;}finally{job.Running=false;}});
         }
         private Job Resolve(string id)
@@ -433,6 +472,8 @@ namespace VisionQC.LocalAgent.Services
             if(!File.Exists(runFile)) throw new FileNotFoundException("저장된 분석을 찾을 수 없습니다.");
             string runId=File.ReadAllText(runFile).Trim();
             var job=new Job {Id=id,RunId=runId,SourcePath=Path.Combine(directory,"source.sqlite"),Cancellation=CancellationTokenSource.CreateLinkedTokenSource(_stop.Token)};
+            string importReference=Path.Combine(directory,"import-request.json");
+            if(File.Exists(importReference))try{var marker=new JavaScriptSerializer().Deserialize<ImportRequestMarker>(File.ReadAllText(importReference));Guid token;if(marker!=null&&Guid.TryParseExact(marker.id,"N",out token)){job.ImportRequestId=marker.id;job.ImportPosition=marker.position;}}catch(ArgumentException){}catch(InvalidOperationException){}
             string sourceReference=Path.Combine(directory,"source.txt");
             if(File.Exists(sourceReference))job.SourcePath=File.ReadAllText(sourceReference).Trim();
             if(_job!=null && _job.Projection!=null) _job.Projection.Dispose();
@@ -440,14 +481,14 @@ namespace VisionQC.LocalAgent.Services
             // Recovery completes an interrupted projection before exposing final statistics.
             job.Running=true; _job=job;
             job.Task=Task.Run(()=>{
-                try { job.Projection=new AnalysisProjection(job.SourcePath,Path.Combine(directory,"projection.sqlite"),runId); while(job.Projection.Advance(job.Cancellation.Token)) Interlocked.Exchange(ref job.Projected,job.Projection.Cursor); job.Completed=true; }
+                try { job.Projection=new AnalysisProjection(job.SourcePath,Path.Combine(directory,"projection.sqlite"),runId);Advance(job);job.Completed=true; }
                 catch(Exception ex) {job.Error=ex.Message;}
                 finally {job.Running=false;}
             });
             return job;
         }
         private static object StatusObject(Job job)
-        { return new {ok=string.IsNullOrEmpty(job.Error),analysisId=job.Id,runId=job.RunId,running=job.Running,completed=job.Completed,imported=Interlocked.Read(ref job.Imported),projectedCursor=Interlocked.Read(ref job.Projected),copyProcessed=job.Copy==null?0:Interlocked.Read(ref job.Copy.Processed),copyTotal=job.Copy==null?0:Interlocked.Read(ref job.Copy.Total),error=job.Error,operationId=job.OperationId,result=job.Completed?job.Result:null}; }
+        { return new {ok=string.IsNullOrEmpty(job.Error),analysisId=job.Id,runId=job.RunId,running=job.Running,completed=job.Completed,importRequestId=job.ImportRequestId,importCommitted=job.ImportCommitted,imported=Interlocked.Read(ref job.Imported),projectedCursor=Interlocked.Read(ref job.Projected),copyProcessed=job.Copy==null?0:Interlocked.Read(ref job.Copy.Processed),copyTotal=job.Copy==null?0:Interlocked.Read(ref job.Copy.Total),error=job.Error,operationId=job.OperationId,result=job.Completed?job.Result:null}; }
         public void Dispose()
         {
             _stop.Cancel();

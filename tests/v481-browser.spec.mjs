@@ -271,6 +271,58 @@ test('a failed summary request after import commit retains new filenames and rec
  await page.evaluate(()=>window.__VISIONQC_DEBUG__.saveAnalysisSnapshot());await page.reload();await page.waitForFunction(()=>window.__VISIONQC_DEBUG__?.analysisRestoreReady());await page.evaluate(()=>window.__VISIONQC_DEBUG__.setPage('settings'));await expect(row).toContainText('committed.csv');
 });
 
+for(const lost of ['acknowledgement','progress'])test(`lost import ${lost} confirms the same receipt without re-uploading`,async({page})=>{
+ await setup(page);let request=null,posts=0,lostOnce=false;
+ await page.evaluate(()=>window.__VISIONQC_DEBUG__.setPage('settings'));
+ await page.route('http://127.0.0.1:*/api/pick/start',route=>route.fulfill({json:{ok:true,paths:['C:\\Logs\\receipt.csv']}}));
+ const receipt=running=>({...done(null),operationId:request.importRequestId,importRequestId:request.importRequestId,importCommitted:!running,running,completed:!running,imported:500});
+ await page.route('http://127.0.0.1:*/api/analysis/import/start',async route=>{request=route.request().postDataJSON();posts++;if(lost==='acknowledgement')await route.abort();else await route.fulfill({json:receipt(true)});});
+ await page.route('http://127.0.0.1:*/api/analysis/status',async route=>{if(request&&lost==='progress'&&!lostOnce){lostOnce=true;return route.abort();}await route.fulfill({json:request?receipt(false):done(null)});});
+ const row=page.locator('.vq43-input-row[data-vq-position="AN(TOP)"]');await row.locator('[data-vq-action="choose-result"]').click();await expect(row.locator('[data-vq-action="choose-result"]')).toBeEnabled();
+ await expect(row).toContainText('receipt.csv');await expect(row).not.toContainText('results.csv');expect(posts).toBe(1);expect(request.importRequestId).toMatch(/^[a-f0-9]{32}$/);
+});
+
+test('reload during a lost import acknowledgement recovers persisted request and new filename',async({page})=>{
+ await setup(page);let request=null,release;const version=JSON.parse(readFileSync(new URL('../RELEASE_MANIFEST.json',import.meta.url))).agentVersion;
+ await page.route('http://127.0.0.1:*/api/status',route=>route.fulfill({json:{ok:true,agentVersion:version,analysisApiVersion:2,vpdlAvailable:true,state:{running:false}}}));
+ await page.evaluate(()=>window.__VISIONQC_DEBUG__.setPage('settings'));
+ await page.route('http://127.0.0.1:*/api/pick/start',route=>route.fulfill({json:{ok:true,paths:['C:\\Logs\\after-reload.csv']}}));
+ await page.route('http://127.0.0.1:*/api/analysis/import/start',async route=>{request=route.request().postDataJSON();await new Promise(resolve=>release=resolve);await route.abort().catch(()=>{});});
+ await page.route('http://127.0.0.1:*/api/analysis/status',route=>route.fulfill({json:request?{...done(null),importRequestId:request.importRequestId,importCommitted:true,imported:500}:done(null)}));
+ await page.locator('.vq43-input-row[data-vq-position="AN(TOP)"] [data-vq-action="choose-result"]').click();await expect.poll(()=>!!request).toBe(true);
+ const reload=page.reload();release();await reload;await page.waitForFunction(()=>window.__VISIONQC_DEBUG__?.analysisRestoreReady());await page.evaluate(()=>window.__VISIONQC_DEBUG__.setPage('settings'));
+ await expect(page.locator('.vq43-input-row[data-vq-position="AN(TOP)"]')).toContainText('after-reload.csv');
+});
+
+test('cancel is available before import acknowledgement and keeps previous filename',async({page})=>{
+ await setup(page);let release,request,cancelled=false;
+ await page.evaluate(()=>window.__VISIONQC_DEBUG__.setPage('settings'));
+ await page.route('http://127.0.0.1:*/api/pick/start',route=>route.fulfill({json:{ok:true,paths:['C:\\Logs\\cancel-before-ack.csv']}}));
+ await page.route('http://127.0.0.1:*/api/analysis/import/start',async route=>{request=route.request().postDataJSON();await new Promise(resolve=>release=resolve);await route.fulfill({json:{...done(null),ok:false,error:'fixture early cancelled',importRequestId:request.importRequestId,importCommitted:false}});});
+ await page.route('http://127.0.0.1:*/api/analysis/cancel',route=>{cancelled=true;return route.fulfill({json:{ok:true}});});
+ const row=page.locator('.vq43-input-row[data-vq-position="AN(TOP)"]');await row.locator('[data-vq-action="choose-result"]').click();await expect.poll(()=>!!request).toBe(true);
+ await page.locator('#vq43-analysis-import-progress button').click();await expect.poll(()=>cancelled).toBe(true);release();await expect(page.locator('#vq43-analysis-import-progress')).toHaveCount(0);
+ await expect(row).toContainText('results.csv');await expect(row).not.toContainText('cancel-before-ack.csv');
+});
+
+test('reload explicitly restores a previously failed analysis before reading its dashboard',async({page})=>{
+ await setup(page);let restored=false;const version=JSON.parse(readFileSync(new URL('../RELEASE_MANIFEST.json',import.meta.url))).agentVersion;
+ await page.evaluate(()=>window.__VISIONQC_DEBUG__.saveAnalysisSnapshot());
+ await page.route('http://127.0.0.1:*/api/status',route=>route.fulfill({json:{ok:true,agentVersion:version,analysisApiVersion:2,vpdlAvailable:true,state:{running:false}}}));
+ await page.route('http://127.0.0.1:*/api/analysis/status',route=>{if(route.request().postDataJSON()?.action==='restore')restored=true;return route.fulfill({json:restored?done(null):{ok:false,error:'fixture cancelled update',completed:false,running:false}});});
+ await page.reload();await page.waitForFunction(()=>window.__VISIONQC_DEBUG__?.analysisRestoreReady());
+ await expect.poll(()=>restored).toBe(true);await expect.poll(()=>page.evaluate(()=>window.__VISIONQC_DEBUG__.agentAnalysisSnapshot().total)).toBe(4000000);
+});
+
+test('lost Position removal acknowledgement reconciles its receipt without repeating removal',async({page})=>{
+ await setup(page);let request=null,posts=0;
+ await page.evaluate(()=>window.__VISIONQC_DEBUG__.setPage('settings'));
+ await page.route('http://127.0.0.1:*/api/analysis/remove-position',async route=>{request=route.request().postDataJSON();posts++;await route.abort();});
+ await page.route('http://127.0.0.1:*/api/analysis/status',route=>route.fulfill({json:request?{...done(null),importRequestId:request.importRequestId,importCommitted:true,imported:0}:done(null)}));
+ await page.route('http://127.0.0.1:*/api/analysis/dashboard',route=>route.fulfill({json:done(request?{...model,recordCount:0,rawRowCount:0,tools:[],positionSummaries:[],positionToolSummaries:[]}:model)}));
+ const row=page.locator('.vq43-input-row[data-vq-position="AN(TOP)"]');await row.locator('[data-vq-action="remove-result"]').click();await expect(row).toContainText('미입력');expect(posts).toBe(1);expect(request.importRequestId).toMatch(/^[a-f0-9]{32}$/);
+});
+
 test('Without Agent, one picker imports multiple CSV and XLSX into selected Position and preserves other rows',async({page})=>{
  await page.route('http://127.0.0.1:*/api/**',route=>route.abort());
  await page.goto('/index.html?vqDebug=1&browserRegression=1');await page.waitForFunction(()=>window.__VISIONQC_DEBUG__?.analysisRestoreReady());

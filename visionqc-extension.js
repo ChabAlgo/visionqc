@@ -1,7 +1,7 @@
 (() => {
   'use strict';
 
-  const VERSION = '4.8.20';
+  const VERSION = '4.8.21';
   const DEFAULT_POSITION_DEFS = [
     { key:'CA_TOP', name:'CA(TOP)' },
     { key:'AN_TOP', name:'AN(TOP)' },
@@ -27,9 +27,9 @@
   const NG_POSITION_PREFIX = 'ng-position:';
   const IMG_RE = /\.(png|jpe?g|bmp|gif|webp|tif?f)$/i;
   const LOCAL_AGENT_URL = 'http://127.0.0.1:17891';
-  const EXPECTED_AGENT_VERSION = '1.4.20';
-  const AGENT_INSTALLER_URL = './downloads/VisionQC_Agent_Installer_v1.4.20.exe';
-  const OFFLINE_PACKAGE_URL = './downloads/VisionQC_Offline_v4.8.20.zip';
+  const EXPECTED_AGENT_VERSION = '1.4.21';
+  const AGENT_INSTALLER_URL = './downloads/VisionQC_Agent_Installer_v1.4.21.exe';
+  const OFFLINE_PACKAGE_URL = './downloads/VisionQC_Offline_v4.8.21.zip';
   // SQLite에는 사용자가 명시적으로 남기려는 두 종류의 결과만 표시한다.
   // 이전 버전의 단발 검사(single-inspection) 이력은 보존하되 화면 집계에서는 제외한다.
   const PERSISTED_HISTORY_SOURCE_TYPES = ['simulation', 'csv-import', 'csv-file-stream'];
@@ -1398,7 +1398,7 @@
     clearTimeout(snapshotTimer);
     const remote=state.remoteAnalysis;
     const reference=remote ? {analysisId:remote.analysisId,runId:remote.runId,inputs:remote.inputs,filePaths:remote.filePaths,excludedPositions:remote.excludedPositions,saved:!!remote.saved,live:!!remote.live} : null;
-    const data = structuredClone({ remoteAnalysis:reference,resultInputs:state.resultInputs, ngImages:state.ngImages,
+    const data = structuredClone({ remoteAnalysis:reference,pendingResultImport:state.pendingResultImport||null,resultInputs:state.resultInputs, ngImages:state.ngImages,
       ngRootName:state.ngRootName, ngFolderNames:state.ngFolderNames, ngWarnings:state.ngWarnings, ngSources:state.ngSources,
       thresholds:state.thresholds, dashboardDate:state.dashboardDate, dashboardPositions:state.dashboardPositions, page:state.page });
     const write = snapshotWrites.catch(()=>{}).then(()=>saveHandle(ANALYSIS_SNAPSHOT_KEY, data));
@@ -1626,7 +1626,7 @@
 
   async function analysisApi(path, body, timeout = 30000) {
     const result = await agentFetch(`/api/analysis/${path}`, {method:'POST', body, timeout});
-    if (!result?.ok) throw Object.assign(new Error(result?.error || '분석 요청 실패'), {busy:!!result?.busy});
+    if (!result?.ok) throw Object.assign(new Error(result?.error || '분석 요청 실패'), {busy:!!result?.busy,analysisRejected:true});
     return result;
   }
 
@@ -1646,6 +1646,58 @@
   async function agentAnalysisOperation(path, body, onProgress) {
     const started = await analysisApi(path, body);
     return waitAnalysisOperation(started, onProgress);
+  }
+
+  function publishCommittedImport(imported,pending) {
+    const {position,chosen,inputs,filePaths,excludedPositions}=pending;
+    state.remoteAnalysis={analysisId:imported.analysisId,runId:imported.runId,inputs,filePaths,excludedPositions,needsRestore:true};
+    state.resultInputs={...(pending.incremental||pending.remove?state.resultInputs:{})};
+    if(pending.remove)delete state.resultInputs[position];
+    else state.resultInputs[position]={position,remote:true,rowCount:imported.imported,rows:[],warnings:[],fileName:chosen.map(path=>path.split(/[\\/]/).pop()).join(', '),updatedAt:Date.now()};
+    state.dashboardDate='';state.pendingResultImport=null;scheduleAnalysisSnapshot();
+  }
+
+  async function startResultImport(body,pending,onProgress,endpoint='import/start') {
+    let acknowledged=false;
+    try {
+      const started=await analysisApi(endpoint,{...body,importRequestId:pending.requestId});acknowledged=true;
+      const result=await waitAnalysisOperation(started,onProgress);
+      if(result.importRequestId!==undefined&&(result.importRequestId!==pending.requestId||!result.importCommitted))throw new Error('파일 입력 반영을 확인하지 못했습니다.');
+      return result;
+    }catch(error){
+      if(!acknowledged&&error.analysisRejected){error.importRejected=true;throw error;}
+      // Query the same request only. Never POST the upload again after a lost acknowledgement.
+      try{
+        let status=await agentFetch('/api/analysis/status',{method:'POST',body:{analysisId:pending.analysisId,action:'restore'},timeout:5000});
+        if(status?.importRequestId===pending.requestId){
+          if(!status.running&&!status.importCommitted){error.importRejected=true;throw error;}
+          status=await waitAnalysisOperation(status,onProgress);
+          if(status.importCommitted)return status;
+          error.importRejected=true;
+        }
+      }catch{}
+      throw error;
+    }
+  }
+
+  let pendingImportRecovery=null;
+  function recoverPendingResultImport() {
+    if(pendingImportRecovery)return pendingImportRecovery;
+    const pending=state.pendingResultImport;if(!pending||state.loading)return Promise.resolve();
+    pendingImportRecovery=(async()=>{
+      try{
+        let status=await agentFetch('/api/analysis/status',{method:'POST',body:{analysisId:pending.analysisId,action:'restore'},timeout:5000});
+        if(state.pendingResultImport!==pending)return;
+        if(!status?.ok&&!status?.importRequestId&&String(status?.error||'').includes('저장된 분석을 찾을 수 없습니다.')){state.pendingResultImport=null;scheduleAnalysisSnapshot();return;}
+        if(status?.importRequestId!==pending.requestId)return;
+        if(status.running)status=await waitAnalysisOperation(status);
+        if(state.pendingResultImport!==pending)return;
+        if(!status.importCommitted){state.pendingResultImport=null;scheduleAnalysisSnapshot();return;}
+        publishCommittedImport(status,pending);
+        await refreshAgentDashboard();if(state.page==='settings')renderSettings();
+      }catch{/* Retain the request reference for the next connection/reload. */}
+    })().finally(()=>{pendingImportRecovery=null;});
+    return pendingImportRecovery;
   }
 
   function emptyRemoteModel(data) {
@@ -1673,6 +1725,7 @@
 
   async function chooseAgentResultFiles(position) {
     if (state.loading) return;
+    if(state.pendingResultImport){await recoverPendingResultImport();if(state.pendingResultImport)return showToast('이전 파일 입력의 완료 여부를 확인 중입니다. Agent 연결을 확인하세요.',true);if(state.loading)return;}
     const previous=state.remoteAnalysis;
     const incremental=!!previous && !previous.live;
     let committed=false;
@@ -1695,20 +1748,25 @@
       const changedPaths=[...new Set(Object.values(changedInputs).flat())];
       const filePositions=Object.fromEntries(Object.entries(changedInputs).flatMap(([key,paths])=>paths.map(path=>[path,key])));
       const fileAssignments=Object.entries(changedInputs).flatMap(([position,paths])=>paths.map(path=>({path,position})));
-      const imported=await agentAnalysisOperation('import/start',{
+      const requestId=crypto.randomUUID().replaceAll('-','');
+      const pending={requestId,analysisId:incremental?previous.analysisId:requestId,incremental,position,chosen,inputs,filePaths,excludedPositions};
+      state.pendingResultImport=pending;
+      let cancelRequested=false,cancelAcknowledged=false;
+      const cancelButton=progressBar.querySelector('button');
+      cancelButton.onclick=()=>{cancelRequested=true;cancelButton.disabled=true;analysisApi('cancel',{analysisId:pending.analysisId}).catch(()=>{});};
+      try{await saveAnalysisSnapshot();}catch(error){showToast(`입력 요청 보관 실패: ${error.message}`,true);}
+      const imported=await startResultImport({
         ...(incremental?{analysisId:previous.analysisId,position}:{}),
         filePaths:changedPaths,filePositions,fileAssignments,excludedPositions,options:{defaultPosition:position,namingProfile:state.namingProfile,positionDefinitions:positionDefinitions(),webVersion:VERSION,mode:'csv-analysis'}
-      }, status=>{
+      },pending,status=>{
         const progress=$('#vq43-analysis-import-progress');
         if(progress){progress.querySelector('span').textContent=`읽기 ${numberText(status.imported)}행 · 집계 ${numberText(status.projectedCursor)}행`;
-          progress.querySelector('button').onclick=()=>analysisApi('cancel',{analysisId:status.analysisId}).catch(error=>showToast(error.message,true));}
+          if(cancelRequested&&!cancelAcknowledged){cancelAcknowledged=true;analysisApi('cancel',{analysisId:status.analysisId}).catch(()=>{});}}
       });
       // The Agent has committed this revision. Persist its file labels before optional
       // follow-up requests, so a dropped response cannot restore old labels over new data.
       committed=true;
-      state.remoteAnalysis={analysisId:imported.analysisId,runId:imported.runId,inputs,filePaths,excludedPositions};
-      state.resultInputs={...state.resultInputs,[position]:{position,remote:true,rowCount:imported.imported,rows:[],warnings:[],fileName:chosen.map(path=>path.split(/[\\/]/).pop()).join(', '),updatedAt:Date.now()}};
-      state.dashboardDate='';scheduleAnalysisSnapshot();
+      publishCommittedImport(imported,pending);
       if(!incremental || previous.actualInput!==state.ngImages || previous.actualInputCount!==state.ngImages.length)await syncAgentActualNg(imported.analysisId);
       const thresholds=Object.entries(state.thresholds).map(([key,value])=>{const split=key.indexOf('|');return {position:key.slice(0,split),tool:key.slice(split+1),value};});
       const thresholdSignature=JSON.stringify(thresholds);
@@ -1727,6 +1785,7 @@
       scheduleAnalysisSnapshot();
       showToast(`${position} ${numberText(imported.imported)}행을 분석했습니다. 전체 ${numberText(model.rawRowCount)}행`);
     } catch(error) {
+      if(error.importRejected){state.pendingResultImport=null;scheduleAnalysisSnapshot();}
       // A failed/cancelled staged replacement leaves the committed analysis intact.
       if(incremental&&state.remoteAnalysis===previous){try{await fetchAgentDashboard(previous.analysisId);}catch{}}
       if(committed&&state.remoteAnalysis){
@@ -1798,7 +1857,7 @@
       let applied=-1;
       while(state.remoteAnalysis===remote && applied!==remote.revision) {
         const revision=remote.revision;
-        await waitAnalysisOperation(await analysisApi('status',{analysisId:remote.analysisId}));
+        await waitAnalysisOperation(await analysisApi('status',{analysisId:remote.analysisId,...(remote.needsRestore?{action:'restore'}:{})}));
         const definitionsSignature=JSON.stringify(positionDefinitions());
         if(remote.positionDefinitionsSignature!==definitionsSignature){await agentAnalysisOperation('dashboard',{analysisId:remote.analysisId,positionDefinitions:positionDefinitions()});remote.positionDefinitionsSignature=definitionsSignature;remote.actualInput=null;remote.syncActual=true;remote.syncThresholds=true;}
         if(remote.syncActual){remote.syncActual=false;
@@ -1882,17 +1941,20 @@
 
   async function removeResultInput(position) {
     if(state.remoteAnalysis){
+      if(state.pendingResultImport){await recoverPendingResultImport();if(state.pendingResultImport)return showToast('이전 입력 요청의 완료 여부를 확인 중입니다.',true);}
       const previous=state.remoteAnalysis;
       if(state.simulationProgress?.running)return showToast('시뮬레이션 완료 후 입력을 제거할 수 있습니다.',true);
       if(state.loading)return;
       state.loading=`result:${position}`;renderSettings();
       try{
-        const done=await agentAnalysisOperation('remove-position',{analysisId:previous.analysisId,position});
         const inputs={...previous.inputs};delete inputs[position];
-        state.remoteAnalysis={analysisId:done.analysisId,runId:done.runId,inputs,filePaths:[...new Set(Object.values(inputs).flat())],excludedPositions:[...new Set([...(previous.excludedPositions||[]),position])]};
-        state.dashboardDate='';delete state.resultInputs[position];
+        const requestId=crypto.randomUUID().replaceAll('-','');
+        const pending={requestId,analysisId:previous.live?requestId:previous.analysisId,remove:true,incremental:!previous.live,position,chosen:[],inputs,filePaths:[...new Set(Object.values(inputs).flat())],excludedPositions:[...new Set([...(previous.excludedPositions||[]),position])]};
+        state.pendingResultImport=pending;try{await saveAnalysisSnapshot();}catch{}
+        const done=await startResultImport({analysisId:previous.analysisId,position},pending,null,'remove-position');
+        publishCommittedImport(done,pending);
         await refreshAgentDashboard();
-      }catch(error){state.remoteAnalysis=previous;showToast(`입력 제거 실패: ${error.message}`,true);}
+      }catch(error){if(error.importRejected){state.pendingResultImport=null;scheduleAnalysisSnapshot();}state.remoteAnalysis=previous;showToast(`입력 제거 실패: ${error.message}`,true);}
       finally{state.loading='';renderSettings();}return;
     }
     delete state.resultInputs[position];
@@ -2317,6 +2379,7 @@
 
   async function clearAnalysisInputs() {
     if (!window.confirm('Position 결과 파일과 실제 NG 이미지 설정을 모두 초기화할까요?')) return;
+    state.pendingResultImport=null;
     state.remoteAnalysis=null;
     state.resultInputs = {}; state.ngRootName = ''; state.ngImages = []; state.ngFolderNames = {}; state.ngWarnings = []; state.ngSources = []; state.restoreWarnings = [];
     try { await clearHandles(); } catch (error) { console.error(error); }
@@ -4745,7 +4808,8 @@
       }
       const nowRunning = !!data.state?.running;
       const runId = String(data.state?.simulationRunId || '');
-      if(state.remoteAnalysis?.needsRestore&&!state.remoteAnalysis.refreshing&&state.simulationAgent.analysisApiVersion>=1)refreshAgentDashboard({actual:false,thresholds:false});
+      if(state.pendingResultImport&&!state.loading)recoverPendingResultImport();
+      else if(state.remoteAnalysis?.needsRestore&&!state.remoteAnalysis.refreshing&&state.simulationAgent.analysisApiVersion>=1)refreshAgentDashboard({actual:false,thresholds:false});
       if(nowRunning&&runId&&state.simulationAgent.analysisApiVersion>=1)state.simulationDbLiveEnabled=true;
       if (nowRunning && runId) state.simulationLiveRunId = runId;
       if (nowRunning && runId && state.simulationDbLiveEnabled) syncSimulationLiveResults(data.state);

@@ -117,18 +117,33 @@ INSERT INTO stats_ready VALUES(2);"))
         internal string HistoryRunId
         { get {lock(_sync)using(var command=Command("SELECT revision FROM main.analysis_revision WHERE id=1")){string value=Convert.ToString(command.ExecuteScalar());return string.IsNullOrEmpty(value)?_runId:value;}} }
 
+        internal long ImportedRowCount(string position)
+        {lock(_sync)using(var command=Command("SELECT COALESCE(SUM(raw_rows),0) FROM position_stats WHERE @position='' OR position=@position")){command.Parameters.AddWithValue("@position",string.IsNullOrEmpty(position)?"":new PositionAliases(PositionDefinitions).Canonical(position));return Convert.ToInt64(command.ExecuteScalar());}}
+
         internal bool HasPositionConfiguration(List<PositionAliasDefinition> definitions)
         {return definitions==null || new JavaScriptSerializer().Serialize(definitions)==_positionDefinitionsJson;}
 
+        internal List<PositionAliasDefinition> PositionDefinitions
+        {get{return new JavaScriptSerializer().Deserialize<List<PositionAliasDefinition>>(_positionDefinitionsJson);}}
+
+        internal void CopyConfigurationFrom(AnalysisProjection prior)
+        {
+            ConfigurePositions(prior.PositionDefinitions,CancellationToken.None,false);
+            using(var command=Command("ATTACH DATABASE @path AS previous_configuration"))
+            {command.Parameters.AddWithValue("@path",prior._cachePath);command.ExecuteNonQuery();}
+            try{Execute("INSERT INTO thresholds SELECT * FROM previous_configuration.thresholds;INSERT INTO actual_ng SELECT * FROM previous_configuration.actual_ng;");}
+            finally{Execute("DETACH DATABASE previous_configuration");}
+        }
+
         // Only the selected Position is replaced. Unchanged CSVs, raw rows and tool facts are
         // never parsed/copied/re-aggregated. Staging has already validated every incoming row.
-        internal void ReplacePosition(string position,string stagedSource,string stagedProjection,CancellationToken cancellation)
+        internal void ReplacePosition(string position,string stagedSource,string stagedProjection,CancellationToken cancellation,string revision=null)
         {
             lock(_sync)
             {
                 if(string.IsNullOrWhiteSpace(position))throw new InvalidDataException("Position을 선택하세요.");
                 // Read-only exports must finish preparing their path list before this mutation.
-                Execute("CREATE TABLE IF NOT EXISTS source.analysis_revision(id INTEGER PRIMARY KEY,revision TEXT NOT NULL);");
+                Execute("CREATE TABLE IF NOT EXISTS source.analysis_revision(id INTEGER PRIMARY KEY,revision TEXT NOT NULL);CREATE INDEX IF NOT EXISTS source.idx_images_position_alias ON images(position_key);");
                 using(var attach=Command("ATTACH DATABASE @path AS incoming_source"))
                 {attach.Parameters.AddWithValue("@path",stagedSource);attach.ExecuteNonQuery();}
                 try
@@ -142,7 +157,7 @@ INSERT INTO stats_ready VALUES(2);"))
                         using(cancellation.Register(()=>command.Cancel()))
                         {
                             command.Transaction=tx;command.Parameters.AddWithValue("@position",position);
-                            command.Parameters.AddWithValue("@revision",Guid.NewGuid().ToString("N"));
+                            command.Parameters.AddWithValue("@revision",revision??Guid.NewGuid().ToString("N"));
                             command.CommandText="SELECT COUNT(*) FROM incoming_source.images WHERE position_key<>@position OR position_key IS NULL";
                             if(Convert.ToInt64(command.ExecuteScalar())!=0)throw new InvalidDataException("선택한 Position 이외의 결과가 포함되어 있습니다.");
                             command.CommandText="SELECT COALESCE(MAX(image_id),0) FROM source.images";

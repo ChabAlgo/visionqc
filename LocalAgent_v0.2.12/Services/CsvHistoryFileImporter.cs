@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.Globalization;
 using System.IO;
 using System.Linq;
+using System.Security.Cryptography;
 using System.Text;
 using System.Threading;
 using System.Web.Script.Serialization;
@@ -62,6 +63,7 @@ namespace VisionQC.LocalAgent.Services
             SqliteRunStore.RunStoreSession session = null;
             bool completed = false;
             long processed = 0;
+            var workspaceKeys=new Dictionary<string,string>(StringComparer.OrdinalIgnoreCase);
             try
             {
                 session = _store.Start(new SqliteRunStore.RunStoreStart
@@ -83,6 +85,7 @@ namespace VisionQC.LocalAgent.Services
                 cancellation.ThrowIfCancellationRequested();
                 string filePath=source.path;
                 string filePosition=source.position;
+                string fileWorkspaceName=Path.GetFileName(filePath),fileWorkspaceKey=WorkspaceKey("csv-file|"+filePath.ToLowerInvariant());
                 using (var records = ReadRows(filePath,cancellation).GetEnumerator())
                 {
                     if(!records.MoveNext())throw new InvalidDataException("결과 파일 헤더가 비어 있습니다.");
@@ -121,6 +124,17 @@ namespace VisionQC.LocalAgent.Services
                             captureTimestamp = FirstNonEmpty(columns.Value(values, columns.CaptureTimestamp), captureDateAllowed?CaptureTimestamp(dateValue, columns.Value(values, columns.Time)):""),
                             tools = columns.ReadTools(values)
                         };
+                        // Missing Workspace metadata must not repeat the entire selected file list
+                        // in every observation. Keep explicit metadata and use a bounded per-file fallback.
+                        if(string.IsNullOrWhiteSpace(record.workspaceType))record.workspaceType="csv-analysis";
+                        if(string.IsNullOrWhiteSpace(record.workspaceName))
+                        {record.workspaceName=fileWorkspaceName;if(string.IsNullOrWhiteSpace(record.workspaceKey))record.workspaceKey=fileWorkspaceKey;}
+                        else if(string.IsNullOrWhiteSpace(record.workspaceKey))
+                        {
+                            string basis=record.workspaceType+"|"+record.workspaceName,key;
+                            if(!workspaceKeys.TryGetValue(basis,out key)){key=WorkspaceKey("csv-workspace|"+basis.ToLowerInvariant());if(workspaceKeys.Count<10000)workspaceKeys[basis]=key;}
+                            record.workspaceKey=key;
+                        }
                         if(excludedPositions!=null && excludedPositions.Contains(record.position))continue;
                         _store.AppendImportedRecord(session, record);
                         processed++;
@@ -145,6 +159,9 @@ namespace VisionQC.LocalAgent.Services
                 if (!completed) progress?.Invoke(processed);
             }
         }
+
+        private static string WorkspaceKey(string identity)
+        {using(var hash=SHA256.Create())return "csv|"+BitConverter.ToString(hash.ComputeHash(Encoding.UTF8.GetBytes(identity))).Replace("-","").ToLowerInvariant();}
 
         private static IEnumerable<XlsxResultReader.TableRow> ReadRows(string path,CancellationToken cancellation)
         {
