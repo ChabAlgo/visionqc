@@ -1,19 +1,19 @@
 {
-  "releaseTag": "visionqc-v4.8.21-agent-v1.4.21",
-  "webVersion": "4.8.21",
-  "agentVersion": "1.4.21",
-  "minimumAgentVersion": "1.4.21",
+  "releaseTag": "visionqc-v4.8.22-agent-v1.4.22",
+  "webVersion": "4.8.22",
+  "agentVersion": "1.4.22",
+  "minimumAgentVersion": "1.4.22",
   "compatibility": {
-    "web": "4.8.21",
-    "agent": "1.4.21"
+    "web": "4.8.22",
+    "agent": "1.4.22"
   },
   "artifacts": {
-    "agentInstaller": "downloads/VisionQC_Agent_Installer_v1.4.21.exe",
-    "offlinePackage": "downloads/VisionQC_Offline_v4.8.21.zip",
+    "agentInstaller": "downloads/VisionQC_Agent_Installer_v1.4.22.exe",
+    "offlinePackage": "downloads/VisionQC_Offline_v4.8.22.zip",
     "sha256": {
-      "agentInstaller": "CC8382D175EDE370828AE2BFD8438E64D2282AE434C892B0E4F5CFD7782BC7DA",
-      "offlinePackage": "B94F2485D1EA065CF351781AEB1DBA4A3A58E698F09BD2641439D8357D71F765"
+      "agentInstaller": "3A045FE68E6CAE650BFC21E17F5E33C9BD39D99C8750362FF7B9B06902E9E744",
+      "offlinePackage": "E6ED32B4E88F99F9C10D450DECCEBCD44559E789DF28083E6037F11E3DA1E5CC"
     }
   },
-  "notes": "추가 정합성 점검: 별칭 포지션 제거·이력 표시·실패 후 복원·이전 분석 DB 호환 보완. 입력/제거 요청 ID와 통신 응답 유실·새로고침 복구."
+  "notes": "검사 진행 통신 분리·저장 명령 재사용·반복 집계 생략·Score 조회 복구·진행 로그 레이아웃 계산 축소"
 }

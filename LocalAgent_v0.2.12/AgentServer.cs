@@ -234,8 +234,8 @@ namespace VisionQC.LocalAgent
                 {
                     await WriteSseHeaders(stream, origin).ConfigureAwait(false);
                     var sse = new SseClient(client, stream);
-                    lock (_sync) _sse.Add(sse);
-                    await WriteSse(sse, "status", Snapshot()).ConfigureAwait(false);
+                    sse.Writer=new BoundedEventWriter(stream,()=>{lock(_sync)_sse.Remove(sse);try{client.Close();}catch{}});
+                    lock (_sync){_sse.Add(sse);sse.Writer.TryWrite(Encoding.UTF8.GetBytes("event: status\ndata: "+_json.Serialize(Snapshot())+"\n\n"));}
                     return;
                 }
 
@@ -2673,12 +2673,13 @@ namespace VisionQC.LocalAgent
         {
             List<SseClient> clients;
             lock (_sync) clients = _sse.ToList();
+            if(clients.Count==0)return;
+            byte[] bytes = Encoding.UTF8.GetBytes("event: " + eventName + "\ndata: " + payload + "\n\n");
             foreach (var client in clients)
             {
                 try
                 {
-                    byte[] bytes = Encoding.UTF8.GetBytes("event: " + eventName + "\ndata: " + payload + "\n\n");
-                    lock (client.Sync) client.Stream.Write(bytes, 0, bytes.Length);
+                    client.Writer.TryWrite(bytes);
                 }
                 catch
                 {
@@ -2708,13 +2709,6 @@ namespace VisionQC.LocalAgent
                 state = Snapshot()
             }, true);
             if (normalizedLevel != "PROGRESS") AgentDiagnostics.Write(normalizedLevel, message);
-        }
-
-        private async Task WriteSse(SseClient client, string eventName, object data)
-        {
-            string payload = _json.Serialize(data);
-            byte[] bytes = Encoding.UTF8.GetBytes("event: " + eventName + "\ndata: " + payload + "\n\n");
-            await client.Stream.WriteAsync(bytes, 0, bytes.Length).ConfigureAwait(false);
         }
 
         private static string FormatEta(double seconds)
@@ -3127,7 +3121,7 @@ namespace VisionQC.LocalAgent
             _portMutex?.Dispose();
             lock (_sync)
             {
-                foreach (var c in _sse) try { c.Client.Close(); } catch { }
+                foreach (var c in _sse.ToArray()) try { c.Writer?.Dispose();c.Client.Close(); } catch { }
                 _sse.Clear();
             }
             lock (_vpdlSync)
@@ -3164,7 +3158,7 @@ namespace VisionQC.LocalAgent
         {
             public readonly TcpClient Client;
             public readonly NetworkStream Stream;
-            public readonly object Sync = new object();
+            public BoundedEventWriter Writer;
             public SseClient(TcpClient client, NetworkStream stream) { Client = client; Stream = stream; }
         }
     }

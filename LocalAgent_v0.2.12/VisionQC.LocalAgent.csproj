@@ -80,6 +80,7 @@
     <Compile Include="Services\AnalysisService.cs" />
     <Compile Include="Services\LogMaintenance.cs" />
     <Compile Include="Services\CsvHistoryFileImporter.cs" />
+    <Compile Include="Services\BoundedEventWriter.cs" />
     <Compile Include="Services\XlsxResultReader.cs" />
     <Compile Include="Services\ResultCsv.cs" />
     <Compile Include="Services\PartitionedCsvWriter.cs" />

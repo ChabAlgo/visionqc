@@ -1,6 +1,44 @@
 import {test,expect} from '@playwright/test';
 import {readFileSync} from 'node:fs';
 
+test('Progress log burst preserves lines and bounds forced scroll layout reads to one frame',async({page})=>{
+ await setup(page);await page.evaluate(()=>window.__VISIONQC_DEBUG__.setPage('simulation'));
+ const report=await page.evaluate(async()=>{const box=document.querySelector('#vq43-sim-detail-log');const getter=Object.getOwnPropertyDescriptor(Element.prototype,'scrollHeight').get;let reads=0;Object.defineProperty(box,'scrollHeight',{get(){reads++;return getter.call(this);}});for(let i=0;i<1600;i++)window.__VISIONQC_DEBUG__.appendSimulationLog({level:'PROGRESS',message:'synthetic '+i});const synchronousReads=reads;await new Promise(resolve=>requestAnimationFrame(()=>requestAnimationFrame(resolve)));return {synchronousReads,reads,lines:box.children.length,last:box.lastElementChild.textContent};});
+ expect(report.synchronousReads).toBe(0);expect(report.reads).toBeLessThanOrEqual(2);expect(report.lines).toBe(1500);expect(report.last).toContain('synthetic 1599');
+});
+
+test('Score request failure can retry without replacing the analysis or losing its filters',async({page})=>{
+ const requests=await setup(page);let fail=true;
+ await page.route('http://127.0.0.1:*/api/analysis/statistics',async route=>{if(fail){fail=false;await route.fulfill({json:{ok:false,error:'Synthetic temporary busy',busy:true}});}else await route.fallback();});
+ await page.evaluate(()=>window.__VISIONQC_DEBUG__.setPage('analysis'));
+ await expect(page.locator('#vq43-agent-score-status')).toContainText('Synthetic temporary busy');
+ await page.locator('[data-agent-score-retry]').click();
+ await expect.poll(async()=> (await page.evaluate(()=>window.__VISIONQC_DEBUG__.agentAnalysisSnapshot())).points).toBe(300);
+ expect(requests.filter(r=>r.path==='/api/analysis/import/start')).toHaveLength(0);
+});
+
+test('Unchanged simulation progress skips redundant aggregation but final confirmation still runs',async({page})=>{
+ const requests=await setup(page);
+ await page.evaluate(()=>window.__VISIONQC_DEBUG__.syncAgentLiveTest(4000000));
+ const before=requests.filter(r=>r.path==='/api/simulation/analysis').length;
+ for(let i=0;i<4;i++)await page.evaluate(()=>window.__VISIONQC_DEBUG__.syncAgentLiveTest(4000000));
+ expect(requests.filter(r=>r.path==='/api/simulation/analysis')).toHaveLength(before);
+ await page.evaluate(()=>window.__VISIONQC_DEBUG__.syncAgentLiveTest(4000000,true));
+ expect(requests.filter(r=>r.path==='/api/simulation/analysis')).toHaveLength(before+1);
+});
+
+test('Score page response for an old Position cannot block loading the newly selected Position',async({page})=>{
+ await setup(page);await page.evaluate(()=>window.__VISIONQC_DEBUG__.setPage('analysis'));
+ await expect.poll(async()=> (await page.evaluate(()=>window.__VISIONQC_DEBUG__.agentAnalysisSnapshot())).points).toBe(300);
+ let release,entered;const gate=new Promise(resolve=>release=resolve),started=new Promise(resolve=>entered=resolve);
+ await page.route('http://127.0.0.1:*/api/analysis/score-window',async route=>{if(route.request().postDataJSON().afterId>0){entered();await gate;}await route.fallback();});
+ await page.locator('[data-agent-score-page="1"]').click();await started;
+ const positions=page.locator('[data-vq-dropdown="position"]');await positions.locator('.vq43-dropdown-button').click();await positions.locator('[data-value="AN(TOP)"]').click();
+ release();
+ await expect.poll(async()=> (await page.evaluate(()=>window.__VISIONQC_DEBUG__.agentAnalysisSnapshot())).scoreOffset).toBe(0);
+ await expect(page.locator('.vq43-analysis-page .vq43-history-navigation')).toContainText('1–300');
+});
+
 const id='0123456789abcdef0123456789abcdef';
 const days=Array.from({length:23},(_,i)=>({date:`2026-02-${String(i+1).padStart(2,'0')}`,total:100,ng:5,ngRate:.05}));
 const model={remote:true,dailyUnit:'cell',recordCount:4000000,rawRowCount:4000000,uniqueCellCount:2000000,ngCellCount:100000,ngCellRate:.05,
@@ -167,17 +205,19 @@ test('Score layout stays mounted across delayed live refreshes and reload restor
  await expect.poll(async()=> (await page.evaluate(()=>window.__VISIONQC_DEBUG__.agentAnalysisSnapshot())).points).toBe(300);
  for(let i=0;i<3;i++){
   let release;const gate=new Promise(resolve=>release=resolve);let reached=false;
+  await page.route('http://127.0.0.1:*/api/analysis/dashboard',route=>route.fulfill({json:done({...model,rawRowCount:4000000+i})}));
   await page.route('http://127.0.0.1:*/api/analysis/statistics',async route=>{
    reached=true;await gate;
    await route.fulfill({json:done({total:{count:602+i,min:.6,max:.6,mean:.6,median:.6},byResult:[{result:'NG',count:602+i,min:.6,max:.6,mean:.6,median:.6}],bins:[{bin:12,result:'NG',count:602+i}]})});
   });
   await page.evaluate(()=>{window.scoreFrame=document.querySelector('.vq43-analysis-page');window.scoreChart=document.querySelector('.vq43-analysis-scatter');});
-  await page.evaluate(()=>window.__VISIONQC_DEBUG__.syncAgentLiveTest(4000000));
+  await page.evaluate(processed=>window.__VISIONQC_DEBUG__.syncAgentLiveTest(processed),4000000+i);
   await expect.poll(()=>reached).toBe(true);
   expect(await page.evaluate(()=>window.scoreFrame===document.querySelector('.vq43-analysis-page')&&window.scoreChart===document.querySelector('.vq43-analysis-scatter'))).toBe(true);
   await expect(page.locator('#vq43-agent-score-status')).toContainText('집계');
   release();await expect(page.locator('.vq43-kpi').first()).toContainText(String(602+i));
   await page.unroute('http://127.0.0.1:*/api/analysis/statistics');
+  await page.unroute('http://127.0.0.1:*/api/analysis/dashboard');
  }
  await page.route('http://127.0.0.1:*/api/status',route=>route.fulfill({json:{ok:true,agentVersion:'1.4.7',analysisApiVersion:2,vpdlAvailable:true,state:{running:false}}}));
  await page.evaluate(()=>window.__VISIONQC_DEBUG__.saveAnalysisSnapshot());

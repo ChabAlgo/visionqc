@@ -1,7 +1,7 @@
 (() => {
   'use strict';
 
-  const VERSION = '4.8.21';
+  const VERSION = '4.8.22';
   const DEFAULT_POSITION_DEFS = [
     { key:'CA_TOP', name:'CA(TOP)' },
     { key:'AN_TOP', name:'AN(TOP)' },
@@ -27,9 +27,9 @@
   const NG_POSITION_PREFIX = 'ng-position:';
   const IMG_RE = /\.(png|jpe?g|bmp|gif|webp|tif?f)$/i;
   const LOCAL_AGENT_URL = 'http://127.0.0.1:17891';
-  const EXPECTED_AGENT_VERSION = '1.4.21';
-  const AGENT_INSTALLER_URL = './downloads/VisionQC_Agent_Installer_v1.4.21.exe';
-  const OFFLINE_PACKAGE_URL = './downloads/VisionQC_Offline_v4.8.21.zip';
+  const EXPECTED_AGENT_VERSION = '1.4.22';
+  const AGENT_INSTALLER_URL = './downloads/VisionQC_Agent_Installer_v1.4.22.exe';
+  const OFFLINE_PACKAGE_URL = './downloads/VisionQC_Offline_v4.8.22.zip';
   // SQLite에는 사용자가 명시적으로 남기려는 두 종류의 결과만 표시한다.
   // 이전 버전의 단발 검사(single-inspection) 이력은 보존하되 화면 집계에서는 제외한다.
   const PERSISTED_HISTORY_SOURCE_TYPES = ['simulation', 'csv-import', 'csv-file-stream'];
@@ -3549,7 +3549,7 @@
   async function loadAgentScores() {
     const remote=state.remoteAnalysis;if(!remote||remote.scoresLoading||remote.refreshing)return;
     const request=agentScoreRequest(),key=JSON.stringify({...request,revision:remote.revision||0});
-    remote.scoresLoading=true;
+    remote.scoresLoading=true;remote.scoreError='';remote.scoreErrorKey='';
     try {
       await waitAnalysisOperation(await analysisApi('status',{analysisId:remote.analysisId}));
       const stats=(await agentAnalysisOperation('statistics',request)).result;
@@ -3562,18 +3562,18 @@
       const response=await analysisApi('score-window',{...request,afterScore:-1,afterId:0});
       if(state.remoteAnalysis!==remote||JSON.stringify({...agentScoreRequest(),revision:remote.revision||0})!==key)return;
       remote.scores={key,requestKey:JSON.stringify(request),stats,minimum,page:response.page,offset:0};adoptAgentScorePage(response.page);
-    } catch(error){remote.scoreError=error.message;showToast(`Score 조회 실패: ${error.message}`,true);}
+    } catch(error){if(state.remoteAnalysis===remote&&JSON.stringify({...agentScoreRequest(),revision:remote.revision||0})===key){remote.scoreError=error.message;remote.scoreErrorKey=key;showToast(`Score 조회 실패: ${error.message}`,true);}}
     finally {
       remote.scoresLoading=false;
       if(state.remoteAnalysis===remote&&state.page==='analysis'){
-        if(!remote.scoreError)renderCurrentPage();
-        else {const target=$('#vq43-agent-score-status');if(target)target.textContent=remote.scoreError;}
+        renderCurrentPage();
       }
     }
   }
 
   async function changeAgentScorePage(direction) {
     const remote=state.remoteAnalysis,view=remote?.scores;if(!view||remote.scoresLoading)return;
+    const key=JSON.stringify({...agentScoreRequest(),revision:remote.revision||0});if(view.key!==key)return;
     if(direction<0&&view.offset===0)return showModalBoundary(-1);
     if(direction>0&&!view.page.hasMore)return showModalBoundary(1);
     remote.scoresLoading=true;
@@ -3581,10 +3581,10 @@
       const previous=direction<0;
       const response=await analysisApi('score-window',{...agentScoreRequest(),previous,
         afterScore:previous?view.page.previousScore:view.page.nextScore,afterId:previous?view.page.previousId:view.page.nextId});
-      if(state.remoteAnalysis!==remote)return;
+      if(state.remoteAnalysis!==remote||remote.scores!==view||JSON.stringify({...agentScoreRequest(),revision:remote.revision||0})!==key)return;
       view.offset=Math.max(0,view.offset+(previous?-response.page.records.length:view.page.records.length));
-      view.page={...response.page,hasMore:previous?true:response.page.hasMore};adoptAgentScorePage(view.page);renderCurrentPage();
-    }catch(error){showToast(error.message,true);}finally{remote.scoresLoading=false;}
+      view.page={...response.page,hasMore:previous?true:response.page.hasMore};adoptAgentScorePage(view.page);
+    }catch(error){showToast(error.message,true);}finally{remote.scoresLoading=false;if(state.remoteAnalysis===remote&&state.page==='analysis')renderCurrentPage();}
   }
 
   function renderAgentAnalysis() {
@@ -3593,13 +3593,14 @@
     if(!model.tools.includes(state.analysisTool))state.analysisTool=model.tools[0];
     const scopes=[{value:'TOOL_OK',label:'선택 Tool의 OK Score'},{value:'TOOL_NG',label:'선택 Tool의 NG Score'},{value:'ACTUAL_NG_TOOL_NG',label:'NG Image를 NG로 검출한 Score'},{value:'ACTUAL_NG_TOOL_OK',label:'실제 미검 Cell의 Tool Score'}];
     const key=JSON.stringify({...agentScoreRequest(),revision:remote.revision||0});
+    if(remote.scoreError&&remote.scoreErrorKey!==key){remote.scoreError='';remote.scoreErrorKey='';}
     const ready=remote.scores?.key===key;
     const cached=remote.scores?.requestKey===JSON.stringify(agentScoreRequest())?remote.scores:null;
     const view=ready?remote.scores:cached;
     const statusText=ready?'':remote.scoreError||'에이전트에서 최신 Score를 집계하고 있습니다.';
     const displayed=$('#vq43-page .vq43-analysis-page');
     // Keep the last complete frame during live refresh; never replace it with a different loading layout.
-    if(!ready&&view&&displayed?.dataset.scoreKey===view.key){
+    if(!ready&&view&&!remote.scoreError&&displayed?.dataset.scoreKey===view.key){
       const status=$('#vq43-agent-score-status');if(status)status.textContent=statusText;
       if(!remote.scoreError)loadAgentScores();return;
     }
@@ -3622,6 +3623,7 @@
       </div>`;
     if(!ready&&!remote.scoreError&&model.tools.length&&!remote.needsRestore)loadAgentScores();
     $$('[data-agent-score-page]').forEach(button=>button.onclick=()=>changeAgentScorePage(Number(button.dataset.agentScorePage)));
+    if(remote.scoreError){const status=$('#vq43-agent-score-status');if(status){const button=document.createElement('button');button.className='vq43-btn';button.dataset.agentScoreRetry='';button.textContent='다시 조회';button.title='현재 Position·Tool·분석 범위를 유지하고 Score를 다시 조회합니다.';button.onclick=()=>{remote.scoreError='';remote.scoreErrorKey='';renderCurrentPage();};status.append(' ',button);}}
   }
 
   function renderAnalysis() {
@@ -5661,6 +5663,8 @@
       return;
     }
     if(!final && Date.now()<(state.agentLiveNextAt||0))return;
+    const observed=Number(simulationState?.processed);
+    if(!final&&Number.isFinite(observed)&&state.agentLiveCompletedRunId===runId&&state.agentLiveCompletedProcessed>=observed&&state.remoteAnalysis?.runId===runId&&!state.remoteAnalysis.needsRestore&&!state.remoteAnalysis.error)return;
     const task=(async()=>{
       const current=state.remoteAnalysis;
       if(current?.refreshing)await current.refreshing;
@@ -5679,6 +5683,7 @@
       if(state.remoteAnalysis?.error)throw new Error(state.remoteAnalysis.error);
       if(runId!==state.simulationLiveRunId)return;
       state.simulationLiveRows=Number(state.model.rawRowCount||0);
+      if(Number.isFinite(observed)&&state.simulationLiveRows>=observed){state.agentLiveCompletedRunId=runId;state.agentLiveCompletedProcessed=observed;}
       for(const p of state.model.positionSummaries){
         state.resultInputs[p.position]={position:p.position,remote:true,rows:[],rowCount:p.rawRows ?? p.total,
           warnings:[],simulationRunId:runId,resultCsv:simulationState?.resultCsv||'',fileName:simulationState?.resultCsv?.split(/[\\/]/).pop()||'LIVE Simulation',updatedAt:Date.now()};
@@ -6609,7 +6614,8 @@
     return `<div class="vq43-sim-log-line ${escapeHtml(String(line.level||'info').toLowerCase())}"><time>${escapeHtml(line.time||'')}</time><b>[${escapeHtml(line.level||'INFO')}]</b><span>${escapeHtml(line.message||'')}</span></div>`;
   }
 
-  function scrollSimulationLogToBottom(){const box=$('#vq43-sim-detail-log');if(box)box.scrollTop=box.scrollHeight;}
+  let simulationLogScrollFrame=0;
+  function scrollSimulationLogToBottom(){if(simulationLogScrollFrame)return;simulationLogScrollFrame=requestAnimationFrame(()=>{simulationLogScrollFrame=0;const box=$('#vq43-sim-detail-log');if(box&&state.simulationAutoScroll!==false)box.scrollTop=box.scrollHeight;});}
   function clearSimulationLogs(){state.simulationLogs=[];const box=$('#vq43-sim-detail-log');if(box)box.innerHTML='';}
 
   function simulationExecutionLogPanel() {
@@ -7811,6 +7817,7 @@
   function installDebugApi() {
     if (!new URLSearchParams(location.search).has('vqDebug') && !window.__VQ_DEBUG_REQUESTED__) return;
     window.__VISIONQC_DEBUG__ = {
+      appendSimulationLog,
       requestSimulationStart,
       classificationCellSheets, buildClassificationWorkbook, formatHistoryTimestamp, offerSimulationHistorySave,
       setPage,

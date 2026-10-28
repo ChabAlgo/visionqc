@@ -200,6 +200,7 @@ VALUES (@run_id, @source_type, @mode, @source_name, @started_at_utc, 'running', 
             finally
             {
                 session.Closed = true;
+                DisposeInsertCommands(session);
                 try { session.Transaction.Dispose(); } catch { }
                 try { session.Connection.Dispose(); } catch { }
             }
@@ -278,42 +279,42 @@ DELETE FROM sqlite_sequence WHERE name IN ('images','tool_results');";
             string cellId = FirstNonEmpty(parsed == null ? "" : parsed.cellId, record.CellId);
             string captureTimestamp = FirstNonEmpty(record.CaptureTimestamp, parsed == null ? "" : (parsed.captureTimestamp ?? ""));
             long imageId;
-            using (var command = session.Connection.CreateCommand())
             {
+                var command=session.ImageInsert??(session.ImageInsert=session.Connection.CreateCommand());
                 command.Transaction = session.Transaction;
-                command.CommandText = @"INSERT INTO images (run_id, sequence_no, source_file_name, source_row_number, full_path, processed_path, cell_id, position_key, workspace_type, workspace_name, workspace_key, total_result, judgement, capture_timestamp, inspected_at_utc)
+                if(string.IsNullOrEmpty(command.CommandText))command.CommandText = @"INSERT INTO images (run_id, sequence_no, source_file_name, source_row_number, full_path, processed_path, cell_id, position_key, workspace_type, workspace_name, workspace_key, total_result, judgement, capture_timestamp, inspected_at_utc)
 VALUES (@run_id, @sequence_no, @source_file_name, @source_row_number, @full_path, @processed_path, @cell_id, @position_key, @workspace_type, @workspace_name, @workspace_key, @total_result, @judgement, @capture_timestamp, @inspected_at_utc);
 SELECT last_insert_rowid();";
-                Add(command, "@run_id", session.RunId);
-                Add(command, "@sequence_no", session.RecordCount + 1);
-                Add(command, "@source_file_name", record.SourceFileName);
-                Add(command, "@source_row_number", record.SourceRowNumber);
-                Add(command, "@full_path", record.FullPath);
-                Add(command, "@processed_path", record.ProcessedPath);
-                Add(command, "@cell_id", cellId);
-                Add(command, "@position_key", record.Position);
-                Add(command, "@workspace_type", record.WorkspaceType);
-                Add(command, "@workspace_name", record.WorkspaceName);
-                Add(command, "@workspace_key", record.WorkspaceKey);
-                Add(command, "@total_result", record.TotalResult);
-                Add(command, "@judgement", record.Judgement);
-                Add(command, "@capture_timestamp", captureTimestamp);
-                Add(command, "@inspected_at_utc", DateTime.UtcNow.ToString("o", CultureInfo.InvariantCulture));
+                Bind(command, "@run_id", session.RunId);
+                Bind(command, "@sequence_no", session.RecordCount + 1);
+                Bind(command, "@source_file_name", record.SourceFileName);
+                Bind(command, "@source_row_number", record.SourceRowNumber);
+                Bind(command, "@full_path", record.FullPath);
+                Bind(command, "@processed_path", record.ProcessedPath);
+                Bind(command, "@cell_id", cellId);
+                Bind(command, "@position_key", record.Position);
+                Bind(command, "@workspace_type", record.WorkspaceType);
+                Bind(command, "@workspace_name", record.WorkspaceName);
+                Bind(command, "@workspace_key", record.WorkspaceKey);
+                Bind(command, "@total_result", record.TotalResult);
+                Bind(command, "@judgement", record.Judgement);
+                Bind(command, "@capture_timestamp", captureTimestamp);
+                Bind(command, "@inspected_at_utc", DateTime.UtcNow.ToString("o", CultureInfo.InvariantCulture));
                 imageId = Convert.ToInt64(command.ExecuteScalar(), CultureInfo.InvariantCulture);
             }
             foreach (HistoryToolValue tool in record.Tools ?? new List<HistoryToolValue>())
             {
                 if (tool == null || string.IsNullOrWhiteSpace(tool.Tool)) continue;
-                using (var command = session.Connection.CreateCommand())
                 {
+                    var command=session.ToolInsert??(session.ToolInsert=session.Connection.CreateCommand());
                     command.Transaction = session.Transaction;
-                    command.CommandText = "INSERT INTO tool_results (run_id, image_id, tool_name, result, score, overlay_path) VALUES (@run_id, @image_id, @tool_name, @result, @score, @overlay_path);";
-                    Add(command, "@run_id", session.RunId);
-                    Add(command, "@image_id", imageId);
-                    Add(command, "@tool_name", tool.Tool);
-                    Add(command, "@result", tool.Result);
-                    Add(command, "@score", tool.Score.HasValue ? (object)tool.Score.Value : DBNull.Value);
-                    Add(command, "@overlay_path", tool.OverlayPath);
+                    if(string.IsNullOrEmpty(command.CommandText))command.CommandText = "INSERT INTO tool_results (run_id, image_id, tool_name, result, score, overlay_path) VALUES (@run_id, @image_id, @tool_name, @result, @score, @overlay_path);";
+                    Bind(command, "@run_id", session.RunId);
+                    Bind(command, "@image_id", imageId);
+                    Bind(command, "@tool_name", tool.Tool);
+                    Bind(command, "@result", tool.Result);
+                    Bind(command, "@score", tool.Score.HasValue ? (object)tool.Score.Value : DBNull.Value);
+                    Bind(command, "@overlay_path", tool.OverlayPath);
                     command.ExecuteNonQuery();
                 }
             }
@@ -848,7 +849,7 @@ UPDATE schema_info SET schema_version = CASE WHEN schema_version < 5 THEN 5 ELSE
 
         private static void CommitAndContinue(RunStoreSession session)
         {
-            if (session.Transaction != null) session.Transaction.Commit();
+            if (session.Transaction != null) {session.Transaction.Commit();session.Transaction.Dispose();}
             session.Transaction = session.Connection.BeginTransaction();
             session.PendingCount = 0;
         }
@@ -857,6 +858,12 @@ UPDATE schema_info SET schema_version = CASE WHEN schema_version < 5 THEN 5 ELSE
         {
             command.Parameters.AddWithValue(name, value ?? "");
         }
+
+        private static void Bind(SQLiteCommand command,string name,object value)
+        {if(command.Parameters.Contains(name))command.Parameters[name].Value=value??"";else Add(command,name,value);}
+
+        private static void DisposeInsertCommands(RunStoreSession session)
+        {try{session.ImageInsert?.Dispose();}catch{}try{session.ToolInsert?.Dispose();}catch{}session.ImageInsert=null;session.ToolInsert=null;}
 
         private static string FirstNonEmpty(params string[] values)
         {
@@ -889,6 +896,7 @@ UPDATE schema_info SET schema_version = CASE WHEN schema_version < 5 THEN 5 ELSE
             internal Dictionary<string, HistoryWorkspaceValue> WorkspacesByPosition;
             internal SQLiteConnection Connection;
             internal SQLiteTransaction Transaction;
+            internal SQLiteCommand ImageInsert,ToolInsert;
             internal int RecordCount;
             internal int PendingCount;
             internal bool Closed;
